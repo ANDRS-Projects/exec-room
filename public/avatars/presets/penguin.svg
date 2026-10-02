@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="120" height="120" role="img"><title>Penguin</title>
+<defs>
+<pattern id="kdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A1A1A"/></pattern>
+<pattern id="gdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#C9A227"/></pattern>
+<pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r="0.45" fill="#1A1A1A" opacity="0.35"/><circle cx="5" cy="5.5" r="0.4" fill="#1A1A1A" opacity="0.25"/><circle cx="4" cy="1" r="0.35" fill="#C9A227" opacity="0.5"/></pattern>
+</defs>
+<circle r="60" fill="#F2EBDD"/><circle r="60" fill="url(#grain)"/>
+<g transform="translate(3,2)" fill="#C9A227"><ellipse cy="8" rx="32" ry="44"/></g>
+<ellipse cy="30" rx="20" ry="18" fill="url(#kdots)"/>
+<g fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><ellipse cy="8" rx="32" ry="44"/><path d="M-32,8 Q-44,24 -36,34 M32,8 Q44,24 36,34 M-12,50 L-20,54 M12,50 L20,54"/></g>
+<ellipse cy="0" rx="22" ry="24" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2.2"/><circle cx="-9" cy="-6" r="4.5" fill="#1A1A1A"/><circle cx="-7.7" cy="-7.3" r="1.5" fill="#F2EBDD"/><circle cx="9" cy="-6" r="4.5" fill="#1A1A1A"/><circle cx="10.3" cy="-7.3" r="1.5" fill="#F2EBDD"/><path d="M-6,4 L6,4 L0,13 Z" fill="#C9A227" stroke="#1A1A1A" stroke-width="2" stroke-linejoin="round"/>
+<circle r="59" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+</svg>

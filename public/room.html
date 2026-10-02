@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exec Room</title>
+<link rel="icon" id="brand-icon" href="mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="room.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <img id="brand-mark" src="mark.svg" alt="" width="28" height="28">
+    <h1 id="brand-name">Exec Room</h1>
+    <span class="byline" id="brand-byline"></span>
+    <div class="space-switch">
+      <button type="button" class="workspace" id="brand-workspace" aria-haspopup="menu" aria-expanded="false" title="Switch room">Ops room</button>
+      <div class="space-menu" id="space-menu" role="menu" hidden></div>
+    </div>
+  </div>
+  <button type="button" class="ghost" id="reset" title="Coen forgets the conversation">New chat</button>
+  <button type="button" class="ghost add-agent-top" id="add-agent-top" title="Add an agent you built to this room, or build a new one">+ Agent</button>
+</header>
+
+<div class="layout" id="layout">
+  <main class="main">
+    <div class="coen-head">
+      <div class="head-avatars" id="head-avatars">
+        <img class="avatar" src="avatars/coen.svg" alt="" width="40" height="40">
+      </div>
+      <div><p class="title" id="head-title">Coen · COO</p><p class="sub">intake & triage · remembers this chat</p></div>
+      <span class="status" id="coen-status" hidden>thinking…</span>
+    </div>
+    <div class="thread" id="thread">
+      <div class="empty" id="empty">Message Coen. Add agents to the room to give him advisors and makers.</div>
+    </div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Message the team… (Shift+Enter for a new line)"></textarea>
+      <button type="submit" id="send">Send</button>
+      <button type="button" id="stop" class="stop" hidden>Stop</button>
+    </form>
+  </main>
+
+  <aside class="rail" id="rail" aria-label="Consulted execs">
+    <div class="chips">
+      <span class="chips-slot" id="custom-advisors"></span>
+      <span class="chips-label">Makers · work only after your approval</span>
+      <span class="chips-slot" id="custom-makers"></span>
+      <button type="button" class="chip add-agent" id="add-agent" title="Add an agent you built to this room, or build a new one"><span class="initial">+</span><span>Add agent</span></button>
+    </div>
+    <div class="groups" id="groups"></div>
+  </aside>
+</div>
+
+<dialog class="viewer" id="draft-viewer" aria-labelledby="draft-title">
+  <div class="viewer-head">
+    <h2 id="draft-title"></h2>
+    <span class="viewer-note">drafts/ · read-only</span>
+    <button type="button" class="ghost" id="draft-close">Close</button>
+  </div>
+  <div class="viewer-body md" id="draft-body"></div>
+</dialog>
+
+<dialog class="viewer agent-editor" id="agent-editor" aria-labelledby="agent-editor-title">
+  <form id="agent-form" novalidate>
+    <div class="viewer-head">
+      <h2 id="agent-editor-title">Build a new agent</h2>
+      <span class="viewer-note" id="agent-editor-note">joins this room · no restart needed</span>
+      <button type="button" class="ghost" id="agent-close">Close</button>
+    </div>
+    <div class="viewer-body agent-fields">
+      <label class="field">
+        <span class="field-label">Name</span>
+        <input id="agent-name" maxlength="24" placeholder="e.g. Nova" autocomplete="off">
+      </label>
+      <fieldset class="field">
+        <legend class="field-label">Avatar</legend>
+        <div class="avatar-grid" id="agent-avatars"></div>
+      </fieldset>
+      <fieldset class="field">
+        <legend class="field-label">Role</legend>
+        <label class="choice"><input type="radio" name="agent-role" value="advisor" checked> <span><b>Advisor</b> · Coen consults it for advice</span></label>
+        <label class="choice"><input type="radio" name="agent-role" value="maker"> <span><b>Maker</b> · does a job only after you approve it, and writes into drafts/</span></label>
+      </fieldset>
+      <label class="field">
+        <span class="field-label">What it does <small>one line; Coen uses this to decide when to bring it in</small></span>
+        <input id="agent-does" maxlength="200" placeholder="e.g. checks pricing pages of competitors and summarises changes" autocomplete="off">
+      </label>
+      <label class="field">
+        <span class="field-label">Instructions, rules and script <small>markdown; its job, the steps it follows, what it must never do, the output format</small></span>
+        <textarea id="agent-instructions" rows="9" maxlength="20000"></textarea>
+      </label>
+      <fieldset class="field">
+        <legend class="field-label">Tools <small>only what the room already allows; nothing can post, publish or send</small></legend>
+        <div class="tool-list" id="agent-tools"></div>
+      </fieldset>
+      <label class="field">
+        <span class="field-label">Model</span>
+        <select id="agent-model"></select>
+      </label>
+      <div class="form-error" id="agent-error"></div>
+    </div>
+    <div class="agent-actions">
+      <button type="button" class="ghost danger" id="agent-remove" hidden title="Deletes the agent from every room">Delete agent</button>
+      <button type="button" class="ghost" id="agent-leave" hidden title="Takes the agent out of this room only; it stays in your other rooms">Remove from this room</button>
+      <button type="button" class="ghost" id="agent-export" hidden title="Save this agent as an AGENT.md in drafts/, ready to add to ~/.claude/agents so it also works outside the room">Export as AGENT.md</button>
+      <button type="button" class="ghost" id="agent-import-open" title="Copy an agent you already have in ~/.claude/agents into the room">Import…</button>
+      <button type="button" class="ghost" id="agent-ask-coen" title="Coen designs the agent from what you filled in, and proposes it for your approval">Ask Coen to build it</button>
+      <button type="submit" class="approve" id="agent-save">Build and add to room</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="viewer agent-editor" id="space-editor" aria-labelledby="space-editor-title">
+  <form id="space-form" novalidate>
+    <div class="viewer-head">
+      <h2 id="space-editor-title">New room</h2>
+      <span class="viewer-note">Coen takes every message</span>
+      <button type="button" class="ghost" id="space-close">Close</button>
+    </div>
+    <div class="space-top">
+      <p class="room-summary" id="space-summary"></p>
+      <div class="space-tabs" role="tablist" aria-label="Room settings">
+        <button type="button" class="space-tab" role="tab" id="space-tab-general" aria-selected="true" aria-controls="space-panel-general">General</button>
+        <button type="button" class="space-tab" role="tab" id="space-tab-use" aria-selected="false" aria-controls="space-panel-use" tabindex="-1">Can use <span class="count" id="space-tab-use-count"></span><span class="tab-dot" id="space-tab-use-dot" hidden><span class="sr-only">, reaches outside</span></span></button>
+        <button type="button" class="space-tab" role="tab" id="space-tab-propose" aria-selected="false" aria-controls="space-panel-propose" tabindex="-1">Can propose <span class="count" id="space-tab-propose-count"></span><span class="tab-dot" id="space-tab-propose-dot" hidden><span class="sr-only">, reaches outside</span></span></button>
+      </div>
+    </div>
+    <div class="viewer-body agent-fields">
+      <div class="space-panel" role="tabpanel" id="space-panel-general" aria-labelledby="space-tab-general">
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input id="space-name" maxlength="40" placeholder="e.g. Marketing" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">What this room is for <small>optional · shown in the room menu and an empty chat, and told to Coen</small></span>
+          <input id="space-description" maxlength="140" placeholder="e.g. Where campaigns are planned and posts get written" autocomplete="off">
+        </label>
+        <fieldset class="field">
+          <legend class="field-label">Members <span class="count" id="space-count-general"></span> <small>who Coen can consult or send work to in this room</small></legend>
+          <label class="choice"><input type="checkbox" id="space-everyone"> <span><b>Everyone</b>, including agents added later</span></label>
+          <div class="member-list" id="space-members"></div>
+        </fieldset>
+        <label class="field">
+          <span class="field-label">Focus agent <small>gets every request</small></span>
+          <select id="space-focus" aria-describedby="space-focus-note"></select>
+        </label>
+        <p class="sec-note" id="space-focus-note">Coen hands every request to this advisor; their answer and proposals come to you directly.</p>
+      </div>
+      <div class="space-panel" role="tabpanel" id="space-panel-use" aria-labelledby="space-tab-use" hidden>
+        <p class="panel-note">Every agent in this room, Coen included. Anything not listed here is refused.</p>
+        <div class="sections">
+          <div class="sec">
+            <div class="sec-head"><h3 class="sec-title">Folders it can read</h3><span class="count" id="access-file-count"></span><span class="hint">+ drafts/ always</span></div>
+            <div class="sec-body">
+              <p class="sec-note">drafts/ is always readable, and the only place agents can write.</p>
+              <ul class="access-list" id="access-files"></ul>
+              <div class="access-add"><input id="access-file-input" placeholder="~/Dev/my-repo" autocomplete="off"><button type="button" class="ghost" id="access-file-add">Add folder</button></div>
+              <div class="form-error" id="access-file-error" role="alert" hidden></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="sec-head"><h3 class="sec-title">Sites it can open</h3><span class="count" id="access-site-count"></span><span class="hint">exact names</span></div>
+            <div class="sec-body">
+              <p class="sec-note">Exact site names; www.example.com and example.com are separate. Empty = no web pages.</p>
+              <ul class="access-list" id="access-sites"></ul>
+              <div class="access-add"><input id="access-site-input" placeholder="docs.example.com" autocomplete="off"><button type="button" class="ghost" id="access-site-add">Add site</button></div>
+              <div class="form-error" id="access-site-error" role="alert" hidden></div>
+            </div>
+          </div>
+          <div class="sec outside">
+            <div class="sec-head"><h3 class="sec-title">Web search</h3><span class="count" id="access-websearch-count"></span><span class="hint">queries leave the room</span><span class="tag-out">reaches outside</span></div>
+            <div class="sec-body">
+              <label class="choice"><input type="checkbox" id="access-websearch"> <span><b>Web search</b> · agents can search the web</span></label>
+              <p class="sec-note">The query goes to the search provider.</p>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="sec-head"><h3 class="sec-title">Notion</h3><span class="count" id="access-notion-count"></span><span class="hint">read-only</span></div>
+            <div class="sec-body">
+              <label class="choice"><input type="checkbox" id="access-notion"> <span><b>Notion</b> · read-only</span></label>
+              <p class="sec-note">Read-only, through your Notion connector.</p>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="sec-head"><h3 class="sec-title">Microsoft 365 mail</h3><span class="count" id="access-m365-count"></span><span class="hint">read-only</span></div>
+            <div class="sec-body">
+              <label class="choice"><input type="checkbox" id="access-m365"> <span><b>Outlook mail</b> · search</span></label>
+              <p class="sec-note">Read-only, through your Microsoft 365 connector: agents can search mail (sender, subject, date and a short preview) but can't open emails, and never send, reply or delete. Switch it on only in rooms that need client mail.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="space-panel" role="tabpanel" id="space-panel-propose" aria-labelledby="space-tab-propose" hidden>
+        <p class="panel-note">Cards Coen (or the focus agent) can put in front of you. Nothing happens until you approve, and it's checked again then.</p>
+        <div class="sections">
+          <div class="sec">
+            <div class="sec-head"><h3 class="sec-title">Private repos for issues</h3><span class="count" id="targets-repo-count"></span><span class="hint">must be private</span></div>
+            <div class="sec-body">
+              <p class="sec-note">owner/repo. GitHub must report the repo as private when you approve, or nothing is created.</p>
+              <ul class="access-list" id="targets-repos"></ul>
+              <div class="access-add"><input id="targets-repo-input" placeholder="your-org/my-repo" autocomplete="off"><button type="button" class="ghost" id="targets-repo-add">Add repo</button></div>
+              <div class="form-error" id="targets-repo-error" role="alert" hidden></div>
+            </div>
+          </div>
+          <div class="sec outside">
+            <div class="sec-head"><h3 class="sec-title">Public repos for issues</h3><span class="count" id="targets-public-repo-count"></span><span class="hint">visible to everyone</span><span class="tag-out">reaches outside</span></div>
+            <div class="sec-body">
+              <p class="sec-note">For example your open-source repos. Issues here are visible to everyone, and GitHub must report the repo as public when you approve.</p>
+              <ul class="access-list public" id="targets-public-repos"></ul>
+              <div class="access-add"><input id="targets-public-repo-input" placeholder="your-org/my-oss-repo" autocomplete="off"><button type="button" class="ghost" id="targets-public-repo-add">Add public repo</button></div>
+              <div class="form-error" id="targets-public-repo-error" role="alert" hidden></div>
+            </div>
+          </div>
+          <div class="sec outside">
+            <div class="sec-head"><h3 class="sec-title">Email recipients for drafts</h3><span class="count" id="targets-recipient-count"></span><span class="hint">drafts only, never sent</span><span class="tag-out">reaches outside</span></div>
+            <div class="sec-body">
+              <p class="sec-note">Exact addresses (name@client.com) or a domain (client.com: that domain only, not its subdomains). Empty = no email drafts. The room never sends mail: you open approved drafts in Outlook or your mail app.</p>
+              <ul class="access-list" id="targets-recipients"></ul>
+              <div class="access-add"><input id="targets-recipient-input" placeholder="name@client.com or client.com" autocomplete="off"><button type="button" class="ghost" id="targets-recipient-add">Add recipient</button></div>
+              <p class="sec-sub">Send from <small>the consulting address shown on email cards</small></p>
+              <div class="access-add"><input id="targets-send-from" placeholder="you@your-consultancy.com" autocomplete="off" aria-label="Send from"></div>
+              <div class="form-error" id="targets-recipient-error" role="alert" hidden></div>
+            </div>
+          </div>
+          <div class="sections" id="targets-notion">
+            <div class="sec">
+              <div class="sec-head"><h3 class="sec-title">Notion databases for posts</h3><span class="count" id="targets-db-count"></span><span class="hint">saved as drafts</span></div>
+              <div class="sec-body">
+                <p class="sec-note">Saved as drafts; you schedule them yourself.</p>
+                <div class="tool-list" id="targets-dbs"></div>
+              </div>
+            </div>
+            <div class="sec">
+              <div class="sec-head"><h3 class="sec-title">Notion places for pages</h3><span class="count" id="targets-place-count"></span><span class="hint">parents for new pages</span></div>
+              <div class="sec-body">
+                <p class="sec-note">New pages go under one of these, or a page inside one (checked when you approve).</p>
+                <ul class="access-list" id="targets-places"></ul>
+                <div class="access-add place-add">
+                  <input id="targets-place-url" placeholder="Notion page link" autocomplete="off">
+                  <input id="targets-place-name" placeholder="Name" autocomplete="off">
+                  <input id="targets-place-for" placeholder="What it's for (optional)" autocomplete="off">
+                  <button type="button" class="ghost" id="targets-place-add">Add place</button>
+                </div>
+                <div class="form-error" id="targets-place-error" role="alert" hidden></div>
+              </div>
+            </div>
+          </div>
+          <p class="access-empty sec-note" id="targets-notion-off" hidden>Notion actions are off: the room started without its Notion token.</p>
+        </div>
+      </div>
+      <div class="form-error" id="space-error"></div>
+    </div>
+    <div class="agent-actions">
+      <button type="button" class="ghost danger" id="space-remove" hidden>Delete room</button>
+      <button type="submit" class="approve" id="space-save">Create room</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="viewer picker" id="agent-picker" aria-labelledby="agent-picker-title">
+  <div class="viewer-head">
+    <h2 id="agent-picker-title">Add an agent</h2>
+    <button type="button" class="ghost" id="agent-picker-close">Close</button>
+  </div>
+  <div class="viewer-body">
+    <p class="picker-label">Already built, not in this room yet</p>
+    <div class="picker-list" id="agent-picker-list"></div>
+    <div class="form-error" id="agent-picker-error"></div>
+    <button type="button" class="chip add-agent picker-build" id="agent-picker-build"><span class="initial">+</span><span>Build a new agent</span></button>
+    <button type="button" class="chip add-agent picker-build" id="agent-picker-import" title="Copy an agent you already have in ~/.claude/agents into the room"><span class="initial">↓</span><span>Import from ~/.claude/agents</span></button>
+  </div>
+</dialog>
+<dialog class="viewer picker" id="agent-import" aria-labelledby="agent-import-title">
+  <div class="viewer-head">
+    <h2 id="agent-import-title">Import from ~/.claude/agents</h2>
+    <button type="button" class="ghost" id="agent-import-close">Close</button>
+  </div>
+  <div class="viewer-body">
+    <p class="picker-label">A copy joins the room: you choose its role and tools here, and later changes to the file don't reach it.</p>
+    <div class="picker-list" id="agent-import-list"></div>
+    <div class="form-error" id="agent-import-error"></div>
+  </div>
+</dialog>
+<dialog class="viewer confirm" id="confirm-dialog" aria-labelledby="confirm-text">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <div class="confirm-actions">
+      <button type="submit" class="ghost" value="cancel">Cancel</button>
+      <button type="submit" class="approve" id="confirm-ok" value="ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="vendor/marked.umd.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="email-links.js"></script>
+<script src="room.js"></script>
+</body>
+</html>

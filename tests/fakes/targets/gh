@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+# Test double for gh. `repo view`: reports PUBLIC for repos with "public" in the name, else PRIVATE (recorded in
+# gh-view.json). `issue create`: records its arguments and stdin in gh.json and returns an issue URL for its repo;
+# `issue comment` does the same in gh-comment.json and returns a comment URL.
+import json, os, sys
+
+args = sys.argv[1:]
+tmp = os.environ["ROOM_TEST_TMP"]
+if args[:2] == ["repo", "view"]:
+    json.dump({"args": args}, open(os.path.join(tmp, "gh-view.json"), "w"))
+    print("PUBLIC" if "public" in args[2].lower() else "PRIVATE")
+elif args[:2] == ["issue", "comment"]:
+    json.dump({"args": args, "stdin": sys.stdin.read()}, open(os.path.join(tmp, "gh-comment.json"), "w"))
+    repo = [a.split("=", 1)[1] for a in args if a.startswith("--repo=")][0]
+    # GitHub answers a comment on a pull request with a …/pull/<n> link (numbers from 70 up act as PRs here).
+    print(f"https://github.com/{repo}/{'pull' if int(args[2]) >= 70 else 'issues'}/{args[2]}#issuecomment-1")
+else:
+    json.dump({"args": args, "stdin": sys.stdin.read()}, open(os.path.join(tmp, "gh.json"), "w"))
+    repo = [a.split("=", 1)[1] for a in args if a.startswith("--repo=")][0]
+    print(f"https://github.com/{repo}/issues/999")

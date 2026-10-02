@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+# Test double for `claude -p` with per-room access: logs each run's --tools, --allowedTools, the Notion and
+# Microsoft 365 tools in --disallowedTools, the access sentence of its note and room-built agents' tools to
+# $ROOM_TEST_TMP/access-calls.ndjson. Coen proposes a dispatch to Wren when asked. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+agent = args[args.index("--agent") + 1]
+prompt = args[args.index("-p") + 1]
+note = args[args.index("--append-system-prompt") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+
+
+def flag(name):
+    i = args.index(name) + 1
+    vals = []
+    while i < len(args) and not args[i].startswith("--"):
+        vals.append(args[i])
+        i += 1
+    return vals
+
+
+start = note.find("What this room lets agents use:")
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "access-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"agent": agent, "tools": flag("--tools"), "allowed": flag("--allowedTools"),
+                          "denied_notion": [t for t in flag("--disallowedTools") if "notion-search" in t],
+                          "denied_m365": [t for t in flag("--disallowedTools") if "Microsoft_365" in t],
+                          "denied_connectors": [t for t in flag("--disallowedTools") if t.startswith("mcp__claude_ai_") and "__" not in t[len("mcp__claude_ai_"):]],
+                          "denied_read": [t for t in flag("--disallowedTools") if t.startswith("Read(")],
+                          "denied_write": [t for t in flag("--disallowedTools") if t.startswith(("Edit(", "Write("))],
+                          "permission_mode": args[args.index("--permission-mode") + 1] if "--permission-mode" in args else None,
+                          "note": note[start:note.find(" Anything else", start)] if start >= 0 else None,
+                          "custom_tools": {k: v.get("tools") for k, v in json.loads(args[args.index("--agents") + 1]).items() if k.startswith("room-")}}) + "\n")
+out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
+if agent == "chief-operating-officer" and "dispatch" in prompt:
+    text = "Sending.\n```recommendation\n" + json.dumps({"action": "dispatch", "agent": "wren", "summary": "Post", "brief": "Write it."}) + "\n```\n"
+else:
+    text = "Done."
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

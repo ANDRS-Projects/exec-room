@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+# Test double for `claude -p`: Coen consults the room-built advisor Nova, proposes a new agent (Echo) and
+# two dispatches to the room-built maker Scout; Scout writes a draft. Every call's agents, tools and room
+# note are logged to $ROOM_TEST_TMP/agent-calls.ndjson. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+agent = args[args.index("--agent") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+
+
+def flag(name):
+    i = args.index(name) + 1
+    vals = []
+    while i < len(args) and not args[i].startswith("--"):
+        vals.append(args[i])
+        i += 1
+    return vals
+
+
+agents = json.loads(args[args.index("--agents") + 1])
+note = args[args.index("--append-system-prompt") + 1]
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "agent-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"agent": agent, "agents": agents, "tools": flag("--tools"), "allowed": flag("--allowedTools"),
+                          "disallowed_notion": [t for t in flag("--disallowedTools") if t.endswith("notion-search")],
+                          "note_mentions_nova": "room-nova" in note, "note_has_create_agent": '"create_agent"' in note, "note_lists_avatars": '"raven"' in note,
+                          "note_free_avatars": note.split("prefer one no other agent has yet: ")[1].split(")")[0] if "prefer one no other agent has yet: " in note else None,
+                          "note_keeps_owner_choice": "When the owner names an avatar or a model in the request, use exactly that one" in note}) + "\n")
+
+
+def say(text, parent=None):
+    out({"type": "stream_event", "parent_tool_use_id": parent, "event": {"type": "message_start"}})
+    out({"type": "stream_event", "parent_tool_use_id": parent, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+
+
+def rec(obj):
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
+out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
+if agent == "room-scout":
+    path = os.path.join(os.getcwd(), "drafts", "2026-09-26-scout-test.md")
+    out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "S1", "name": "Write", "input": {"file_path": path, "content": "x"}}]}})
+    out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "S1", "content": "ok"}]}})
+    say("Saved the scan.")
+elif agent == "chief-operating-officer" and "finished" in args[args.index("-p") + 1]:
+    say("Noted.")
+else:
+    out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "N1", "name": "Agent", "input": {"subagent_type": "room-nova", "prompt": "Your view?"}}]}})
+    say("Nova here: looks fine.", "N1")
+    out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "N1", "content": "done"}]}})
+    say("Proposals." + rec({"action": "create_agent", "summary": "Add Echo", "name": "Echo", "role": "advisor", "does": "summarises meeting notes",
+                             "instructions": "## Rules\n- Be brief.", "tools": ["notion", "web_search"], "model": "claude-sonnet-5", "avatar": "whale", "sneaky": "x"})
+        + rec({"action": "dispatch", "agent": "scout", "summary": "Scan competitors", "brief": "Scan."})
+        + rec({"action": "dispatch", "agent": "scout", "summary": "Scan again", "brief": "Scan again."}))
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

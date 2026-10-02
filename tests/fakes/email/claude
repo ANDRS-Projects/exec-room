@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+# Test double for `claude -p` with email_draft proposals: logs what Coen's note says about email drafts to
+# $ROOM_TEST_TMP/email-calls.ndjson and, by keyword, proposes drafts that are fine, off the room's list, lookalikes,
+# injected, not plain addresses or too long. Emits stream-json. Nothing here sends mail.
+import json, os, sys
+
+args = sys.argv[1:]
+prompt = args[args.index("-p") + 1]
+note = args[args.index("--append-system-prompt") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "email-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"email": '"email_draft"' in note, "never_sends": "the room never sends" in note,
+                          "nothing_sends": "sends messages can be proposed" in note, "listed": "bob@partner.test" in note, "needs_recipients": "Email drafts are off in this room" in note}) + "\n")
+
+
+def email(summary, to="anna@client.example", **fields):
+    obj = {"action": "email_draft", "summary": summary, "to": to, "subject": "s", "body": "b", **fields}
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
+EVE = "eve@elsewhere.test"
+PROPOSALS = {
+    "good draft": [email("Good", cc=["bob@partner.test"], subject="Next steps\r\nafter our call", body="Hi Anna,\n\nThanks for today.\n\nSam"),
+                   email("Two", to="Anna@Client.Example; ceo@client.example", subject="Two"),
+                   email("Bob", to=["bob@partner.test"], subject="For Bob")],
+    "cc later": [email("Cc Bob", cc="bob@partner.test")],
+    "bad recipients": [email("To", to=EVE), email("Cc", cc=EVE), email("Suffix", to="x@client.example.evil.test")],
+    "lookalikes": [email("Sub", to="x@sub.client.example"), email("Prefix", to="x@evilclient.example"), email("Other address", to="bob2@partner.test")],
+    "crlf comma query": [email("CRLF", to="anna@client.example\r\nbcc: " + EVE), email("Comma", to="anna@client.example, " + EVE),
+                         email("Query", to="anna@client.example?bcc=" + EVE)],
+    "amp lf split": [email("Ampersand", cc=["anna@client.example&bcc=" + EVE]), email("LF", to=["anna@client.example\n"]),
+                     email("Split", to="anna@client.example;" + EVE)],
+    "encoded": [email("Percent", to="anna%0D%0Abcc@client.example"), email("Display name", to="Anna <anna@client.example>"),
+                email("Lone surrogate", body="\ud800")],
+    "long body": [email("Too long", body="x" * 8001), email("Max body", body="x" * 8000), email("Long subject", subject="s" * 201)],
+}
+text = ("Drafts for Anna@Client.Example." if "good draft" in prompt else "Proposals.") + "".join(next((recs for key, recs in PROPOSALS.items() if key in prompt), []))
+out({"type": "system", "subtype": "init", "session_id": "coen-session"})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="120" height="120" role="img"><title>Crab</title>
+<defs>
+<pattern id="kdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A1A1A"/></pattern>
+<pattern id="gdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#C9A227"/></pattern>
+<pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r="0.45" fill="#1A1A1A" opacity="0.35"/><circle cx="5" cy="5.5" r="0.4" fill="#1A1A1A" opacity="0.25"/><circle cx="4" cy="1" r="0.35" fill="#C9A227" opacity="0.5"/></pattern>
+</defs>
+<circle r="60" fill="#F2EBDD"/><circle r="60" fill="url(#grain)"/>
+<g transform="translate(3,2)" fill="#C9A227"><ellipse cy="16" rx="34" ry="20"/><path d="M-50,-18 A13,13 0 1 1 -30,-6 L-38,-16 Z M50,-18 A13,13 0 1 0 30,-6 L38,-16 Z"/></g>
+<ellipse cy="22" rx="24" ry="10" fill="url(#kdots)"/>
+<g fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><ellipse cy="16" rx="34" ry="20"/><path d="M-50,-18 A13,13 0 1 1 -30,-6 L-38,-16 Z M50,-18 A13,13 0 1 0 30,-6 L38,-16 Z"/><path d="M-30,6 L-36,-6 M30,6 L36,-6 M-10,-4 L-12,-18 M10,-4 L12,-18 M-32,24 L-44,32 M-30,30 L-40,40 M32,24 L44,32 M30,30 L40,40 M-8,18 Q0,24 8,18"/></g>
+<circle cx="-12" cy="-22" r="6" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2"/><circle cx="12" cy="-22" r="6" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2"/><circle cx="-11" cy="-22" r="3" fill="#1A1A1A"/><circle cx="-10.1" cy="-22.9" r="1.0" fill="#F2EBDD"/><circle cx="13" cy="-22" r="3" fill="#1A1A1A"/><circle cx="13.9" cy="-22.9" r="1.0" fill="#F2EBDD"/>
+<circle r="59" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+</svg>

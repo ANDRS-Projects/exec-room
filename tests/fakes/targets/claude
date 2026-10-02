@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+# Test double for `claude -p` with per-room targets: logs which repos, Output DBs and Notion places Coen's note
+# offers to $ROOM_TEST_TMP/targets-calls.ndjson; "issues" makes him propose three GitHub issues, "notion" a Notion
+# draft to an allowed and a forbidden DB plus pages under and outside the room's place, "comment" three issue comments
+# (a private repo, a public one, a repo outside the room), "bad comment" one with a bad issue number. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+prompt = args[args.index("-p") + 1]
+note = args[args.index("--append-system-prompt") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "targets-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"issues": '"github_issue"' in note, "demo_app": "demo-app" in note, "private_app": "Example-Org/private-app" in note,
+                          "drafts": '"notion_draft"' in note, "log1": '"output-log-1"' in note, "log2": '"output-log-2"' in note,
+                          "pages": '"notion_page"' in note, "exec_meetings": "Exec Team Meetings" in note, "product_notes": "Product notes" in note,
+                          "public_rule": "visible to everyone" in note, "reads_issues": "the server reads it and adds it after their message" in note, "comments": '"github_comment"' in note}) + "\n")
+
+
+def rec(obj):
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
+PLACE, SUB, OUTSIDE = "a" * 32, "b" * 32, "c" * 32
+if "issues" in prompt:
+    text = ("Issues." + rec({"action": "github_issue", "repo": "private-app", "summary": "Private", "title": "P", "body": "b"})
+            + rec({"action": "github_issue", "repo": "Example-Org/public-site", "summary": "Public", "title": "Q", "body": "b"})
+            + rec({"action": "github_issue", "repo": "other-org/tool", "summary": "Other org", "title": "R", "body": "b"}))
+elif "wrong" in prompt:
+    text = ("Wrong." + rec({"action": "github_issue", "repo": "demo-app", "summary": "Not here", "title": "S", "body": "b"})
+            + rec({"action": "notion_draft", "database": "output-log-1", "summary": "Not here", "posts": [{"channel": "X", "title": "t", "content": "c"}]}))
+elif "notion" in prompt:
+    text = ("Notion." + rec({"action": "notion_draft", "database": "output-log-2", "summary": "Draft", "posts": [{"channel": "X", "title": "t", "content": "c"}]})
+            + rec({"action": "notion_page", "parent": SUB, "summary": "Under the place", "title": "In", "content": "c"})
+            + rec({"action": "notion_page", "parent": OUTSIDE, "summary": "Outside", "title": "Out", "content": "c"}))
+elif "bad comment" in prompt:
+    text = ("Bad." + rec({"action": "github_comment", "repo": "private-app", "issue": "#5", "summary": "Bad number", "body": "b"})
+            + rec({"action": "github_comment", "repo": "private-app", "issue": 78, "summary": "On a PR", "body": "Review."}))
+elif "comment" in prompt:
+    text = ("Comments." + rec({"action": "github_comment", "repo": "private-app", "issue": 12, "summary": "Private", "body": "Looks good."})
+            + rec({"action": "github_comment", "repo": "Example-Org/public-site", "issue": "3", "summary": "Public", "body": "b"})
+            + rec({"action": "github_comment", "repo": "demo-app", "issue": 4, "summary": "Not here", "body": "b"}))
+else:
+    text = "Hello."
+out({"type": "system", "subtype": "init", "session_id": "coen-session"})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

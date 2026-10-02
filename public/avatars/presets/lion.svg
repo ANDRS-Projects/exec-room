@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="120" height="120" role="img"><title>Lion</title>
+<defs>
+<pattern id="kdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A1A1A"/></pattern>
+<pattern id="gdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#C9A227"/></pattern>
+<pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r="0.45" fill="#1A1A1A" opacity="0.35"/><circle cx="5" cy="5.5" r="0.4" fill="#1A1A1A" opacity="0.25"/><circle cx="4" cy="1" r="0.35" fill="#C9A227" opacity="0.5"/></pattern>
+</defs>
+<circle r="60" fill="#F2EBDD"/><circle r="60" fill="url(#grain)"/>
+<g transform="translate(3,2)" fill="#C9A227"><path d="M0,-48 L12,-40 L26,-42 L32,-30 L44,-22 L42,-8 L50,4 L42,14 L44,28 L32,34 L26,46 L12,44 L0,52 L-12,44 L-26,46 L-32,34 L-44,28 L-42,14 L-50,4 L-42,-8 L-44,-22 L-32,-30 L-26,-42 L-12,-40 Z"/></g>
+
+<g fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M0,-48 L12,-40 L26,-42 L32,-30 L44,-22 L42,-8 L50,4 L42,14 L44,28 L32,34 L26,46 L12,44 L0,52 L-12,44 L-26,46 L-32,34 L-44,28 L-42,14 L-50,4 L-42,-8 L-44,-22 L-32,-30 L-26,-42 L-12,-40 Z"/></g>
+<circle cy="4" r="27" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2.2"/><circle cy="4" r="27" fill="url(#gdots)" opacity="0.5"/><circle cx="-10" cy="-2" r="4.5" fill="#1A1A1A"/><circle cx="-8.7" cy="-3.3" r="1.5" fill="#F2EBDD"/><circle cx="10" cy="-2" r="4.5" fill="#1A1A1A"/><circle cx="11.3" cy="-3.3" r="1.5" fill="#F2EBDD"/><path d="M-6,12 L6,12 L0,18 Z" fill="#1A1A1A"/><path d="M0,18 L0,23 M-7,26 Q0,30 7,26" fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle r="59" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+</svg>

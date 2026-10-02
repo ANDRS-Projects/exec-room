@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+# Test double for `claude -p`: Coen proposes a Wren -> Iris chain, a GitHub issue and one invalid proposal
+# (public repo); Wren writes a draft, Iris writes a prompt from it; a revise prompt gets a plain answer.
+# Every call is logged to $ROOM_TEST_TMP/calls.ndjson. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+agent = args[args.index("--agent") + 1]
+prompt = args[args.index("-p") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "calls.ndjson"), "a") as log:
+    log.write(json.dumps({"agent": agent, "prompt": prompt, "agents": list(json.loads(args[args.index("--agents") + 1]))}) + "\n")
+
+
+def say(text):
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+
+
+def rec(obj):
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
+out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
+if agent == "room-wren":
+    say("Drafting the LinkedIn post.")
+    path = os.path.join(os.getcwd(), "drafts", "2026-09-26-wren-test.md")
+    out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "V1", "name": "Write", "input": {"file_path": path, "content": "x"}}]}})
+    out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "V1", "content": "ok"}]}})
+elif agent == "room-iris":
+    say("Image prompt saved.")
+    path = os.path.join(os.getcwd(), "drafts", "2026-09-26-iris-test.md")
+    out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "P1", "name": "Write", "input": {"file_path": path, "content": "x"}}]}})
+    out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "P1", "content": "ok"}]}})
+elif "revise" in prompt:
+    say("Revised as asked.")
+else:
+    say("Here is my proposal."
+        + rec({"action": "dispatch", "agent": "wren", "then": "iris", "then_brief": "Header image.", "summary": "LinkedIn post about dark mode", "brief": "Write a short LinkedIn post."})
+        + rec({"action": "github_issue", "repo": "demo-app", "summary": "Track dark mode", "title": "Add dark mode\nsecond line", "body": "Scope: **theming tokens**."})
+        + rec({"action": "github_issue", "repo": "retro-reader", "summary": "Public repo", "title": "x", "body": "y"}))
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

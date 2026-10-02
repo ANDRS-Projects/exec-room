@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+# Test double for `claude -p`: Coen proposes a dispatch to Wren; Wren writes a draft (slowly when the
+# brief says SLOW, so Stop can be tested); Coen answers the room's nudge after Wren finishes.
+# Like the real CLI, Coen's total_cost_usd is his session's running total (0.10 per message); makers cost 0.05.
+import json, os, sys, time
+
+args = sys.argv[1:]
+agent = args[args.index("--agent") + 1]
+prompt = args[args.index("-p") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+
+
+def say(text):
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+
+
+out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
+if "hit the limit" in prompt:
+    # Like Claude on a usage limit or an expired login: the reason only in the final result, exit 1, nothing on stderr.
+    out({"type": "result", "is_error": True, "num_turns": 1, "total_cost_usd": 0, "result": "You've hit your session limit · resets 12pm (Europe/Amsterdam)", "session_id": "x"})
+    sys.exit(1)
+if agent == "room-wren":
+    if "SLOW" in prompt:
+        time.sleep(5)
+    path = os.path.join(os.getcwd(), "drafts", "2026-09-26-wren-dark-mode.md")
+    out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "V1", "name": "Write", "input": {"file_path": path, "content": "x"}}]}})
+    out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "V1", "content": "ok"}]}})
+    say("Saved the LinkedIn draft.")
+elif "finished the job" in prompt:
+    say("Reviewed Wren's draft; it's ready.")
+else:
+    brief = "SLOW brief" if "slow" in prompt else "Write a LinkedIn post."
+    proposal = {"action": "dispatch", "agent": "wren", "summary": "Dark mode post", "brief": brief}
+    say("Proposal:\n```recommendation\n" + json.dumps(proposal) + "\n```\n")
+if agent == "chief-operating-officer":
+    counter = os.path.join(os.environ["ROOM_TEST_TMP"], "coen-messages")
+    n = int(open(counter).read()) + 1 if os.path.exists(counter) else 1
+    open(counter, "w").write(str(n))
+    total = round(0.10 * n, 2)
+else:
+    total = 0.05
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": total, "session_id": "x"})

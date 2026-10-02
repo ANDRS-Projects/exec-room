@@ -1,0 +1,13 @@
+node_modules/
+# Room chats and job log: private conversation data, stays on your machine.
+data/
+# Agent drafts stay local.
+drafts/
+# Configuration with owner-specific values (Notion database ids, the token reference, connectors to hide)
+room.config.json
+*.log
+.DS_Store
+__pycache__/
+# claude-mem writes a CLAUDE.md into folders it sees; only the root one is the project's.
+**/CLAUDE.md
+!/CLAUDE.md

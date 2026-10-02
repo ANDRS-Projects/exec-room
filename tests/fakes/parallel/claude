@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+# Test double for `claude -p` with rooms working in parallel: a prompt (or brief) containing SLOW takes 3s;
+# "dispatch" makes Coen propose a (slow) job for Wren; Coen answers the room's review nudge. Emits stream-json.
+import json, sys, time
+
+args = sys.argv[1:]
+agent = args[args.index("--agent") + 1]
+prompt = args[args.index("-p") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
+if "SLOW" in prompt:
+    time.sleep(3)
+if agent != "chief-operating-officer":
+    text = "Draft done."
+elif "finished" in prompt:
+    text = "Reviewed the draft."
+elif "dispatch" in prompt:
+    text = "Sending it to Wren.\n```recommendation\n" + json.dumps({"action": "dispatch", "agent": "wren", "summary": "Post", "brief": "SLOW post"}) + "\n```\n"
+else:
+    text = "Answer: " + prompt[:30]
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

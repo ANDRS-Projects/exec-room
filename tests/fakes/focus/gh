@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+# Test double for gh. `repo view`: reports PUBLIC for repos with "public" in the name, else PRIVATE (recorded in
+# gh-view.json). `issue create`: records its arguments and stdin in gh.json and returns an issue URL for its repo.
+import json, os, sys
+
+args = sys.argv[1:]
+tmp = os.environ["ROOM_TEST_TMP"]
+if args[:2] == ["repo", "view"]:
+    json.dump({"args": args}, open(os.path.join(tmp, "gh-view.json"), "w"))
+    print("PUBLIC" if "public" in args[2].lower() else "PRIVATE")
+else:
+    json.dump({"args": args, "stdin": sys.stdin.read()}, open(os.path.join(tmp, "gh.json"), "w"))
+    repo = [a.split("=", 1)[1] for a in args if a.startswith("--repo=")][0]
+    print(f"https://github.com/{repo}/issues/999")

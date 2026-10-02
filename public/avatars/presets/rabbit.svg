@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="120" height="120" role="img"><title>Rabbit</title>
+<defs>
+<pattern id="kdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A1A1A"/></pattern>
+<pattern id="gdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#C9A227"/></pattern>
+<pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r="0.45" fill="#1A1A1A" opacity="0.35"/><circle cx="5" cy="5.5" r="0.4" fill="#1A1A1A" opacity="0.25"/><circle cx="4" cy="1" r="0.35" fill="#C9A227" opacity="0.5"/></pattern>
+</defs>
+<circle r="60" fill="#F2EBDD"/><circle r="60" fill="url(#grain)"/>
+<g transform="translate(3,2)" fill="#C9A227"><ellipse cx="-13" cy="-28" rx="9" ry="25" transform="rotate(-10 -13 -28)"/><ellipse cx="13" cy="-28" rx="9" ry="25" transform="rotate(10 13 -28)"/><ellipse cy="18" rx="31" ry="28"/></g>
+<ellipse cx="-13" cy="-28" rx="4" ry="17" transform="rotate(-10 -13 -28)" fill="url(#kdots)"/><ellipse cx="13" cy="-28" rx="4" ry="17" transform="rotate(10 13 -28)" fill="url(#kdots)"/>
+<g fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><ellipse cx="-13" cy="-28" rx="9" ry="25" transform="rotate(-10 -13 -28)"/><ellipse cx="13" cy="-28" rx="9" ry="25" transform="rotate(10 13 -28)"/><ellipse cy="18" rx="31" ry="28"/><path d="M0,26 L0,31 M-7,31 Q0,36 7,31"/></g>
+<circle cx="-12" cy="12" r="4.5" fill="#1A1A1A"/><circle cx="-10.7" cy="10.7" r="1.5" fill="#F2EBDD"/><circle cx="12" cy="12" r="4.5" fill="#1A1A1A"/><circle cx="13.3" cy="10.7" r="1.5" fill="#F2EBDD"/><path d="M-4,22 L4,22 L0,27 Z" fill="#1A1A1A"/><rect x="-4" y="32" width="8" height="6" rx="1" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="1.8"/>
+<circle r="59" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+</svg>

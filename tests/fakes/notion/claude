@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+# Test double for `claude -p`: Coen proposes a 3-post Notion package, an older single-post draft, one that
+# tries to set Status/Scheduled Date itself, one with an unknown channel and one aimed at a non-Output DB
+# (the room only takes the first three blocks, so the last two go in a second message); a third message
+# proposes Notion pages: a long one (more than 100 blocks), one under an Output DB and one without a page id.
+import json
+
+out = lambda o: print(json.dumps(o), flush=True)
+
+
+def rec(obj):
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
+import os
+counter = os.path.join(os.environ["ROOM_TEST_TMP"], "notion-turns")
+turn = int(open(counter).read()) if os.path.exists(counter) else 0
+open(counter, "w").write(str(turn + 1))
+first_text = ("Drafts."
+        + rec({"action": "notion_draft", "database": "social-drafts", "summary": "Dark mode package", "account": "Owner (personal)", "image_prompt": "Risograph moon",
+               "posts": [{"channel": "LinkedIn", "title": "Dark mode\nis here", "content": "Product A now has dark mode. " * 80},
+                         {"channel": "X", "title": "Dark mode thread", "content": "Tweet 1: 1/ Dark mode.\nTweet 2: 2/ Done."},
+                         {"channel": "Substack Note", "title": "Dark mode note", "content": "A short note.", "account": "Substack"}]})
+        + rec({"action": "notion_draft", "database": "social-drafts", "summary": "Legacy single post", "title": "Old style",
+               "channel": "LinkedIn", "account": "Main", "content": "One post."})
+        + rec({"action": "notion_draft", "database": "output-log-1", "summary": "Sneaky", "title": "x", "channel": "X", "content": "y",
+               "status": "approved", "Scheduled Date": "2026-09-27", "properties": {"Status": {"status": {"name": "approved"}}}}))
+second_text = ("More."
+        + rec({"action": "notion_draft", "database": "social-drafts", "summary": "Bad channel", "posts": [{"channel": "TikTok", "title": "x", "content": "y"}]})
+        + rec({"action": "notion_draft", "database": "99999999-9999-4999-8999-999999999999", "summary": "Consulting Pipeline",
+               "title": "x", "channel": "X", "content": "y"}))
+long_md = "# Tiny tools\n\nIntro with **bold**, `code` and a [link](https://example.com).\n\n" + "\n".join(f"- point {i}" for i in range(120)) + "\n\n```\nnpm test\n```\n\n---\n> quoted"
+third_text = ("Pages."
+        + rec({"action": "notion_page", "parent": "https://app.notion.com/p/Exec-Team-Meetings-22222222222242228222222222222201?pvs=204",
+               "summary": "Long article", "title": "Tiny tools,\nlong read", "content": long_md, "properties": {"Status": "approved"}})
+        + rec({"action": "notion_page", "parent": "11111111-1111-4111-8111-111111111105", "summary": "Into an Output DB", "title": "x", "content": "y"})
+        + rec({"action": "notion_page", "parent": "Exec Team Meetings", "summary": "No id", "title": "x", "content": "y"}))
+text = [first_text, second_text, third_text][min(turn, 2)]
+out({"type": "system", "subtype": "init", "session_id": "coen-session"})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "coen-session"})

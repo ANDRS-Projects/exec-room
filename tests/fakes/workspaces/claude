@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+# Test double for `claude -p` in rooms: logs which agents and room note each run gets to
+# $ROOM_TEST_TMP/space-calls.ndjson; Coen proposes a dispatch to Wren and one to Iris. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+agent = args[args.index("--agent") + 1]
+note = args[args.index("--append-system-prompt") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "space-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"agent": agent, "agents": sorted(json.loads(args[args.index("--agents") + 1])),
+                          "room": note.split('in the room "')[1].split('"')[0] if 'in the room "' in note else None,
+                          "members_line": "This room's members are only" in note,
+                          "about": note.split('describes this room as: "')[1].split('"')[0] if 'describes this room as: "' in note else None,
+                         
+                          "move_note": "just moved this chat" in args[args.index("-p") + 1]}) + "\n")
+
+
+def rec(obj):
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
+out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
+text = "Done." if agent != "chief-operating-officer" or "finished" in args[args.index("-p") + 1] else "Proposals." + rec(
+    {"action": "dispatch", "agent": "wren", "summary": "Post", "brief": "Write it."}) + rec(
+    {"action": "dispatch", "agent": "iris", "summary": "Image", "brief": "Draw it."})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

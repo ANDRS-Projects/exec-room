@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="120" height="120" role="img"><title>Bear</title>
+<defs>
+<pattern id="kdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A1A1A"/></pattern>
+<pattern id="gdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#C9A227"/></pattern>
+<pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r="0.45" fill="#1A1A1A" opacity="0.35"/><circle cx="5" cy="5.5" r="0.4" fill="#1A1A1A" opacity="0.25"/><circle cx="4" cy="1" r="0.35" fill="#C9A227" opacity="0.5"/></pattern>
+</defs>
+<circle r="60" fill="#F2EBDD"/><circle r="60" fill="url(#grain)"/>
+<g transform="translate(3,2)" fill="#C9A227"><circle cx="-25" cy="-26" r="12"/><circle cx="25" cy="-26" r="12"/></g>
+<g fill="#C9A227" stroke="#1A1A1A" stroke-width="2.2"><circle cx="-25" cy="-26" r="12"/><circle cx="25" cy="-26" r="12"/></g>
+<circle cx="-25" cy="-26" r="6" fill="url(#kdots)"/><circle cx="25" cy="-26" r="6" fill="url(#kdots)"/>
+<g transform="translate(3,2)" fill="#C9A227"><ellipse cy="6" rx="36" ry="34"/></g>
+<g fill="#C9A227"><ellipse cy="6" rx="36" ry="34"/></g>
+
+<g fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><ellipse cy="6" rx="36" ry="34"/></g>
+<ellipse cy="20" rx="14" ry="11" fill="#F2EBDD"/><ellipse cy="20" rx="15" ry="12" fill="none" stroke="#1A1A1A" stroke-width="2.2"/><ellipse cy="15" rx="6" ry="4" fill="#1A1A1A"/><path d="M0,18 L0,24 M-6,27 Q0,31 6,27" fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="-13" cy="-2" r="4.5" fill="#1A1A1A"/><circle cx="-11.7" cy="-3.3" r="1.5" fill="#F2EBDD"/><circle cx="13" cy="-2" r="4.5" fill="#1A1A1A"/><circle cx="14.3" cy="-3.3" r="1.5" fill="#F2EBDD"/>
+<circle r="59" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+</svg>

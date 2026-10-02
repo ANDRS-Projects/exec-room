@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img"><title>Exec Room</title>
+<defs>
+<pattern id="grain" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.9" fill="#1A1A1A" opacity="0.35"/><circle cx="3" cy="3" r="0.6" fill="#1A1A1A" opacity="0.2"/></pattern>
+<pattern id="gdots" width="3.2" height="3.2" patternUnits="userSpaceOnUse"><circle cx="1.6" cy="1.6" r="1" fill="#C9A227"/></pattern>
+</defs>
+<rect x="2" y="2" width="60" height="60" rx="16" fill="#1A1A2E"/>
+<circle cx="26" cy="34" r="15" fill="#F4EFE6"/>
+<circle cx="40" cy="28" r="15" fill="#C9A227" opacity="0.92"/>
+<circle cx="40" cy="28" r="15" fill="url(#grain)"/>
+<path d="M33 18.4a15 15 0 0 1 0 25.2a15 15 0 0 1 0-25.2z" fill="url(#gdots)" opacity="0.9"/>
+</svg>
