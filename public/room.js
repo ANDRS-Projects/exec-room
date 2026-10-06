@@ -1327,6 +1327,7 @@ function openSpaceEditor(w) {
   const access = (w && w.access) || { files: [], sites: [], webSearch: false, notion: false, m365: false };
   accessLists.files = [...access.files];
   accessLists.sites = [...access.sites];
+  editingFolder = null;
   renderAccessList('files');
   renderAccessList('sites');
   $('access-websearch').checked = access.webSearch;
@@ -1352,6 +1353,7 @@ function openSpaceEditor(w) {
     return label;
   }));
   places = targets.notionPlaces.map((p) => ({ ...p }));
+  editingPlace = null;
   renderPlaces();
   $('targets-notion').hidden = !notionOn;
   $('targets-notion-off').hidden = notionOn;
@@ -1376,6 +1378,9 @@ function syncEveryone() {
 // Folders and sites as editable lists; the server checks them (real folders, not too broad; exact site names).
 const accessLists = { files: [], sites: [], repos: [], publicRepos: [], allowedRecipients: [] };   // repos: the private ones
 let places = [];   // Notion places: { id or url, name, for }
+let editingPlace = null;   // index of the place open for editing in its row
+let editingFolder = null;  // the same for "Folders it can read"
+let dragPlace = null;      // index of the place being dragged
 const ACCESS_UI = {
   files: { list: 'access-files', input: 'access-file-input', add: 'access-file-add', error: 'access-file-error', label: 'Folders it can read', empty: 'Only drafts/' },
   sites: { list: 'access-sites', input: 'access-site-input', add: 'access-site-add', error: 'access-site-error', label: 'Sites it can open', empty: 'None: opening web pages is off' },
@@ -1410,11 +1415,15 @@ function showSpaceError(message, section) {
 // Text typed in an add box but never added; the save stops and names it rather than dropping it.
 function unaddedValue() {
   const quote = (v) => (v.length > 60 ? `${v.slice(0, 57)}…` : v);
+  // A folder left open for editing counts too: its box isn't in the form until Done.
+  if (editingFolder !== null) return { section: 'files', input: 'access-file-edit', message: `“${quote(accessLists.files[editingFolder])}” under “${ACCESS_UI.files.label}” is still open for editing. Click Done or Cancel on it, then save.` };
   for (const [kind, ui] of Object.entries(ACCESS_UI)) {
     const value = $(ui.input).value.trim();
     if (value) return { section: kind, input: ui.input, message: `“${quote(value)}” under “${ui.label}” isn't added yet. Click ${$(ui.add).textContent}, or clear the box, then save.` };
   }
   if ($('targets-notion').hidden) return null;
+  // A place left open for editing counts too: its boxes aren't in the form until Done.
+  if (editingPlace !== null) return { section: 'places', input: 'targets-place-edit-name', message: `“${quote(places[editingPlace].name)}” under “Notion places for pages” is still open for editing. Click Done or Cancel on it, then save.` };
   const input = PLACE_INPUTS.find((id) => $(id).value.trim());
   if (!input) return null;
   return { section: 'places', input, message: `“${quote($(input).value.trim())}” under “Notion places for pages” isn't added yet. Click Add place, or clear the boxes, then save.` };
@@ -1460,11 +1469,66 @@ function renderAccessList(kind) {
     remove.type = 'button';
     remove.title = `Remove ${value}`;
     remove.setAttribute('aria-label', `Remove ${value}`);
-    remove.addEventListener('click', () => { accessLists[kind].splice(i, 1); renderAccessList(kind); });
-    item.append(el('code', null, value), remove);
-    list.appendChild(item);
+    remove.addEventListener('click', () => {
+      accessLists[kind].splice(i, 1);
+      if (kind === 'files' && editingFolder !== null && i < editingFolder) editingFolder -= 1;
+      renderAccessList(kind);
+    });
+    item.append(el('code', null, value));
+    // Folders are long and easy to mistype, so they get a pencil; the other lists are quicker to remove and re-add.
+    if (kind === 'files') {
+      const edit = el('button', 'access-remove row-change', '✎');
+      edit.type = 'button';
+      edit.title = `Edit ${value}`;
+      edit.setAttribute('aria-label', `Edit ${value}`);
+      edit.addEventListener('click', () => {
+        editingFolder = i;
+        renderAccessList(kind);
+        $('access-file-edit').focus();
+      });
+      item.append(edit);
+    }
+    item.append(remove);
+    list.appendChild(kind === 'files' && i === editingFolder ? folderEditRow(value, i) : item);
   });
   updateSpaceSummary();
+}
+
+// A folder row opened into a box, like a place: Done applies it to the form, Cancel or Esc leaves it as it was.
+function folderEditRow(value, i) {
+  const item = el('li', 'row-edit');
+  const input = el('input');
+  input.id = 'access-file-edit';
+  input.value = value;
+  input.setAttribute('aria-label', 'Folder');
+  input.autocomplete = 'off';
+  const close = () => {
+    editingFolder = null;
+    renderAccessList('files');
+    const row = $('access-files').children[Math.min(i, accessLists.files.length - 1)];
+    if (row) row.querySelector('.row-change').focus();
+  };
+  const apply = () => {
+    const folder = input.value.trim().replace(/\/+$/, '');
+    if (!folder) { showSpaceError('A folder needs its path.', 'files'); return; }
+    // Changed into one that's already listed: the two become one.
+    if (accessLists.files.some((f, at) => f === folder && at !== i)) accessLists.files.splice(i, 1);
+    else accessLists.files[i] = folder;
+    clearSpaceErrors();
+    close();
+  };
+  const done = el('button', 'ghost', 'Done');
+  done.type = 'button';
+  done.addEventListener('click', apply);
+  const cancel = el('button', 'ghost', 'Cancel');
+  cancel.type = 'button';
+  cancel.addEventListener('click', close);
+  item.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); apply(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+  });
+  item.append(input, done, cancel);
+  return item;
 }
 
 for (const kind of Object.keys(ACCESS_UI)) {
@@ -1490,16 +1554,124 @@ function renderPlaces() {
   const list = $('targets-places');
   list.replaceChildren();
   if (!places.length) list.appendChild(el('li', 'access-empty', 'None: no Notion pages from this room'));
-  places.forEach((p, i) => {
-    const item = el('li');
-    const remove = el('button', 'access-remove', '×');
-    remove.type = 'button';
-    remove.setAttribute('aria-label', `Remove ${p.name}`);
-    remove.addEventListener('click', () => { places.splice(i, 1); renderPlaces(); });
-    item.append(el('span', null, p.for ? `${p.name} · ${p.for}` : p.name), remove);
-    list.appendChild(item);
-  });
+  places.forEach((p, i) => list.appendChild(i === editingPlace ? placeEditRow(p, i) : placeRow(p, i)));
   updateSpaceSummary();
+}
+
+// A saved place only has its page id; shown as a link so the box holds something that can be pasted back.
+const placeLink = (p) => p.url || `https://www.notion.so/${p.id}`;
+
+function movePlace(from, to) {
+  if (to < 0 || to >= places.length || to === from) return false;
+  places.splice(to, 0, places.splice(from, 1)[0]);
+  return true;
+}
+
+// A row: drag it (or use the arrow keys on its grip) to reorder, the pencil to change it, × to remove it.
+function placeRow(p, i) {
+  const item = el('li', 'place-row');
+  // A span, not a button: Firefox won't start a drag from a button.
+  const grip = el('span', 'place-grip', '⠿');
+  grip.tabIndex = 0;
+  grip.setAttribute('role', 'button');
+  grip.title = 'Drag to reorder, or use the up and down arrow keys';
+  grip.setAttribute('aria-label', `Move ${p.name}, ${i + 1} of ${places.length}: up and down arrow keys`);
+  grip.addEventListener('keydown', (e) => {
+    const to = { ArrowUp: i - 1, ArrowDown: i + 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    if (editingPlace !== null || !movePlace(i, to)) return;
+    renderPlaces();
+    $('targets-places').children[to].querySelector('.place-grip').focus();
+  });
+  const edit = el('button', 'access-remove row-change', '✎');
+  edit.type = 'button';
+  edit.title = `Edit ${p.name}`;
+  edit.setAttribute('aria-label', `Edit ${p.name}`);
+  edit.addEventListener('click', () => {
+    editingPlace = i;
+    renderPlaces();
+    $('targets-place-edit-name').focus();
+  });
+  const remove = el('button', 'access-remove', '×');
+  remove.type = 'button';
+  remove.setAttribute('aria-label', `Remove ${p.name}`);
+  remove.addEventListener('click', () => {
+    places.splice(i, 1);
+    if (editingPlace !== null && i < editingPlace) editingPlace -= 1;
+    renderPlaces();
+  });
+  item.append(grip, el('span', 'place-text', p.for ? `${p.name} · ${p.for}` : p.name), edit, remove);
+  // No dragging while a row is open for editing: its index would move under it.
+  if (editingPlace !== null) return item;
+  item.draggable = true;
+  const clearMarks = () => $('targets-places').querySelectorAll('.drop-before, .drop-after').forEach((n) => n.classList.remove('drop-before', 'drop-after'));
+  item.addEventListener('dragstart', (e) => {
+    dragPlace = i;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', p.name);
+    item.classList.add('dragging');
+  });
+  item.addEventListener('dragover', (e) => {
+    if (dragPlace === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const box = item.getBoundingClientRect();
+    clearMarks();
+    item.classList.add(e.clientY > box.top + box.height / 2 ? 'drop-after' : 'drop-before');
+  });
+  item.addEventListener('drop', (e) => {
+    if (dragPlace === null) return;
+    e.preventDefault();
+    const to = item.classList.contains('drop-after') ? i + 1 : i;
+    movePlace(dragPlace, dragPlace < to ? to - 1 : to);
+  });
+  // Fires on the dragged row after a drop or a cancelled drag; the list is redrawn here, not in drop, so this row is still there to get it.
+  item.addEventListener('dragend', () => { dragPlace = null; renderPlaces(); });
+  return item;
+}
+
+// The same row opened into boxes. Done applies it to the form (the room's Save stores it); Cancel or Esc leaves it as it was.
+function placeEditRow(p, i) {
+  const item = el('li', 'row-edit');
+  const box = (value, label) => {
+    const input = el('input');
+    input.value = value;
+    input.placeholder = label;
+    input.setAttribute('aria-label', label);
+    input.autocomplete = 'off';
+    return input;
+  };
+  const link = box(placeLink(p), 'Notion page link');
+  const name = box(p.name, 'Name');
+  name.id = 'targets-place-edit-name';
+  const what = box(p.for || '', "What it's for (optional)");
+  const close = () => {
+    editingPlace = null;
+    renderPlaces();
+    $('targets-places').children[i].querySelector('.row-change').focus();
+  };
+  const apply = () => {
+    const url = link.value.trim();
+    if (!url || !name.value.trim()) { showSpaceError('A place needs its Notion link and a name.', 'places'); return; }
+    // An untouched link keeps the saved page id.
+    places[i] = { ...(p.id && url === placeLink(p) ? { id: p.id } : { url }), name: name.value.trim(), for: what.value.trim() };
+    clearSpaceErrors();
+    close();
+  };
+  const done = el('button', 'ghost', 'Done');
+  done.type = 'button';
+  done.addEventListener('click', apply);
+  const cancel = el('button', 'ghost', 'Cancel');
+  cancel.type = 'button';
+  cancel.addEventListener('click', close);
+  // Enter would submit the whole form and Esc would close the dialog; here they belong to the row.
+  item.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); apply(); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+  });
+  item.append(link, name, what, done, cancel);
+  return item;
 }
 
 // Live summary on top, a count per section and per tab, from the lists and boxes as they are now.
