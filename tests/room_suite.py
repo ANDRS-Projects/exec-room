@@ -1096,6 +1096,54 @@ try:
         out("V fresh default room says what it's for", [(w["name"], w["description"]) for w in data["workspaces"]])
     finally:
         s.stop()
+    # L: the CLA check (.github/workflows/cla.yml). It runs from main on pull requests from forks, so it must only be
+    # able to read: no write permission, no checkout, no shell step. Its script is run in node against made-up pull
+    # requests (tests/cla_check.js fakes the GitHub API): who has signed, who signs here, and what may not be done to
+    # the signatures file.
+    cla_path = os.path.join(opts.root, ".github", "workflows", "cla.yml")
+    cla_yml = open(cla_path).read()
+    out("L workflow can only read", {"triggers": re.findall(r"^  (\w+):$", cla_yml.split("\njobs:")[0], re.M),
+                                     "permissions": sorted(set(re.findall(r"^\s+([a-z-]+): (read|write)\b", cla_yml, re.M))),
+                                     "top-level permissions": re.findall(r"^permissions: (.*)$", cla_yml, re.M),
+                                     "actions": re.findall(r"^\s+uses: ([^@\s]+)@[0-9a-f]{40} # v", cla_yml, re.M),
+                                     "all uses": len(re.findall(r"^\s+(?:- )?uses:", cla_yml, re.M)),
+                                     "shell steps": len(re.findall(r"^\s+(?:- )?run:", cla_yml, re.M)),
+                                     "expressions": len(re.findall(r"\$\{\{", cla_yml))})
+    sig = lambda login, version=1: f"- @{login}, 2026-11-20: I have read the Contributor License Agreement (version {version}) and I agree to it."
+    def adds(*added, deletions=0):
+        return [{"filename": "CLA-SIGNATURES.md", "status": "modified", "deletions": deletions,
+                 "patch": f"@@ -15,0 +16,{len(added)} @@\n" + "\n".join("+" + l for l in added)}]
+    cla_cases = [
+        {"name": "maintainer", "opener": "carolinevrauwdeunt-lab"},
+        {"name": "dependabot", "opener": "dependabot[bot]"},
+        {"name": "new, no signature", "opener": "alice"},
+        {"name": "new, signs here", "opener": "alice", "files": adds(sig("alice"))},
+        {"name": "new, signs here, no signatures file on the base branch", "opener": "alice", "base": None, "files": adds(sig("alice"))},
+        {"name": "signs with other capitals", "opener": "alice", "files": adds(sig("Alice"))},
+        {"name": "signed earlier", "opener": "alice", "base": ["alice"]},
+        {"name": "signed an older version only", "opener": "alice", "base": [["alice", 0]]},
+        {"name": "signs for someone else", "opener": "alice", "files": adds(sig("bob"))},
+        {"name": "signs for self and someone else", "opener": "alice", "files": adds(sig("alice"), sig("bob"))},
+        {"name": "signs another version", "opener": "alice", "files": adds(sig("alice", 2))},
+        {"name": "adds other text to the file", "opener": "alice", "files": adds(sig("alice"), "thanks!")},
+        {"name": "removes a line", "opener": "alice", "base": ["alice"], "files": adds(deletions=1)},
+        {"name": "deletes the file", "opener": "alice", "base": ["alice"], "files": [{"filename": "CLA-SIGNATURES.md", "status": "removed", "deletions": 16, "patch": "-x"}]},
+        {"name": "renames the file", "opener": "alice", "base": ["alice"], "files": [{"filename": "x.md", "previous_filename": "CLA-SIGNATURES.md", "status": "renamed", "deletions": 0}]},
+        {"name": "a signature line in another file", "opener": "alice", "files": [{"filename": "README.md", "status": "modified", "deletions": 0, "patch": "+" + sig("alice")}]},
+        {"name": "commit by an unsigned other author", "opener": "alice", "base": ["alice"], "commits": ["alice", "bob"]},
+        {"name": "commit by a signed other author", "opener": "alice", "base": ["alice", "bob"], "commits": ["alice", "Bob"]},
+        {"name": "commit by the maintainer in an outside pull request", "opener": "alice", "base": ["alice"], "commits": ["alice", "carolinevrauwdeunt-lab"]},
+        {"name": "unsigned opener, only maintainer-authored commits", "opener": "mallory", "commits": ["carolinevrauwdeunt-lab"]},
+        {"name": "commit email not linked", "opener": "alice", "base": ["alice"], "commits": ["alice", None]},
+        {"name": "maintainer's pull request with an unsigned author's commit", "opener": "carolinevrauwdeunt-lab", "commits": ["carolinevrauwdeunt-lab", "bob"]},
+        {"name": "more than 250 commits", "opener": "alice", "base": ["alice"], "count": 251},
+    ]
+    done = subprocess.run(["node", os.path.join(TESTS, "cla_check.js"), cla_path, json.dumps(cla_cases)], capture_output=True, text=True, check=True)
+    for name, result in json.loads(done.stdout).items():
+        out(f"L {name}", result)
+    # The example line in the signatures file must not count as a signature, and the file starts without any.
+    signatures = open(os.path.join(opts.root, "CLA-SIGNATURES.md")).read()
+    out("L signatures file", (len(re.findall(r"^- @", signatures, re.M)), signatures.endswith("\n"), "version 1" in signatures))
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 

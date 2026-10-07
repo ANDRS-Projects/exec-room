@@ -68,7 +68,8 @@ Then include the full `npm test` output in your PR description so reviewers can 
 
 ### Submitting a Pull Request
 
-We do not accept outside pull requests until a contributor agreement is in place.
+Your first pull request also carries your signature under the contributor agreement: see
+[License and Contributor Agreement](#license-and-contributor-agreement) below.
 
 1. **Push your branch** to your fork
 2. **Open a pull request** against `main`
@@ -86,6 +87,38 @@ A maintainer will review your PR. We may ask for changes before merging.
 - **JavaScript:** Use the existing style (see `room-server.js` and `public/room.js`)
 - **Python:** Follow PEP 8 (tests use standard Python conventions)
 - **Markdown:** Wrap lines at ~100 characters; use clear headers and code blocks
+
+## License and Contributor Agreement
+
+Exec Room is licensed under the AGPL-3.0, with a commercial license offered alongside it (see the
+[README](README.md#license)). To make that possible, contributions are accepted under the
+[Contributor License Agreement](CLA.md) (CLA).
+
+You sign once, in your first pull request:
+
+1. Read [CLA.md](CLA.md).
+2. In the same pull request as your change, add one line at the end of
+   [CLA-SIGNATURES.md](CLA-SIGNATURES.md), with your GitHub username and today's date, exactly in
+   this form:
+
+   ```
+   - @your-username, YYYY-MM-DD: I have read the Contributor License Agreement (version 1) and I agree to it.
+   ```
+
+3. The **CLA** check on the pull request passes. Later pull requests don't ask again, unless the
+   agreement gets a new version; everyone then signs the new version in the same way.
+
+What the check looks at:
+
+- **Only your own line.** Add your signature and nothing else to that file; don't change or remove
+  other lines. Nobody can sign for someone else.
+- **Every commit author.** If the pull request has commits by someone else, that person must have
+  signed before, in a pull request of their own.
+- **A linked email.** Commit with an email address that is linked to your GitHub account, or the
+  check can't tell who the author is.
+
+Your signature line (GitHub username and date) is public, like the rest of the repository. A pull
+request is only merged once the CLA check passes.
 
 ## Security
 
@@ -112,6 +145,7 @@ Pushes and pull requests to `main` run:
 - **Gitleaks** — scans for secrets in commit history
 - **Trivy** — checks for unfixed critical CVEs in dependencies (also weekly)
 - **Pin actions** — on pull requests that change `.github/workflows/`, checks that actions are pinned to commit SHAs
+- **CLA** — on pull requests, checks that the person who opened it and every commit author has signed the contributor agreement (see above)
 
 The test suite doesn't run in CI yet, which is why the PR description needs the `npm test` output.
 
