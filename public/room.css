@@ -296,9 +296,11 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 /* An animal another agent already has: dimmed, still selectable (its title says who has it). */
 .avatar-option.in-use img { opacity: 0.4; }
 .avatar-option.in-use:hover img, .avatar-option.in-use:has(input:checked) img { opacity: 1; }
-/* A built-in agent's own animal: shown as taken, not an option. */
-.avatar-option.taken { cursor: not-allowed; }
+/* The built-in agents' own animals: on their own line under a label, each with its agent's name; not options. */
+.avatar-note { flex-basis: 100%; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.avatar-option.taken { cursor: default; flex-direction: column; align-items: center; gap: 2px; border-radius: 0; }
 .avatar-option.taken img { opacity: 0.4; filter: grayscale(1); }
+.avatar-taken-name { font-size: 11px; color: var(--muted); }
 .avatar-option:has(input:focus-visible) { outline: 2px solid var(--coen); outline-offset: 2px; }
 .rec-field .rec-avatar { width: 28px; height: 28px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
 .agent-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--surface); }
