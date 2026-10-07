@@ -36,6 +36,15 @@
       <div class="empty" id="empty">Message Coen. Add agents to the room to give him advisors and makers.</div>
     </div>
     <form class="composer" id="composer">
+      <div class="attach-row" id="attach-row" hidden>
+        <div class="attach-files" id="attach-files"></div>
+        <p class="attach-note" id="attach-note"></p>
+      </div>
+      <p class="attach-error" id="attach-error" role="alert" hidden></p>
+      <input type="file" id="attach-input" multiple hidden accept=".txt,.md,.csv,.pdf,.png,.jpg,.jpeg,.gif,.webp">
+      <button type="button" id="attach-btn" class="attach" aria-label="Attach a file" title="Attach a file">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.9-8.9a3.7 3.7 0 0 1 5.2 5.2l-8.9 8.9a1.8 1.8 0 0 1-2.6-2.6l8.2-8.2"/></svg>
+      </button>
       <textarea id="input" rows="1" placeholder="Message the team… (Shift+Enter for a new line)"></textarea>
       <button type="submit" id="send">Send</button>
       <button type="button" id="stop" class="stop" hidden>Stop</button>

@@ -50,6 +50,8 @@ function renderDirty() {
   const pinned = scrollers.map((el) => el.scrollHeight - el.scrollTop - el.clientHeight < 80);
   for (const b of dirty) {
     b.el.innerHTML = renderMd(b.stripRecs ? stripRecs(b.raw) : b.raw);
+    // Nothing to copy from a message that is only a proposal block.
+    if (b.copy) b.copy.hidden = !bubbleText(b);
     if (b.stripRecs) updateProposalHint(b);
   }
   dirty.clear();
@@ -117,11 +119,43 @@ function addText(holder, text) {
   if (!holder.bubble) {
     if (!text.trim()) return;
     holder.bubble = { el: el('div', 'bubble md'), raw: '', stripRecs: Boolean(holder.isCoen || holder.inline), owner: holder.inline ? nameOf(holder.who) : 'Coen' };
-    holder.el.appendChild(holder.bubble.el);
+    holder.bubble.copy = copyButton(holder.bubble);
+    // The bubble and its copy icon share a box as wide as the bubble, so the icon sits under its right edge.
+    const reply = el('div', 'reply');
+    reply.append(holder.bubble.el, holder.bubble.copy);
+    holder.el.appendChild(reply);
     holder.tools = null;
   }
   holder.bubble.raw += holder.bubble.raw ? text : text.replace(/^\s+/, '');
   renderSoon(holder.bubble);
+}
+
+// What a reply says, as it was written (markdown), without the proposal blocks that are shown as cards.
+const bubbleText = (b) => (b.stripRecs ? stripRecs(b.raw) : b.raw.trim());
+
+// A small copy icon under each reply. The result is said in words next to it, since hover text is easy to miss.
+const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+function copyButton(bubble) {
+  const btn = el('button', 'copy-btn');
+  btn.type = 'button';
+  btn.title = 'Copy';
+  btn.setAttribute('aria-label', 'Copy this reply');
+  btn.innerHTML = COPY_ICON;
+  const said = el('span', 'copy-said');
+  said.setAttribute('aria-live', 'polite');
+  btn.appendChild(said);
+  let timer = null;
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(bubbleText(bubble));
+      said.textContent = 'Copied';
+    } catch {
+      said.textContent = "Couldn't copy: select the text instead";
+    }
+    clearTimeout(timer);
+    timer = setTimeout(() => { said.textContent = ''; }, 2500);
+  });
+  return btn;
 }
 
 // ---- Turns, Coen's messages and consult cards
@@ -140,10 +174,12 @@ function placeGroup(g) {
 }
 
 // `auto`: a turn the room started itself (Coen's nudge after a maker finished), not a message from the owner.
-function startTurn(text, auto = false) {
+function startTurn(text, auto = false, files = null) {
   const userMsg = el('div', auto ? 'msg room' : 'msg user');
   // `auto` is true for Coen's nudge and 'chain' for a chain's next maker.
   userMsg.appendChild(el('div', 'bubble', auto === 'chain' ? `Room: ${text}` : auto ? `Room → Coen: ${text}` : text));
+  // Names and sizes only: the files themselves were deleted when that turn ended.
+  if (Array.isArray(files) && files.length) userMsg.appendChild(el('div', 'attached', `Attached: ${files.map((f) => `${f.name} (${fileSize(f.size)})`).join(', ')}`));
   appendToThread(userMsg);
   if (turn && turn.group) turn.group.open = false;
   turnCount += 1;
@@ -264,7 +300,7 @@ function endTurn(ev) {
 
 function handle(ev) {
   if (ev.type === 'user') {
-    startTurn(ev.text, ev.auto || false);
+    startTurn(ev.text, ev.auto || false, ev.files);
   } else if (ev.type === 'break') {
     if (ev.who === 'coen') coenMsg = null;
     else { const card = cardFor(ev); if (card) { card.bubble = null; card.tools = null; } }
@@ -643,6 +679,7 @@ $('draft-close').addEventListener('click', () => viewer.close());
 
 function setBusy(busy) {
   sendBtn.disabled = busy;
+  attachBtn.disabled = busy;
   stopBtn.hidden = !busy;
   coenStatus.hidden = !busy;
 }
@@ -652,17 +689,87 @@ function growInput() {
   input.style.height = Math.min(input.scrollHeight, 220) + 'px';
 }
 
+// ---- Attached files: they go with one message, agents can read them for that turn only, and the server deletes
+// them when the turn ends. The limits come from the server (/api/room); these are the same values as a fallback.
+
+const attachBtn = $('attach-btn');
+const attachInput = $('attach-input');
+const attachRow = $('attach-row');
+const attachError = $('attach-error');
+let attachLimits = { maxFiles: 3, maxBytes: 5 * 1024 * 1024, extensions: ['txt', 'md', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'] };
+let picked = [];   // File objects waiting to go with the next message
+
+function fileSize(n) {
+  return n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function attachProblem(text) {
+  attachError.textContent = text || '';
+  attachError.hidden = !text;
+}
+
+function drawPicked() {
+  $('attach-files').replaceChildren(...picked.map((file) => {
+    const chip = el('span', 'file-chip');
+    const remove = el('button', 'file-remove', '×');
+    remove.type = 'button';
+    remove.setAttribute('aria-label', `Remove ${file.name}`);
+    remove.addEventListener('click', () => {
+      picked = picked.filter((f) => f !== file);
+      attachProblem('');
+      drawPicked();
+    });
+    chip.append(el('span', 'file-name', file.name), el('span', 'file-size', fileSize(file.size)), remove);
+    return chip;
+  }));
+  const many = picked.length > 1;
+  $('attach-note').textContent = `Agents can read ${many ? 'these files' : 'this file'} for this message only. ${many ? 'They are' : 'It is'} deleted when the turn ends; what was read from ${many ? 'them' : 'it'} stays in the chat.`;
+  attachRow.hidden = !picked.length;
+}
+
+function pickFiles(list) {
+  const problems = [];
+  for (const file of list) {
+    const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : '';
+    if (!attachLimits.extensions.includes(ext)) problems.push(`"${file.name}" can't be attached: only ${attachLimits.extensions.map((e) => `.${e}`).join(', ')} files.`);
+    else if (!file.size) problems.push(`"${file.name}" is empty.`);
+    else if (file.size > attachLimits.maxBytes) problems.push(`"${file.name}" is larger than ${attachLimits.maxBytes / 1024 / 1024} MB.`);
+    else if (picked.length >= attachLimits.maxFiles) problems.push(`At most ${attachLimits.maxFiles} files per message: "${file.name}" was left out.`);
+    else picked.push(file);
+  }
+  attachProblem(problems.join(' '));
+  drawPicked();
+}
+
+const asBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+  reader.onerror = () => reject(new Error(`Couldn't read "${file.name}".`));
+  reader.readAsDataURL(file);
+});
+
+attachBtn.addEventListener('click', () => attachInput.click());
+attachInput.addEventListener('change', () => {
+  pickFiles([...attachInput.files]);
+  attachInput.value = '';
+});
+
 async function send() {
   const text = input.value.trim();
-  if (!text || sendBtn.disabled) return;
+  if (sendBtn.disabled) return;
+  if (!text) {
+    if (picked.length) attachProblem(`Write a question to go with the file${picked.length > 1 ? 's' : ''}.`);
+    return;
+  }
   input.value = '';
   growInput();
   setBusy(true);
   try {
+    const files = await Promise.all(picked.map(async (file) => ({ name: file.name, data: await asBase64(file) })));
     const res = await fetch('/api/coen', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(files.length ? { text, files } : { text }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -677,6 +784,9 @@ async function send() {
     setBusy(false);
     return;
   }
+  picked = [];
+  attachProblem('');
+  drawPicked();
   await attach();
 }
 
@@ -1892,6 +2002,10 @@ $('space-remove').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/room');
     const room = await res.json();
+    if (room.attachments) {
+      attachLimits = room.attachments;
+      attachInput.accept = attachLimits.extensions.map((e) => `.${e}`).join(',');
+    }
     for (const ev of room.events) handle(ev);
     // A finished job with no end event was cut off (the server stopped mid-answer).
     if (turn && !turn.ended) endTurn({ type: 'end', status: 'interrupted' });
