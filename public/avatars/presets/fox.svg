@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="120" height="120" role="img"><title>Fox</title>
+<defs>
+<pattern id="kdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A1A1A"/></pattern>
+<pattern id="gdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#C9A227"/></pattern>
+<pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r="0.45" fill="#1A1A1A" opacity="0.35"/><circle cx="5" cy="5.5" r="0.4" fill="#1A1A1A" opacity="0.25"/><circle cx="4" cy="1" r="0.35" fill="#C9A227" opacity="0.5"/></pattern>
+</defs>
+<circle r="60" fill="#F2EBDD"/><circle r="60" fill="url(#grain)"/>
+<g transform="translate(3,2)" fill="#C9A227"><path d="M-36,-12 L-30,-50 L-6,-30 Z M36,-12 L30,-50 L6,-30 Z"/><path d="M-42,-16 Q0,-46 42,-16 Q36,12 0,38 Q-36,12 -42,-16 Z"/></g>
+<path d="M-28,-20 L-27,-42 L-13,-30 Z M28,-20 L27,-42 L13,-30 Z" fill="url(#kdots)"/>
+<path d="M-26,4 Q0,-4 26,4 Q16,28 0,38 Q-16,28 -26,4 Z" fill="#F2EBDD"/>
+<g fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M-36,-12 L-30,-50 L-6,-30 M36,-12 L30,-50 L6,-30"/><path d="M-42,-16 Q0,-46 42,-16 Q36,12 0,38 Q-36,12 -42,-16 Z"/><path d="M-26,4 Q0,-4 26,4"/></g>
+<circle cx="-15" cy="-10" r="9.5" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2.2"/><circle cx="15" cy="-10" r="9.5" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2.2"/>
+<path d="M-5.5,-11 Q0,-15 5.5,-11" fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse cx="-15" cy="-10" rx="3.5" ry="4.5" fill="#1A1A1A"/><ellipse cx="15" cy="-10" rx="3.5" ry="4.5" fill="#1A1A1A"/>
+<ellipse cy="30" rx="5.5" ry="4" fill="#1A1A1A"/><path d="M-6,18 Q0,23 6,18" fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle r="59" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+</svg>

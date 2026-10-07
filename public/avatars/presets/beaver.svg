@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" width="120" height="120" role="img"><title>Beaver</title>
+<defs>
+<pattern id="kdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A1A1A"/></pattern>
+<pattern id="gdots" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#C9A227"/></pattern>
+<pattern id="grain" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r="0.45" fill="#1A1A1A" opacity="0.35"/><circle cx="5" cy="5.5" r="0.4" fill="#1A1A1A" opacity="0.25"/><circle cx="4" cy="1" r="0.35" fill="#C9A227" opacity="0.5"/></pattern>
+</defs>
+<circle r="60" fill="#F2EBDD"/><circle r="60" fill="url(#grain)"/>
+<g transform="translate(3,2)" fill="#C9A227"><circle cx="-28" cy="-30" r="10"/><circle cx="28" cy="-30" r="10"/><ellipse cy="2" rx="38" ry="36"/></g>
+<circle cx="-28" cy="-30" r="5" fill="url(#kdots)"/><circle cx="28" cy="-30" r="5" fill="url(#kdots)"/>
+<g fill="none" stroke="#1A1A1A" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M-35,-22 A10,10 0 1 1 -20,-36 M35,-22 A10,10 0 1 0 20,-36"/><ellipse cy="2" rx="38" ry="36"/></g>
+<ellipse cy="18" rx="20" ry="14" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2.2"/>
+<rect x="-7" y="22" width="14" height="13" rx="2" fill="#F2EBDD" stroke="#1A1A1A" stroke-width="2"/><path d="M0,22 L0,35" stroke="#1A1A1A" stroke-width="1.6"/>
+<ellipse cy="10" rx="7" ry="5" fill="#1A1A1A"/>
+<circle cx="-14" cy="-8" r="4.5" fill="#1A1A1A"/><circle cx="-12.5" cy="-9.5" r="1.6" fill="#F2EBDD"/><circle cx="14" cy="-8" r="4.5" fill="#1A1A1A"/><circle cx="15.5" cy="-9.5" r="1.6" fill="#F2EBDD"/>
+<circle cx="-27" cy="10" r="5" fill="url(#kdots)"/><circle cx="27" cy="10" r="5" fill="url(#kdots)"/>
+<circle r="59" fill="none" stroke="#1A1A1A" stroke-width="2"/>
+</svg>
