@@ -94,6 +94,11 @@ Exec Room is licensed under the AGPL-3.0, with a commercial license offered alon
 [README](README.md#license)). To make that possible, contributions are accepted under the
 [Contributor License Agreement](CLA.md) (CLA).
 
+ANDRS currently earns from services around Exec Room, such as installation, team setup, maintenance
+and workshops, and does not charge a fee for the software itself. That can change: the agreement
+allows ANDRS to license Exec Room commercially, including for a fee. Contributors are not paid in
+either case.
+
 You sign once, in your first pull request:
 
 1. Read [CLA.md](CLA.md).

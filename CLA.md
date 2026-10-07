@@ -13,13 +13,12 @@ two differ, the agreement below applies._
   separate commercial license to organisations that cannot, or prefer not to, use it under the
   AGPL. That only works if ANDRS may license every part of Exec Room, including your part, under
   both.
-- **How ANDRS earns from it.** ANDRS does not charge a fee for the software itself. What it
-  charges organisations for is the work of installing and setting up Exec Room for them.
 - **What you keep.** Your copyright. You can use your own contribution anywhere else, under any
   license you like.
 - **What you give.** A permanent, non-exclusive permission for ANDRS to use your contribution and
   to license it to others under the AGPL and under other terms, including paid and closed-source
-  ones. You are not paid for this.
+  ones. You are not paid for this, whether ANDRS earns from Exec Room through services or through
+  license fees.
 - **What you confirm.** That the contribution is yours to give, that you say so when part of it is
   not, that your employer (or client, or university) has agreed if it owns your work, and a few
   things about AI tools if you used them.
@@ -147,8 +146,8 @@ you sign it. The version you signed keeps applying to the Contributions you made
 
 10.4 If part of this agreement turns out to be invalid, the rest stays in force.
 
-10.5 Dutch law governs this agreement. The court in the location of ANDRS's registered seat has
-exclusive jurisdiction to hear disputes, unless the law prescribes otherwise.
+10.5 Dutch law governs this agreement. The competent court for the district in which ANDRS has its
+registered seat has exclusive jurisdiction, unless mandatory law says otherwise.
 
 ### 11. How to sign
 
