@@ -90,4 +90,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Working on the room with Claude Code? [C
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Exec Room is licensed under the GNU Affero General Public License, version 3 only (SPDX: `AGPL-3.0-only`) — see [LICENSE](LICENSE).
+
+Copyright (C) 2026 ANDRS Projects Europe B.V.
+
+**Commercial license.** Organisations that cannot, or prefer not to, use Exec Room under the AGPL can get it under a separate commercial license. See [COMMERCIAL.md](COMMERCIAL.md) or write to legal@andrs.nu.
+
+The AGPL covers Exec Room and works based on it; agent instructions, room settings and data you write yourself, without copying from Exec Room's own files, do not come under the AGPL by being used with it (this explains the license; it is not an additional permission).
+
+**Claude and Anthropic.** Exec Room contains no AI model. Agents run through Claude Code, a separate program from Anthropic that you install yourself; your use of Claude Code and the Claude models is under your own agreement with Anthropic, and the Exec Room license gives no rights to them. Exec Room is an independent project, not affiliated with or endorsed by Anthropic; "Claude" and "Anthropic" are trademarks of Anthropic, PBC.
+
+Third-party parts keep their own licenses: the Inter font in `public/vendor/inter/` (SIL Open Font License 1.1, see [LICENSE.txt](public/vendor/inter/LICENSE.txt)), and the `marked` (MIT) and `DOMPurify` (MPL-2.0 OR Apache-2.0) builds in `public/vendor/`; the `DOMPurify` build also contains `regenerator-runtime` (MIT). Their notices and license texts are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

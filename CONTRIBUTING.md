@@ -68,6 +68,8 @@ Then include the full `npm test` output in your PR description so reviewers can 
 
 ### Submitting a Pull Request
 
+We do not accept outside pull requests until a contributor agreement is in place.
+
 1. **Push your branch** to your fork
 2. **Open a pull request** against `main`
 3. **Include in the description:**
