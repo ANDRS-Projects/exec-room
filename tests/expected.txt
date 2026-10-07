@@ -89,7 +89,7 @@ E page first blocks: ['heading_1', 'paragraph', 'bulleted_list_item', 'bulleted_
 E page inline: [('Intro with ', None, None), ('bold', {'bold': True}, None), (', ', None, None), ('code', {'code': True}, None), (' and a ', None, None), ('link', None, {'url': 'https://example.com'}), ('.', None, None)]
 E page appended: [('/blocks/p1/children', 26)]
 H empty list: ([], ['files', 'web_search', 'web_fetch', 'notion', 'm365', 'drafts'], ['', 'claude-sonnet-5', 'claude-opus-5-5', 'claude-haiku-4-5-20251001'])
-H avatar presets: ['bear', 'cat', 'crab', 'frog', 'lion', 'mouse', 'penguin', 'rabbit', 'raven', 'snail', 'turtle', 'whale']
+H avatar presets: ['bear', 'beaver', 'bee', 'butterfly', 'cat', 'chameleon', 'crab', 'dolphin', 'fox', 'frog', 'hedgehog', 'lion', 'mouse', 'octopus', 'penguin', 'rabbit', 'raven', 'snail', 'turtle', 'whale']
 H static preset: 200
 H invalid reserved name: (400, '{"error":"\\"Coen\\" is already an agent in the room"}')
 H invalid bad tool: (400, '{"error":"\\"tools\\" must be a list from files, web_search, web_fetch, notion, m365, drafts"}')
@@ -97,11 +97,11 @@ H invalid bad role: (400, '{"error":"\\"role\\" must be \\"advisor\\" or \\"make
 H invalid no does: (400, '{"error":"\\"does\\" is missing"}')
 H invalid bad name: (400, '{"error":"the name can only have letters, digits, spaces and hyphens (2–24 characters, starting with a letter)"}')
 H invalid bad model: (400, '{"error":"\\"model\\" must be one of claude-sonnet-5, claude-opus-5-5, claude-haiku-4-5-20251001"}')
-H invalid bad avatar: (400, '{"error":"\\"avatar\\" must be one of bear, cat, crab, frog, lion, mouse, penguin, rabbit, raven, snail, turtle, whale"}')
+H invalid bad avatar: (400, '{"error":"\\"avatar\\" must be one of bear, beaver, bee, butterfly, cat, chameleon, crab, dolphin, fox, frog, hedgehog, lion, mouse, octopus, penguin, rabbit, raven, snail, turtle, whale"}')
 H add advisor: (200, {'key': 'nova', 'name': 'Nova', 'role': 'advisor', 'does': 'reviews pricing pages.', 'instructions': '## Rules\n- Cite the page.', 'tools': ['files', 'web_search'], 'model': '', 'avatar': 'bear', 'tone': 1, 'createdBy': 'owner'})
 H duplicate: (400, '{"error":"there is already an agent called Nova"}')
 H maker gets drafts: (200, ['web_search', 'drafts'])
-H next free avatar: cat
+H next free avatar: beaver
 H next free tone: 2
 H rename keeps key: (200, 'nova', 'Nova Two')
 H edit keeps avatar: bear
@@ -120,7 +120,7 @@ H create_agent fields: ['avatar', 'does', 'instructions', 'key', 'model', 'name'
 H coen knows: ['chief-operating-officer', 'room-nova']
 H advisor definition: (['Read', 'Grep', 'Glob', 'WebSearch'], 'You are Nova, an agent the owner added to their Exec Room. Your job: reviews pricing pages.')
 H room note: (True, True, True)
-H room note, free avatars: ('"bear", "crab", "frog", "mouse", "penguin", "rabbit", "raven", "snail", "turtle", "whale"', True)
+H room note, free avatars: ('"bear", "bee", "butterfly", "cat", "chameleon", "crab", "dolphin", "fox", "frog", "hedgehog", "mouse", "octopus", "penguin", "rabbit", "raven", "snail", "turtle", "whale"', True)
 H approve create_agent: (200, [('decision', None, None, None), ('rec_result', 'done', {'key': 'echo', 'name': 'Echo', 'role': 'advisor', 'avatar': 'whale'}, None)])
 H echo added: [('advisor', ['web_search', 'notion'], 'claude-sonnet-5', 'whale', 'coen')]
 H approve room maker: (200, ['decision'])
