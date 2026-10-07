@@ -2,8 +2,6 @@
 
 Thank you for your interest in contributing! This document outlines how to report issues, propose features, and submit pull requests.
 
-**We do not accept outside pull requests until a contributor agreement is in place.**
-
 ## Code of Conduct
 
 Be respectful and constructive. We're building a tool for thoughtful collaboration.
@@ -69,6 +67,8 @@ python3 tests/room_suite.py --update   # Accept the new behavior as the snapshot
 Then include the full `npm test` output in your PR description so reviewers can see the changes.
 
 ### Submitting a Pull Request
+
+We do not accept outside pull requests until a contributor agreement is in place.
 
 1. **Push your branch** to your fork
 2. **Open a pull request** against `main`
