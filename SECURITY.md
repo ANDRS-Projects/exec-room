@@ -75,6 +75,7 @@ GitHub Actions run on every push and PR to `main`:
 - **Trivy** (`trivy.yml`) — fails on unfixed CRITICAL CVEs; also weekly on Mondays
 - **Pin actions** (`pin-actions.yml`) — third-party actions must be pinned to a commit SHA
 - **Gitleaks version check** (`gitleaks-version-check.yml`) — monthly PR when a newer Gitleaks is out
+- **CLA** (`cla.yml`) — on pull requests, checks that the person who opened it and every commit author has signed the [contributor agreement](CLA.md) in `CLA-SIGNATURES.md`. It runs from `main` also for pull requests from forks (`pull_request_target`), so a pull request can't change the check; it has a read-only token, no secrets, no checkout and no shell step, and reads the pull request only as data
 
 Dependabot (`.github/dependabot.yml`) keeps GitHub Actions and the npm packages up to date weekly (after a `marked` or `dompurify` update, re-copy its browser build into `public/vendor/`). Changes to `main` go through pull requests.
 

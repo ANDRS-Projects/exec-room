@@ -68,7 +68,8 @@ Then include the full `npm test` output in your PR description so reviewers can 
 
 ### Submitting a Pull Request
 
-We do not accept outside pull requests until a contributor agreement is in place.
+Your first pull request also carries your signature under the contributor agreement: see
+[License and Contributor Agreement](#license-and-contributor-agreement) below.
 
 1. **Push your branch** to your fork
 2. **Open a pull request** against `main`
@@ -86,6 +87,74 @@ A maintainer will review your PR. We may ask for changes before merging.
 - **JavaScript:** Use the existing style (see `room-server.js` and `public/room.js`)
 - **Python:** Follow PEP 8 (tests use standard Python conventions)
 - **Markdown:** Wrap lines at ~100 characters; use clear headers and code blocks
+
+## License and Contributor Agreement
+
+Exec Room is licensed under the AGPL-3.0, with a commercial license offered alongside it (see the
+[README](README.md#license)). To make that possible, contributions are accepted under the
+[Contributor License Agreement](CLA.md) (CLA).
+
+You sign once, in your first pull request:
+
+1. Read [CLA.md](CLA.md).
+   If your employer, a client or your university owns what you write, read section 4 of the
+   agreement first; an organisation can sign for its people by writing to legal@andrs.nu.
+2. In the same pull request as your change, add one line at the end of
+   [CLA-SIGNATURES.md](CLA-SIGNATURES.md), with your GitHub username and today's date, exactly in
+   this form:
+
+   ```
+   - @your-username, YYYY-MM-DD: I have read the Contributor License Agreement (version 1) and I agree to it.
+   ```
+
+3. The **CLA** check on the pull request passes. Later pull requests don't ask again, unless the
+   agreement gets a new version; everyone then signs the new version in the same way.
+
+What the check looks at:
+
+- **Only your own line.** Add your signature and nothing else to that file; don't change or remove
+  other lines. Nobody can sign for someone else.
+- **Every commit author.** If the pull request has commits by someone else, that person must have
+  signed before, in a pull request of their own.
+- **A linked email.** Commit with an email address that is linked to your GitHub account, or the
+  check can't tell who the author is.
+
+A pull request is only merged once the CLA check passes.
+
+### Privacy: your signature is public
+
+**Who is responsible.** ANDRS Projects Europe B.V., Castricum, the Netherlands (KVK 54057655), is
+the controller. Contact: legal@andrs.nu. Our general terms and privacy information are at
+<https://andrs-projects.notion.site/data-security-and-legal>.
+
+**What is recorded.** The line you add to `CLA-SIGNATURES.md`: your GitHub username, the date and
+the version of the agreement you agreed to. As with any contribution, git and GitHub also record
+the author name and email address of your commits, the time, and the pull request.
+
+**Why, and on what basis.** To have a record of who agreed to which version of the agreement, so
+that ANDRS, and everyone who gets Exec Room from ANDRS, can rely on the licenses you gave. The
+legal basis is the agreement between you and ANDRS (article 6(1)(b) GDPR) and ANDRS's legitimate
+interest in being able to show that it may license Exec Room (article 6(1)(f) GDPR). You are not
+obliged to sign, but we cannot accept a contribution without it.
+
+**It is public and it stays in the history.** The repository is public, so anyone in the world can
+see your line. It is hosted by GitHub, in the United States among other places, and it is copied
+into every clone and fork, which ANDRS does not control. Removing a line from the file does not
+remove it from the git history.
+
+**How long.** For as long as Exec Room, or any software ANDRS licenses, contains your
+contribution, and after that for as long as legal claims about it are still possible. That is why
+we cannot simply delete a signature on request: while your contribution is in use, the record is
+needed to establish and defend the licenses (article 17(3)(e) GDPR).
+
+**Your rights.** You can ask ANDRS for access to your data, for a correction (for example after
+you rename your GitHub account; we add a note and do not rewrite the history), and for erasure or
+restriction, and you can object to the processing. We will look at every request, within the
+limits explained above. You can also complain to the Dutch data protection authority, the
+Autoriteit Persoonsgegevens (autoriteitpersoonsgegevens.nl).
+
+If you prefer that your commits do not show your personal email address, use GitHub's no-reply
+address before you commit.
 
 ## Security
 
@@ -112,6 +181,7 @@ Pushes and pull requests to `main` run:
 - **Gitleaks** — scans for secrets in commit history
 - **Trivy** — checks for unfixed critical CVEs in dependencies (also weekly)
 - **Pin actions** — on pull requests that change `.github/workflows/`, checks that actions are pinned to commit SHAs
+- **CLA** — on pull requests, checks that the person who opened it and every commit author has signed the contributor agreement (see above)
 
 The test suite doesn't run in CI yet, which is why the PR description needs the `npm test` output.
 

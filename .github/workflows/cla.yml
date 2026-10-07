@@ -1,0 +1,114 @@
+name: CLA
+
+# Checks that everyone who contributes to a pull request has signed the contributor agreement
+# (CLA.md). A signature is one line in CLA-SIGNATURES.md, added by the contributor in their own
+# pull request.
+#
+# SECURITY: this runs on pull_request_target, so the workflow and its script always come from
+# main, also for pull requests from forks: a pull request can't change the check to pass itself.
+# That is only safe because the job can do nothing but read: a read-only token, no secrets, no
+# actions/checkout and no run: step. The pull request is only ever read as data through the API
+# (its changed files and its commits). Keep it that way: never check out or run pull-request
+# code here, never put pull-request text into a workflow expression, and never give this job a
+# write permission.
+
+on:
+  pull_request_target:
+    # reopened: a pull request opened with a workflow token starts no workflows, so the monthly
+    # Gitleaks bump is closed and reopened by hand to make the checks run.
+    types: [opened, reopened, synchronize]
+
+# Nothing by default. The job below grants the only permissions this workflow has.
+permissions: {}
+
+jobs:
+  cla:
+    name: CLA
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read        # read CLA-SIGNATURES.md on the base branch
+      pull-requests: read   # read the pull request's changed files and commits
+    steps:
+      - name: Check signatures
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // The agreement's version. Raise it when CLA.md changes: everyone then signs again.
+            const VERSION = 1;
+            // The maintainer: the copyright holder's own account.
+            const MAINTAINER = 'carolinevrauwdeunt-lab';
+            // Not asked to sign: the maintainer and the bots that open pull requests here.
+            const EXEMPT = new Set([MAINTAINER, 'dependabot[bot]', 'github-actions[bot]']);
+            const FILE = 'CLA-SIGNATURES.md';
+            // One signature per line, exactly in this form.
+            const SIGNATURE = /^- @([A-Za-z0-9-]+), \d{4}-\d{2}-\d{2}: I have read the Contributor License Agreement \(version (\d+)\) and I agree to it\.$/;
+
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const opener = pr.user.login;
+            const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+            // Who a line signs for, in lower case; null when it isn't a signature for this version.
+            const signer = (line) => {
+              const m = SIGNATURE.exec(line.trimEnd());
+              return m && Number(m[2]) === VERSION ? m[1].toLowerCase() : null;
+            };
+            const ownLine = `- @${opener}, ${new Date().toISOString().slice(0, 10)}: I have read the Contributor License Agreement (version ${VERSION}) and I agree to it.`;
+            const problems = [];
+
+            // Signatures already on the base branch. Read by branch name, not by commit, so a
+            // re-run sees a signature that was merged after the pull request was opened.
+            let onBase = new Set();
+            try {
+              const file = await github.rest.repos.getContent({ owner, repo, path: FILE, ref: pr.base.ref });
+              onBase = new Set(Buffer.from(file.data.content, 'base64').toString('utf8').split('\n').map(signer).filter(Boolean));
+            } catch (err) {
+              if (err.status !== 404) throw err;
+            }
+            const signed = (login) => EXEMPT.has(login) || onBase.has(login.toLowerCase());
+
+            // What this pull request does to the signatures file: it may add the opener's own
+            // signature and nothing else. A line for someone else would sign on their behalf.
+            // The maintainer's own pull requests are the exception: the file's explanation, a new
+            // version and corrections have to be editable by someone, and that account decides
+            // what goes into main anyway.
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: pr.number, per_page: 100 });
+            const change = files.find((f) => f.filename === FILE || f.previous_filename === FILE);
+            let signsHere = false;
+            if (change && opener !== MAINTAINER) {
+              if (change.status !== 'modified' || change.deletions > 0 || typeof change.patch !== 'string') {
+                problems.push(`${FILE} can only get new lines in a pull request. This one removes or changes a line, or renames or deletes the file.`);
+              } else {
+                const added = change.patch.split('\n').filter((l) => l.startsWith('+')).map((l) => l.slice(1)).filter((l) => l.trim());
+                for (const line of added) {
+                  const who = signer(line);
+                  if (who && same(who, opener)) signsHere = true;
+                  else problems.push(`This line added to ${FILE} isn't @${opener}'s signature for version ${VERSION}, so it can't be added here:\n\n    ${line}\n\nAdd only your own line, exactly in this form:\n\n    ${ownLine}`);
+                }
+              }
+            }
+
+            if (!signed(opener) && !signsHere && !problems.length) {
+              problems.push(`@${opener} has not signed the Contributor License Agreement yet. Read CLA.md, then add this line at the end of ${FILE} in this pull request:\n\n    ${ownLine}`);
+            }
+
+            // Every commit author must have signed. The opener is covered above; anyone else must
+            // already be on the base branch, from a pull request of their own.
+            if (pr.commits > 250) {
+              problems.push('This pull request has more than 250 commits, which is more than this check can read. Split it up.');
+            } else {
+              const commits = await github.paginate(github.rest.pulls.listCommits, { owner, repo, pull_number: pr.number, per_page: 100 });
+              const unlinked = commits.filter((c) => !c.author || !c.author.login).map((c) => c.sha.slice(0, 7));
+              if (unlinked.length) {
+                problems.push(`${unlinked.length === 1 ? 'A commit has' : `${unlinked.length} commits have`} an author email that isn't linked to a GitHub account (${unlinked.slice(0, 5).join(', ')}${unlinked.length > 5 ? ', …' : ''}). Add that email to your GitHub account, or commit again with one that is linked.`);
+              }
+              const others = [...new Set(commits.map((c) => c.author && c.author.login).filter((l) => l && !same(l, opener) && !signed(l)))];
+              if (others.length) {
+                problems.push(`${others.length === 1 ? 'This commit author has' : 'These commit authors have'} not signed: ${others.map((l) => `@${l}`).join(', ')}. Each contributor signs in a pull request of their own; nobody can sign for someone else.`);
+              }
+            }
+
+            if (problems.length) {
+              core.setFailed(`${problems.join('\n\n')}\n\nHow signing works: CONTRIBUTING.md, "License and Contributor Agreement".`);
+            } else {
+              core.info(signed(opener) ? `@${opener} has signed version ${VERSION} (or is exempt).` : `@${opener} signs version ${VERSION} in this pull request.`);
+            }
