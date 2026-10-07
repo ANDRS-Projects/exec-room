@@ -24,7 +24,7 @@ two differ, the agreement below applies._
   not, that your employer (or client, or university) has agreed if it owns your work, and a few
   things about AI tools if you used them.
 - **What ANDRS promises.** Every published version of Exec Room that contains your contribution is
-  also released as open source.
+  also released under the AGPL.
 - **How you agree.** One line in your first pull request (section 11). You do it once.
 
 ## The agreement
@@ -124,8 +124,8 @@ licenses, as far as that law allows.
 ### 8. What ANDRS commits to
 
 8.1 ANDRS will make every published version of Exec Room that contains a Contribution of yours
-available under the GNU Affero General Public License version 3 or another license approved by the
-Open Source Initiative, and will not withdraw such a release.
+available under the GNU Affero General Public License version 3 or a later version of that
+license, and will not withdraw such a release.
 
 8.2 ANDRS does not have to use, include, keep or credit any Contribution.
 
