@@ -90,4 +90,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Working on the room with Claude Code? [C
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Exec Room is licensed under the GNU Affero General Public License, version 3 (SPDX: `AGPL-3.0-only`) — see [LICENSE](LICENSE).
+
+Copyright (C) 2026 ANDRS Projects Europe B.V.
+
+**Commercial license.** Organisations that cannot use AGPL-licensed software can get Exec Room under a separate commercial license. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) or write to legal@andrs.nu.
+
+**DRAFT, reword or remove before merging:** Your own agent instructions, room configuration and data are not covered by the AGPL.
+
+Third-party parts keep their own licenses: the Inter font in `public/vendor/inter/` (SIL Open Font License 1.1, see [LICENSE.txt](public/vendor/inter/LICENSE.txt)), and the `marked` (MIT) and `DOMPurify` (MPL-2.0 OR Apache-2.0) builds in `public/vendor/`.
