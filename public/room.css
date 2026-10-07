@@ -297,7 +297,7 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .avatar-option.in-use img { opacity: 0.4; }
 .avatar-option.in-use:hover img, .avatar-option.in-use:has(input:checked) img { opacity: 1; }
 /* The built-in agents' own animals: on their own line under a label, each with its agent's name; not options. */
-.avatar-taken-label { flex-basis: 100%; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.avatar-note { flex-basis: 100%; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .avatar-option.taken { cursor: default; flex-direction: column; align-items: center; gap: 2px; border-radius: 0; }
 .avatar-option.taken img { opacity: 0.4; filter: grayscale(1); }
 .avatar-taken-name { font-size: 11px; color: var(--muted); }
