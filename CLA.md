@@ -9,9 +9,12 @@ two differ, the agreement below applies._
 
 - **What this is.** An agreement between you and ANDRS Projects Europe B.V. ("ANDRS"), the company
   behind Exec Room, about what ANDRS may do with what you contribute.
-- **Why we ask.** Exec Room is open source under the AGPL-3.0. ANDRS also sells a commercial
-  license to organisations that cannot, or prefer not to, use it under the AGPL. That only works
-  if ANDRS may license every part of Exec Room, including your part, under both.
+- **Why we ask.** Exec Room is open source under the AGPL-3.0. ANDRS also offers it under a
+  separate commercial license to organisations that cannot, or prefer not to, use it under the
+  AGPL. That only works if ANDRS may license every part of Exec Room, including your part, under
+  both.
+- **How ANDRS earns from it.** ANDRS does not charge a fee for the software itself. What it
+  charges organisations for is the work of installing and setting up Exec Room for them.
 - **What you keep.** Your copyright. You can use your own contribution anywhere else, under any
   license you like.
 - **What you give.** A permanent, non-exclusive permission for ANDRS to use your contribution and
@@ -20,8 +23,8 @@ two differ, the agreement below applies._
 - **What you confirm.** That the contribution is yours to give, that you say so when part of it is
   not, that your employer (or client, or university) has agreed if it owns your work, and a few
   things about AI tools if you used them.
-- **What ANDRS promises.** If your contribution goes into Exec Room, it is also released as open
-  source.
+- **What ANDRS promises.** Every published version of Exec Room that contains your contribution is
+  also released as open source.
 - **How you agree.** One line in your first pull request (section 11). You do it once.
 
 ## The agreement
@@ -123,10 +126,9 @@ licenses, as far as that law allows.
 
 ### 8. What ANDRS commits to
 
-8.1 If ANDRS includes a Contribution in a published version of Exec Room, ANDRS will make that
-Contribution available under the GNU Affero General Public License version 3 or another license
-approved by the Open Source Initiative, in at least the first published version that contains it,
-and will not withdraw that release.
+8.1 ANDRS will make every published version of Exec Room that contains a Contribution of yours
+available under the GNU Affero General Public License version 3 or another license approved by the
+Open Source Initiative, and will not withdraw such a release.
 
 8.2 ANDRS does not have to use, include, keep or credit any Contribution.
 

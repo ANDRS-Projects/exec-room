@@ -4,6 +4,8 @@ Exec Room is open source under the GNU Affero General Public License, version 3 
 
 A separate commercial license is available for organisations that cannot, or prefer not to, use Exec Room under the AGPL.
 
+ANDRS does not charge a fee for the software itself. What it charges for is the work of installing and setting up Exec Room for your organisation.
+
 ## How to ask
 
 Write to legal@andrs.nu and tell us who you are and how you plan to use Exec Room. The terms are sent on request.
