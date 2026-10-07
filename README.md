@@ -94,7 +94,7 @@ Exec Room is licensed under the GNU Affero General Public License, version 3 (SP
 
 Copyright (C) 2026 ANDRS Projects Europe B.V.
 
-**Commercial license.** Organisations that cannot use AGPL-licensed software can get Exec Room under a separate commercial license. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) or write to legal@andrs.nu.
+**Commercial license.** Organisations that cannot use AGPL-licensed software can get Exec Room under a separate commercial license. See [COMMERCIAL.md](COMMERCIAL.md) or write to legal@andrs.nu.
 
 **DRAFT, reword or remove before merging:** Your own agent instructions, room configuration and data are not covered by the AGPL.
 
