@@ -912,16 +912,18 @@ function renderAvatarPicker(selected, usedBy = new Map()) {
     label.append(radio, face);
     grid.appendChild(label);
   }
-  // The built-in agents' own animals close the row: shown so it's clear they exist, but they can't be picked.
+  // The built-in agents' own animals get a line of their own under a label, each with its agent's name:
+  // shown so it's clear they exist, but they can't be picked.
+  grid.appendChild(el('span', 'avatar-taken-label', 'Already taken'));
   for (const key of BUILT_IN) {
     const taken = el('span', 'avatar-option taken');
     taken.title = `Used by ${NAMES[key]}`;
     const face = el('img');
     face.src = `avatars/${key}.svg`;
-    face.alt = taken.title;
+    face.alt = '';
     face.width = 44;
     face.height = 44;
-    taken.appendChild(face);
+    taken.append(face, el('span', 'avatar-taken-name', NAMES[key]));
     grid.appendChild(taken);
   }
 }
