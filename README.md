@@ -16,6 +16,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **GitHub** — issues and comments in the repos you allow per room (private repos only, unless you mark one as public)
 - **Notion** — posts saved as drafts in databases you configure, and long-form pages under pages you allow
 - **Email drafts** — to recipients you allow; the room never sends mail, you do
+- **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Local and locked down** — binds to 127.0.0.1, read-only tools, writes only in `drafts/`, secret files blocked
 
 ## What it costs
@@ -74,7 +75,7 @@ Environment variables are listed in `.env.example`. The server reads them from y
 npm test
 ```
 
-397 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 397 checks match tests/expected.txt`.
+434 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 434 checks match tests/expected.txt`.
 
 ## Security
 

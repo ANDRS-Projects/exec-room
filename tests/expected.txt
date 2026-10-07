@@ -275,6 +275,43 @@ I pr 75 capped: (True, True, 1)
 I pr failure: ["Couldn't read Example-Org/example-app#404 (pull request): no such pull request. Don't guess what it says; tell the owner."]
 I stop while reading: 200
 I stopped before Claude: (['stopped'], True)
+K start-up clears crashed jobs only: ['keep-me']
+K limits for the page: {'maxFiles': 3, 'maxBytes': 5242880, 'extensions': ['txt', 'md', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp']}
+K no files: ([], [], [None])
+K sent: 200
+K user event: [[{'name': 'Offer_final.pdf', 'size': 24}, {'name': 'notes.txt', 'size': 7}, {'name': 'NOTES-2.txt', 'size': 6}]]
+K extra read rules: ['Read(/<attach as typed>/<job>/**)', 'Read(/<attach>/<job>/**)']
+K tools unchanged: (True, [])
+K files during the run: [('<attach>/<job>/Offer_final.pdf', True, 24), ('<attach>/<job>/notes.txt', True, 7), ('<attach>/<job>/NOTES-2.txt', True, 6)]
+K prompt: (True, True, True, True)
+K notice: ['Deleted after this turn: Offer_final.pdf, notes.txt, NOTES-2.txt. What was read from them stays in this chat.']
+K notice before the end: ['notice', 'end']
+K folder after the turn: ['keep-me']
+K chat keeps names, not content: (True, False, False)
+K job log: (['Offer_final.pdf', 'notes.txt', 'NOTES-2.txt'], False)
+K stored names: (200, ['file-id_rsa.txt', 'Pic.png', 'ber_file.webp'], [True, True, True])
+K failed run: (['error'], ['Deleted after this turn: Offer_final.pdf. What was read from it stays in this chat.'], True, ['keep-me'])
+K file there while running: [['Offer_final.pdf']]
+K stopped run: (['stopped'], ['Deleted after this turn: Offer_final.pdf. What was read from it stays in this chat.'], ['keep-me'])
+K refused, not a list: (400, '{"error":"\\"files\\" must be a list"}')
+K refused, too many: (400, '{"error":"At most 3 files per message."}')
+K refused, no content: (400, '{"error":"Each file needs a name and its content."}')
+K refused, a script: (400, '{"error":"\\"run.sh\\" can\'t be attached: only .txt, .md, .csv, .pdf, .png, .jpg, .jpeg, .gif, .webp files."}')
+K refused, no extension: (400, '{"error":"\\"README\\" can\'t be attached: only .txt, .md, .csv, .pdf, .png, .jpg, .jpeg, .gif, .webp files."}')
+K refused, secret-looking name: (400, '{"error":"\\".env\\" can\'t be attached: only .txt, .md, .csv, .pdf, .png, .jpg, .jpeg, .gif, .webp files."}')
+K refused, not base64: (400, '{"error":"\\"a.txt\\" didn\'t arrive intact. Try attaching it again."}')
+K refused, empty: (400, '{"error":"\\"a.txt\\" is empty."}')
+K refused, too large: (400, '{"error":"\\"big.txt\\" is larger than 5 MB."}')
+K refused, text renamed to pdf: (400, '{"error":"\\"a.pdf\\" isn\'t a PDF file, whatever its name says."}')
+K refused, binary renamed to txt: (400, '{"error":"\\"a.txt\\" isn\'t a plain text file, whatever its name says."}')
+K refused, not utf-8: (400, '{"error":"\\"a.csv\\" isn\'t a plain text file, whatever its name says."}')
+K files without a question: (400, '{"error":"text required"}')
+K refused ones ran nothing and saved nothing: (True, ['keep-me'])
+K three files of 5 MB fit: (200, ['ok'], [5242880, 5242880, 5242880], ['keep-me'])
+K other routes keep the small body limit: (413, '{"error":"That is too large to send."}')
+K attachments folder as a room folder, itself: (400, True)
+K attachments folder as a room folder, its parent: (400, True)
+K attachments folder as a room folder, a job's folder: (400, True)
 M migrated rooms start empty: [('exec', [], ''), ('old', [], '')]
 M migration saved: [[], []]
 M no recipients 1: this room has no email recipients, so it can't propose emails

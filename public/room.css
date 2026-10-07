@@ -188,6 +188,19 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .composer button { height: 40px; padding: 0 16px; border: none; border-radius: 8px; background: var(--text); color: #fff; font-size: 14px; cursor: pointer; }
 .composer button:disabled { opacity: 0.5; cursor: default; }
 .composer .stop { background: #A32D2D; }
+/* Files picked for the next message: a row above the message box, with what happens to them in words. */
+.composer { flex-wrap: wrap; }
+.composer .attach { flex: none; width: 40px; padding: 0; display: grid; place-items: center; background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.attach-row { flex: 1 0 100%; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.attach-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 3px 4px 3px 10px; font-size: 12px; }
+.file-chip .file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-chip .file-size { color: var(--muted); white-space: nowrap; }
+.composer .file-remove { flex: none; width: 22px; height: 22px; padding: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; border-radius: 6px; }
+.composer .file-remove:hover { background: var(--border); color: var(--text); }
+.attach-note, .attach-error { flex: 1 0 100%; margin: 0; font-size: 12px; color: var(--muted); }
+.attach-error { color: #791F1F; }
+.msg.user .attached { max-width: 94%; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
 .rail { display: flex; flex-direction: column; min-height: 0; gap: 10px; }
 .chips { display: flex; flex-direction: column; gap: 6px; }
@@ -265,6 +278,13 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 
 .draft-chip { align-self: flex-start; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--text); cursor: pointer; font-family: ui-monospace, monospace; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .draft-chip:hover { border-color: var(--coen); }
+/* Copy icon under a reply's right edge: quiet until pointed at; "Copied" appears next to it in words.
+   .reply is as wide as its bubble (the full card inside a card), so the icon lines up with the bubble. */
+.reply { align-self: flex-start; max-width: 94%; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.reply .bubble { max-width: 100%; }
+.card .reply { align-self: stretch; max-width: 100%; }
+.copy-btn { align-self: flex-end; flex-direction: row-reverse; display: inline-flex; align-items: center; gap: 5px; height: 24px; margin-top: -2px; padding: 0 5px; border: none; border-radius: 6px; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
+.copy-btn:hover, .copy-btn:focus-visible { background: var(--bg); color: var(--text); }
 
 .viewer { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 64px); border: 1px solid var(--border); border-radius: 12px; padding: 0; color: var(--text); }
 .viewer::backdrop { background: rgba(26, 26, 46, 0.4); }
