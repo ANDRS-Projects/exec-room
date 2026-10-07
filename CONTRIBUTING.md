@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing! This document outlines how to report issues, propose features, and submit pull requests.
 
+**We do not accept outside pull requests until a contributor agreement is in place.**
+
 ## Code of Conduct
 
 Be respectful and constructive. We're building a tool for thoughtful collaboration.
