@@ -3,6 +3,8 @@
 Each line under "Signatures" is one contributor's signature under the
 [Contributor License Agreement](CLA.md).
 
+This file is public. What is recorded and why: see the privacy note in CONTRIBUTING.md.
+
 To sign, add one line at the end of this file, in your own pull request, with your GitHub username
 and today's date, exactly in this form:
 

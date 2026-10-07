@@ -35,9 +35,10 @@ jobs:
           script: |
             // The agreement's version. Raise it when CLA.md changes: everyone then signs again.
             const VERSION = 1;
-            // Not asked to sign: the maintainer (the copyright holder's own account) and the bots
-            // that open pull requests here.
-            const EXEMPT = new Set(['carolinevrauwdeunt-lab', 'dependabot[bot]', 'github-actions[bot]']);
+            // The maintainer: the copyright holder's own account.
+            const MAINTAINER = 'carolinevrauwdeunt-lab';
+            // Not asked to sign: the maintainer and the bots that open pull requests here.
+            const EXEMPT = new Set([MAINTAINER, 'dependabot[bot]', 'github-actions[bot]']);
             const FILE = 'CLA-SIGNATURES.md';
             // One signature per line, exactly in this form.
             const SIGNATURE = /^- @([A-Za-z0-9-]+), \d{4}-\d{2}-\d{2}: I have read the Contributor License Agreement \(version (\d+)\) and I agree to it\.$/;
@@ -67,10 +68,13 @@ jobs:
 
             // What this pull request does to the signatures file: it may add the opener's own
             // signature and nothing else. A line for someone else would sign on their behalf.
+            // The maintainer's own pull requests are the exception: the file's explanation, a new
+            // version and corrections have to be editable by someone, and that account decides
+            // what goes into main anyway.
             const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: pr.number, per_page: 100 });
             const change = files.find((f) => f.filename === FILE || f.previous_filename === FILE);
             let signsHere = false;
-            if (change) {
+            if (change && opener !== MAINTAINER) {
               if (change.status !== 'modified' || change.deletions > 0 || typeof change.patch !== 'string') {
                 problems.push(`${FILE} can only get new lines in a pull request. This one removes or changes a line, or renames or deletes the file.`);
               } else {

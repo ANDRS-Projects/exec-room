@@ -1137,6 +1137,9 @@ try:
         {"name": "commit email not linked", "opener": "alice", "base": ["alice"], "commits": ["alice", None]},
         {"name": "maintainer's pull request with an unsigned author's commit", "opener": "carolinevrauwdeunt-lab", "commits": ["carolinevrauwdeunt-lab", "bob"]},
         {"name": "more than 250 commits", "opener": "alice", "base": ["alice"], "count": 251},
+        # Only the maintainer's own pull requests may change the rest of the file (its explanation, a new version, a correction).
+        {"name": "maintainer edits the signatures file", "opener": "carolinevrauwdeunt-lab", "files": adds("This file is public.", deletions=1)},
+        {"name": "a bot edits the signatures file", "opener": "dependabot[bot]", "files": adds("This file is public.")},
     ]
     done = subprocess.run(["node", os.path.join(TESTS, "cla_check.js"), cla_path, json.dumps(cla_cases)], capture_output=True, text=True, check=True)
     for name, result in json.loads(done.stdout).items():
@@ -1144,6 +1147,13 @@ try:
     # The example line in the signatures file must not count as a signature, and the file starts without any.
     signatures = open(os.path.join(opts.root, "CLA-SIGNATURES.md")).read()
     out("L signatures file", (len(re.findall(r"^- @", signatures, re.M)), signatures.endswith("\n"), "version 1" in signatures))
+    # The line a contributor copies is written in three documents: it must be the same in all of them, carry the
+    # version the workflow checks, and the agreement must have no placeholder left to fill in.
+    docs = {name: open(os.path.join(opts.root, name)).read() for name in ("CLA.md", "CLA-SIGNATURES.md", "CONTRIBUTING.md")}
+    copied = {name: re.findall(r"^\s*(- @your-username, YYYY-MM-DD: .*)$", text, re.M) for name, text in docs.items()}
+    out("L signing line in the documents", (sorted({l for found in copied.values() for l in found}), {name: len(found) for name, found in copied.items()}))
+    out("L agreement version and placeholders", (re.findall(r"^Version (\d+), (.*)$", docs["CLA.md"], re.M), re.findall(r"const VERSION = (\d+);", cla_yml),
+                                                 re.findall(r"\[[a-z][a-zA-Z ]*\](?!\()", docs["CLA.md"])))
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 

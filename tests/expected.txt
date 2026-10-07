@@ -390,4 +390,8 @@ L unsigned opener, only maintainer-authored commits: FAIL: @mallory has not sign
 L commit email not linked: FAIL: A commit has an author email that isn't linked to a GitHub account (1abcdef). Add that email to your GitHub account, or commit again with one that is linked. | How signing works: CONTRIBUTING.md, "License and Contributor Agreement".
 L maintainer's pull request with an unsigned author's commit: FAIL: This commit author has not signed: @bob. Each contributor signs in a pull request of their own; nobody can sign for someone else. | How signing works: CONTRIBUTING.md, "License and Contributor Agreement".
 L more than 250 commits: FAIL: This pull request has more than 250 commits, which is more than this check can read. Split it up. | How signing works: CONTRIBUTING.md, "License and Contributor Agreement".
+L maintainer edits the signatures file: pass: @carolinevrauwdeunt-lab has signed version 1 (or is exempt).
+L a bot edits the signatures file: FAIL: This line added to CLA-SIGNATURES.md isn't @dependabot[bot]'s signature for version 1, so it can't be added here: | This file is public. | Add only your own line, exactly in this form: | - @dependabot[bot], <date>: I have read the Contributor License Agreement (version 1) and I agree to it. | How signing works: CONTRIBUTING.md, "License and Contributor Agreement".
 L signatures file: (0, True, True)
+L signing line in the documents: (['- @your-username, YYYY-MM-DD: I have read the Contributor License Agreement (version 1) and I agree to it.'], {'CLA.md': 1, 'CLA-SIGNATURES.md': 1, 'CONTRIBUTING.md': 1})
+L agreement version and placeholders: ([('1', '7 October 2026')], ['1'], [])
