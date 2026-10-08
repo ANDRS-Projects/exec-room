@@ -178,8 +178,10 @@ function startTurn(text, auto = false, files = null) {
   const userMsg = el('div', auto ? 'msg room' : 'msg user');
   // `auto` is true for Coen's nudge and 'chain' for a chain's next maker.
   userMsg.appendChild(el('div', 'bubble', auto === 'chain' ? `Room: ${text}` : auto ? `Room → Coen: ${text}` : text));
-  // Names and sizes only: the files themselves were deleted when that turn ended.
-  if (Array.isArray(files) && files.length) userMsg.appendChild(el('div', 'attached', `Attached: ${files.map((f) => `${f.name} (${fileSize(f.size)})`).join(', ')}`));
+  // Names and sizes only: the files themselves were deleted when that turn ended. Nothing for a message without
+  // files, such as every message from before attachments existed (see attach-label.js).
+  const attached = AttachLabel.line(files);
+  if (attached) userMsg.appendChild(el('div', 'attached', attached));
   appendToThread(userMsg);
   if (turn && turn.group) turn.group.open = false;
   turnCount += 1;
@@ -699,9 +701,7 @@ const attachError = $('attach-error');
 let attachLimits = { maxFiles: 3, maxBytes: 5 * 1024 * 1024, extensions: ['txt', 'md', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp'] };
 let picked = [];   // File objects waiting to go with the next message
 
-function fileSize(n) {
-  return n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
+const { fileSize } = AttachLabel;
 
 function attachProblem(text) {
   attachError.textContent = text || '';

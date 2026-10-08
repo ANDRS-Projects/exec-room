@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# Test double for `claude -p` for attached files: logs each run's prompt, --tools and --allowedTools to
-# $ROOM_TEST_TMP/attach-calls.ndjson, plus whether each file path the prompt lists exists right now and how many
-# bytes it holds. "please fail" in the prompt exits 1; "slow one" waits, so the suite can press Stop.
-# Emits stream-json.
+# Test double for `claude -p` for attached files: logs each run's prompt, --tools, --allowedTools, agent and whether
+# it was a resumed session to $ROOM_TEST_TMP/attach-calls.ndjson, plus whether each file path the prompt lists
+# exists right now and how many bytes it holds. By keyword in the prompt: "please fail" exits 1; "slow one" waits,
+# so the suite can press Stop; "resume retry" fails a resumed session the way a lost one does; "three proposals"
+# proposes two email drafts and a dispatch to the room-built maker Scout. Emits stream-json.
 import json, os, re, sys, time
 
 args = sys.argv[1:]
@@ -17,19 +18,33 @@ def flag(name):
     return vals
 
 
+def rec(obj):
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
 prompt = args[args.index("-p") + 1]
+resumed = "--resume" in args
 files = []
 for path in re.findall(r"^- (/.+) \([^()]+\)$", prompt, re.M):
     files.append({"path": path, "exists": os.path.isfile(path), "bytes": os.path.getsize(path) if os.path.isfile(path) else None})
 with open(os.path.join(os.environ["ROOM_TEST_TMP"], "attach-calls.ndjson"), "a") as log:
-    log.write(json.dumps({"prompt": prompt, "tools": flag("--tools"), "allowed": flag("--allowedTools"), "files": files}) + "\n")
+    log.write(json.dumps({"prompt": prompt, "tools": flag("--tools"), "allowed": flag("--allowedTools"), "files": files,
+                          "resume": resumed, "agent": args[args.index("--agent") + 1]}) + "\n")
 out = lambda o: print(json.dumps(o), flush=True)
+if "resume retry" in prompt and resumed:
+    print("No conversation found with session ID: coen-session", file=sys.stderr)
+    sys.exit(1)
 out({"type": "system", "subtype": "init", "session_id": "coen-session"})
 if "please fail" in prompt:
     print("the fake was asked to fail", file=sys.stderr)
     sys.exit(1)
 if "slow one" in prompt:
     time.sleep(5)
+text = "Read."
+if "three proposals" in prompt:
+    email = {"action": "email_draft", "to": "anna@client.example", "subject": "s", "body": "the private body of the draft"}
+    text = ("Drafts for anna@client.example." + rec({**email, "summary": "Approve me"}) + rec({**email, "summary": "Revise me"})
+            + rec({"action": "dispatch", "agent": "scout", "summary": "Scan", "brief": "Scan."}))
 out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
-out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Read."}}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
 out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})

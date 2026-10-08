@@ -826,7 +826,18 @@ try:
     os.makedirs(os.path.join(ATT, "keep-me"))
     with open(os.path.join(ATT, "11111111-2222-3333-4444-555555555555", "old.txt"), "w") as f:
         f.write("left by a crash")
-    s = Server("attach", {"TMPDIR": att_tmp})
+    os.chmod(ATT, 0o700)  # the room only starts with an attachments folder nobody else can open
+    # A chat saved before attachments existed: its messages have no `files`. It must load as it is, and take files after.
+    data = os.path.join(TMP, "data-attach")
+    os.makedirs(os.path.join(data, "rooms"))
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": None, "title": None,
+                   "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}}}, f)
+    with open(os.path.join(data, "rooms", "old-chat.ndjson"), "w") as f:
+        for ev in [{"type": "user", "text": "an old question"}, {"type": "text", "who": "coen", "text": "An old answer."},
+                   {"type": "end", "status": "ok", "turns": 1, "costUsd": 0.01, "totalCostUsd": 0.01}]:
+            f.write(json.dumps({**ev, "jobId": "old-job", "ts": 1756684800000}) + "\n")
+    s = Server("attach", {"TMPDIR": att_tmp, "ROOM_ISSUE_FETCH_TIMEOUT_MS": "1000"})
     try:
         b64 = lambda b: base64.b64encode(b).decode()
         runs = lambda: [json.loads(l) for l in open(os.path.join(TMP, "attach-calls.ndjson"))]
@@ -844,6 +855,34 @@ try:
 
         notices = lambda evs: [e["text"] for e in evs if e["type"] == "notice"]
         ends = lambda evs: [e["status"] for e in evs if e["type"] == "end"]
+        job_dirs = lambda: [d for d in left() if d != "keep-me"]
+        names = lambda evs: [f["name"] for e in evs if e["type"] == "user" for f in e["files"]]
+        has_rule = lambda r: any("exec-room-attachments" in a for a in r["allowed"])
+        told = lambda r: "with the Read tool" in r["prompt"]
+
+        def stop(job):  # press Stop and return that job's events, from the chat history when it ended before the stream was read
+            call("/api/coen/stop", {})
+            evs = events(call("/api/stream")[1])
+            if not any(e["type"] == "end" for e in evs):
+                evs = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+            return evs
+
+        start = lambda body: json.loads(call("/api/coen", body)[1])["jobId"]
+
+        def settle():  # until this chat's job and the follow-ups it starts are over
+            while call("/api/stream")[0] != 204:
+                pass
+
+        def label(files):  # the page's "Attached: …" line, from public/attach-label.js run in node's vm
+            script = ("const vm = require('vm'), fs = require('fs'); const ctx = vm.createContext({});"
+                      "vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx); console.log(JSON.stringify(ctx.AttachLabel.line(JSON.parse(process.argv[2]))));")
+            done = subprocess.run(["node", "-e", script, os.path.join(opts.root, "public", "attach-label.js"), json.dumps(files)], capture_output=True, text=True, check=True)
+            return json.loads(done.stdout)
+
+        out("K chat from before attachments loads as saved", [(e["type"], e.get("text"), "files" in e) for e in json.loads(call("/api/room")[1])["events"]])
+        out("K attached line, old and odd shapes", [label(f) for f in (None, [], "x", [None, {}], [{"name": "a.pdf"}], [{"name": "a.pdf", "size": "12"}])])
+        out("K attached line", label([{"name": "a.pdf", "size": 24}, {"name": "b.txt", "size": 3000000}]))
+        out("K static attach-label.js", call("/attach-label.js")[0])
         out("K start-up clears crashed jobs only", left())
         out("K limits for the page", json.loads(call("/api/room")[1])["attachments"])
         _, evs = ask({"text": "no files"})
@@ -872,11 +911,10 @@ try:
         out("K stored names", (code, [f["name"] for e in evs if e["type"] == "user" for f in e["files"]], [f["exists"] for f in runs()[-1]["files"]]))
         code, evs = ask({"text": "please fail", "files": files[:1]})
         out("K failed run", (ends(evs), notices(evs), runs()[-1]["files"][0]["exists"], left()))
-        call("/api/coen", {"text": "slow one", "files": files[:1]})
+        job = start({"text": "slow one", "files": files[:1]})
         time.sleep(1)
         out("K file there while running", [os.listdir(os.path.join(ATT, d)) for d in left() if d != "keep-me"])
-        call("/api/coen/stop", {})
-        evs = events(call("/api/stream")[1])
+        evs = stop(job)
         out("K stopped run", (ends(evs), notices(evs), left()))
         before = len(runs())
         ok = b64(b"x")
@@ -902,11 +940,125 @@ try:
         code, evs = ask({"text": "three full-size files", "files": [{"name": f"{i}.txt", "data": full} for i in range(3)]})
         out("K three files of 5 MB fit", (code, ends(evs), [f["bytes"] for f in runs()[-1]["files"]], left()))
         out("K other routes keep the small body limit", call("/api/recs/rec-x/revise", {"note": "a" * 200000})[:2])
-        for label, folder in [("itself", ATT), ("its parent", att_tmp), ("a job's folder", os.path.join(ATT, "keep-me"))]:
+        for where, folder in [("itself", ATT), ("its parent", att_tmp), ("a job's folder", os.path.join(ATT, "keep-me")), ("another port's", os.path.join(att_tmp, "exec-room-attachments-9999"))]:
+            os.makedirs(folder, exist_ok=True)
             code, body, _ = call("/api/workspaces", {"name": "Reads attachments", "members": None, "access": {"files": [folder]}})
-            out(f"K attachments folder as a room folder, {label}", (code, "attached to messages" in body))
+            out(f"K attachments folder as a room folder, {where}", (code, "attached to messages" in body))
+        # Names: the type is read from the whole name, however long; only what is shown is cut, in the middle.
+        long_pdf = "q3-report-" + "x" * 106 + ".pdf"
+        code, evs = ask({"text": "long and non-ASCII names", "files": [{"name": long_pdf, "data": b64(PDF)}, {"name": "报告.pdf", "data": b64(PDF)}]})
+        out("K long name keeps its type", (len(long_pdf), code, names(evs)))
+        out("K long name is shown cut in the middle", call("/api/coen", {"text": "x", "files": [{"name": long_pdf, "data": b64(b"plain text")}]})[:2])
+        jpeg = b"\xff\xd8\xff\xe0" + b"\x00" * 8
+        code, evs = ask({"text": "more types", "files": [{"name": "a.jpg", "data": b64(jpeg)}, {"name": "b.gif", "data": b64(b"GIF89a" + b"\x00" * 8)}, {"name": "c.md", "data": b64(b"# hi")}]})
+        out("K jpg, gif and md", (code, names(evs)))
+        code, evs = ask({"text": "three names that collide", "files": [{"name": n, "data": b64(b"a,b\n")} for n in ("notes.csv", "NOTES.csv", "notes-2.csv")]})
+        out("K csv, and three names that collide", (code, names(evs)))
+        out("K refused, jpeg bytes named png", call("/api/coen", {"text": "x", "files": [{"name": "a.png", "data": b64(jpeg)}]})[:2])
+        # Saving fails (here: the folder can't be written): a plain sentence, no path, no "Deleted" notice, no run.
+        n = len(runs())
+        os.chmod(ATT, 0o500)
+        code, evs = ask({"text": "cannot be saved", "files": files[:1]})
+        os.chmod(ATT, 0o700)
+        errors = [e["error"] for e in evs if e["type"] == "error"]
+        last_job = json.loads(open(os.path.join(data, "jobs.ndjson")).read().splitlines()[-1])
+        out("K save failure", (ends(evs), errors, notices(evs), any("exec-room-attachments" in x for x in errors), len(runs()) == n))
+        out("K save failure: the reason is in the job log, nothing is left", (last_job.get("error", "").startswith("Couldn't save the attached files: "), job_dirs()))
+        # Deleting fails: said plainly, with the folder to remove by hand.
+        job = start({"text": "slow one", "files": files[:1]})
+        time.sleep(1)
+        os.chmod(ATT, 0o500)
+        evs = stop(job)
+        os.chmod(ATT, 0o700)
+        out("K delete failure", (ends(evs), [tidy(x) for x in notices(evs)]))
+        for d in job_dirs():
+            shutil.rmtree(os.path.join(ATT, d))
+        # One run's files stay its own: a run in another chat at the same time gets no rule for them, and neither do
+        # later turns in the same chat (a revision, a maker, the room's follow-up). A retried run keeps them.
+        second = json.loads(call("/api/workspaces", {"name": "Second", "members": None, "targets": {
+            "repos": ["Example-Org/example-app"], "allowedRecipients": ["anna@client.example"]}})[1])["workspace"]["id"]
+        call("/api/agents", {"name": "Scout", "role": "maker", "does": "scans competitor sites", "instructions": "Scan and list changes.", "tools": ["files"]})
+        call("/api/workspaces/exec/switch", {})
+        call("/api/coen", {"text": "slow one", "files": files[:1]})
+        time.sleep(1)
+        call(f"/api/workspaces/{second}/switch", {})
+        ask({"text": "meanwhile in another chat"})
+        other = runs()[-1]
+        out("K a run in another chat gets no rule for these files", (len(job_dirs()), has_rule(other), told(other)))
+        call("/api/workspaces/exec/switch", {})
+        call("/api/coen/stop", {})
+        settle()
+        call(f"/api/workspaces/{second}/switch", {})
+        code, evs = ask({"text": "three proposals", "files": files[:1]})
+        proposed = {e["rec"]["summary"]: e["rec"]["recId"] for e in evs if e["type"] == "recommendation"}
+        job = next(e["jobId"] for e in evs if e["type"] == "user")
+        out("K proposals from a turn with files", sorted(proposed))
+        out("K approve the email draft", call(f"/api/recs/{proposed['Approve me']}/approve", {})[0])
+        n = len(runs())
+        out("K revise", call(f"/api/recs/{proposed['Revise me']}/revise", {"note": "shorter"})[0])
+        settle()
+        # Both drafts are decided now, so their text is cleaned out of that turn; its file names stay.
+        mine = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+        out("K the transcript clean-up keeps the file names", ([e.get("files") for e in mine if e["type"] == "user"], "the private body" in json.dumps(mine)))
+        out("K approve the dispatch", call(f"/api/recs/{proposed['Scan']}/approve", {})[0])
+        settle()
+        out("K later turns get no rule and no file block", [(r["agent"] == plain["agent"], has_rule(r), told(r)) for r in runs()[n:]])
+        n = len(runs())
+        code, evs = ask({"text": "resume retry", "files": files[:1]})
+        out("K a retried run keeps the rule and the files", ([(r["resume"], has_rule(r), [f["exists"] for f in r["files"]]) for r in runs()[n:]], ends(evs), [x[:36] for x in notices(evs)], job_dirs()))
+        GH = "https://github.com/"
+        code, evs = ask({"text": f"see {GH}Example-Org/example-app/issues/1", "files": files[:1]})
+        prompt = runs()[-1]["prompt"]
+        out("K files and a linked issue", (0 < prompt.find("attached a file") < prompt.find("<<<GITHUB-ISSUES"), runs()[-1]["files"][0]["exists"], job_dirs()))
+        n = len(runs())
+        job = start({"text": f"{GH}Example-Org/example-app/issues/7", "files": files[:1]})
+        time.sleep(0.2)
+        during = len(job_dirs())
+        evs = stop(job)
+        out("K stop while the issue is read", (during, ends(evs), notices(evs), len(runs()) == n, job_dirs()))
+        # Stopping the room itself mid-turn: the agent is stopped first, then its files go.
+        call("/api/coen", {"text": "slow one", "files": files[:1]})
+        time.sleep(1)
+        during = len(job_dirs())
     finally:
         s.stop()
+    chat = [json.loads(l) for l in open(os.path.join(data, "rooms", json.load(open(os.path.join(data, "workspaces.json")))["workspaces"][second]["chat"] + ".ndjson"))]
+    out("K stopping the room mid-turn removes the files", (during, job_dirs(), [e["status"] for e in chat if e["type"] == "end"][-1]))
+
+    # The room doesn't start with an attachments folder it can't trust: a link, a folder others can open, a file.
+    def refused_start(what, make):
+        tmpd = os.path.join(TMP, f"attach-bad-{what.replace(' ', '-')}")
+        os.makedirs(tmpd)
+        folder = os.path.join(tmpd, f"exec-room-attachments-{PORT}")
+        make(folder)
+        env = dict(os.environ, PORT=str(PORT), TMPDIR=tmpd, ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token",
+                   ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"))
+        done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
+        out(f"K start-up refuses {what}", (done.returncode, done.stderr.replace(folder, "<attach>").strip().splitlines()))
+
+    elsewhere = os.path.realpath(os.path.join(TMP, "elsewhere"))
+    os.makedirs(elsewhere)
+    refused_start("a link", lambda p: os.symlink(elsewhere, p))
+    refused_start("a folder others can open", lambda p: (os.mkdir(p), os.chmod(p, 0o755)))
+    refused_start("a file", lambda p: open(p, "w").close())
+    # A room saved before attachments (or edited by hand) that lists a folder holding them: reported at start-up, as
+    # for sensitive folders, and that folder is left out of the room's runs.
+    data = os.path.join(TMP, "data-attach-rooms")
+    os.makedirs(data)
+    other_port = os.path.join(os.path.realpath(att_tmp), "exec-room-attachments-9999")
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump({"current": "exec", "workspaces": {"exec": {"id": "exec", "name": "Exec room", "members": None, "chat": None, "createdAt": "2026-09-01T00:00:00.000Z",
+                   "access": {"files": [elsewhere, other_port], "webSearch": False, "sites": [], "notion": False, "m365": False}}}}, f)
+    s = Server("attach", {"TMPDIR": att_tmp}, data_name="data-attach-rooms")
+    try:
+        warned = [w for w in map(json.loads, open(os.path.join(data, "jobs.ndjson"))) if w.get("check") == "attachments folder as a room folder"]
+        out("K a stored room folder that holds attachments is reported", [(w["room"], [f.replace(os.path.realpath(att_tmp), "<tmp>") for f in w["folders"]]) for w in warned])
+        ask({"text": "what can this room read"})
+        allowed = runs()[-1]["allowed"]
+        out("K and is left out of that room's runs", (any(other_port in a for a in allowed), any(elsewhere in a for a in allowed)))
+    finally:
+        os.killpg(s.p.pid, 15)  # not s.stop(): the terminal warning holds this run's temp path
+        out("K and said in the terminal", s.p.communicate()[1].strip().replace(os.path.realpath(att_tmp), "<tmp>"))
     # M: email_draft (issue #45). Recipients must be on the room's list (exact addresses, or bare domains matched
     # exactly: no longer names ending in them, no subdomains), checked when proposed and again on approval. Unsafe
     # addresses are refused, not cleaned up. Approving sends nothing, and a decided draft keeps only its summary,

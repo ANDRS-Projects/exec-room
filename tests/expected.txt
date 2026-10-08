@@ -275,6 +275,10 @@ I pr 75 capped: (True, True, 1)
 I pr failure: ["Couldn't read Example-Org/example-app#404 (pull request): no such pull request. Don't guess what it says; tell the owner."]
 I stop while reading: 200
 I stopped before Claude: (['stopped'], True)
+K chat from before attachments loads as saved: [('user', 'an old question', False), ('text', 'An old answer.', False), ('end', None, False)]
+K attached line, old and odd shapes: ['', '', '', '', 'Attached: a.pdf', 'Attached: a.pdf']
+K attached line: Attached: a.pdf (24 bytes), b.txt (2.9 MB)
+K static attach-label.js: 200
 K start-up clears crashed jobs only: ['keep-me']
 K limits for the page: {'maxFiles': 3, 'maxBytes': 5242880, 'extensions': ['txt', 'md', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp']}
 K no files: ([], [], [None])
@@ -303,8 +307,8 @@ K refused, not base64: (400, '{"error":"\\"a.txt\\" didn\'t arrive intact. Try a
 K refused, empty: (400, '{"error":"\\"a.txt\\" is empty."}')
 K refused, too large: (400, '{"error":"\\"big.txt\\" is larger than 5 MB."}')
 K refused, text renamed to pdf: (400, '{"error":"\\"a.pdf\\" isn\'t a PDF file, whatever its name says."}')
-K refused, binary renamed to txt: (400, '{"error":"\\"a.txt\\" isn\'t a plain text file, whatever its name says."}')
-K refused, not utf-8: (400, '{"error":"\\"a.csv\\" isn\'t a plain text file, whatever its name says."}')
+K refused, binary renamed to txt: (400, '{"error":"\\"a.txt\\" isn\'t saved as UTF-8 text."}')
+K refused, not utf-8: (400, '{"error":"\\"a.csv\\" isn\'t saved as UTF-8 text. In Excel, choose \\"CSV UTF-8\\" when saving."}')
 K files without a question: (400, '{"error":"text required"}')
 K refused ones ran nothing and saved nothing: (True, ['keep-me'])
 K three files of 5 MB fit: (200, ['ok'], [5242880, 5242880, 5242880], ['keep-me'])
@@ -312,6 +316,32 @@ K other routes keep the small body limit: (413, '{"error":"That is too large to 
 K attachments folder as a room folder, itself: (400, True)
 K attachments folder as a room folder, its parent: (400, True)
 K attachments folder as a room folder, a job's folder: (400, True)
+K attachments folder as a room folder, another port's: (400, True)
+K long name keeps its type: (120, 200, ['q3-report-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.pdf', 'file.pdf'])
+K long name is shown cut in the middle: (400, '{"error":"\\"q3-report-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx….pdf\\" isn\'t a PDF file, whatever its name says."}')
+K jpg, gif and md: (200, ['a.jpg', 'b.gif', 'c.md'])
+K csv, and three names that collide: (200, ['notes.csv', 'NOTES-2.csv', 'notes-2-2.csv'])
+K refused, jpeg bytes named png: (400, '{"error":"\\"a.png\\" isn\'t a PNG file, whatever its name says."}')
+K save failure: (['error'], ["Couldn't save the attached file, so the message wasn't sent to Coen. Try again; if it keeps happening, check that the disk isn't full."], [], False, True)
+K save failure: the reason is in the job log, nothing is left: (True, [])
+K delete failure: (['stopped'], ["Couldn't delete Offer_final.pdf after this turn. Remove the folder <attach as typed>/<job> yourself."])
+K a run in another chat gets no rule for these files: (1, False, False)
+K proposals from a turn with files: ['Approve me', 'Revise me', 'Scan']
+K approve the email draft: 200
+K revise: 200
+K the transcript clean-up keeps the file names: ([[{'name': 'Offer_final.pdf', 'size': 24}]], False)
+K approve the dispatch: 200
+K later turns get no rule and no file block: [(True, False, False), (False, False, False), (True, False, False)]
+K a retried run keeps the rule and the files: ([(True, True, [True]), (False, True, [True])], ['ok'], ["Coen's previous session couldn't be ", 'Deleted after this turn: Offer_final'], [])
+K files and a linked issue: (True, True, [])
+K stop while the issue is read: (1, ['stopped'], ["Couldn't read Example-Org/example-app#7 (GitHub didn't answer within 1s).", 'Deleted: Offer_final.pdf. The turn ended before an agent could read it.'], True, [])
+K stopping the room mid-turn removes the files: (1, [], 'stopped')
+K start-up refuses a link: (1, ["The folder for attached files, <attach>, already exists but isn't a private folder of this user (a real folder, owned by you, that nobody else can open).", 'Remove it and start the room again.'])
+K start-up refuses a folder others can open: (1, ["The folder for attached files, <attach>, already exists but isn't a private folder of this user (a real folder, owned by you, that nobody else can open).", 'Remove it and start the room again.'])
+K start-up refuses a file: (1, ["The folder for attached files, <attach>, already exists but isn't a private folder of this user (a real folder, owned by you, that nobody else can open).", 'Remove it and start the room again.'])
+K a stored room folder that holds attachments is reported: [('exec', ['<tmp>/exec-room-attachments-9999'])]
+K and is left out of that room's runs: (False, True)
+K and said in the terminal: Room "Exec room" lists folders that hold files attached to messages: <tmp>/exec-room-attachments-9999. Agents in that room don't get them; remove them in the room's settings.
 M migrated rooms start empty: [('exec', [], ''), ('old', [], '')]
 M migration saved: [[], []]
 M no recipients 1: this room has no email recipients, so it can't propose emails
