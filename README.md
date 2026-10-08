@@ -1,5 +1,11 @@
 # Exec Room
 
+[![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Runs on Claude Code](https://img.shields.io/badge/runs%20on-Claude%20Code-D97757)](https://code.claude.com/docs)
+[![Runs locally](https://img.shields.io/badge/runs-locally-2ea44f)](SECURITY.md)
+[![Actions: approve first](https://img.shields.io/badge/actions-approve--first-6f42c1)](SECURITY.md)
+
 Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of Claude Code agents. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, jobs for other agents). They never get a shell, and nothing happens until you approve it.
 
 The room starts with one agent: **Coen**, the room lead. Every message goes to him first. You build the rest of the team yourself, in the room:
