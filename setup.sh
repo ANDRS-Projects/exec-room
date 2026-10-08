@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Exec Room — First-time setup
 # Usage: ./setup.sh
-# Sets up Node dependencies, creates room.config.json from the template, and checks prerequisites.
+# Sets up Node dependencies, creates room.config.json from the template, checks prerequisites,
+# and offers to start the room.
 
 echo "=== Exec Room Setup ==="
 echo ""
@@ -69,18 +70,27 @@ fi
 echo ""
 echo -e "${GREEN}=== Setup complete! ===${NC}"
 echo ""
-echo "Next steps:"
-echo "  1. Optional, for Notion: add your databases to room.config.json (see README.md)."
+echo "Optional, for Notion (do this before starting the room):"
+echo "  - add your databases to room.config.json (see README.md)"
+echo "  - set your integration token: export ROOM_NOTION_TOKEN=secret_..."
 echo ""
-echo "  2. If you have a Notion integration token, set it:"
-echo "     export ROOM_NOTION_TOKEN=secret_..."
-echo ""
-echo "  3. Start the room:"
-echo "     npm run room"
-echo ""
-echo "  4. Open http://127.0.0.1:4179 in your browser"
-echo ""
-echo "  5. Run tests anytime:"
-echo "     npm test"
+echo "Start the room anytime:  npm run room"
+echo "Then open http://127.0.0.1:4179 in your browser; stop the room with Ctrl-C."
+echo "Run tests anytime:       npm test"
 echo ""
 echo "Questions? See CLAUDE.md for commands and CONTRIBUTING.md for development."
+
+# Offer to start the room right away, but only when someone is at the terminal (not in a script or CI).
+if [ -t 0 ] && [ -t 1 ]; then
+  echo ""
+  read -r -p "Start the room now? [Y/n] " START || START=n
+  case "$START" in
+    [nN]*) ;;
+    *)
+      echo ""
+      echo "Starting the room. Stop it with Ctrl-C."
+      # exec: the server takes over this terminal, so Ctrl-C goes straight to it.
+      exec node room-server.js
+      ;;
+  esac
+fi
