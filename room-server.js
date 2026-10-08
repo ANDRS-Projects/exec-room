@@ -1476,7 +1476,8 @@ function permissionsFor(access, { lead = false, groups = null } = {}) {
   const allowed = [];
   if (want('Read')) {
     tools.push('Read', 'Grep', 'Glob');
-    // A stored folder that holds attached files is never handed out (a new one is refused when the room is saved).
+    // A room's stored folder that holds attached files is left out of the agent's read access (adding one in the
+    // settings is already refused).
     allowed.push(...[DRAFTS_DIR, ...access.files.filter((f) => !overlapsAttachments(realOr(f) || f))].map((f) => `Read(/${f}/**)`), ...instructionReads());
   }
   if (access.webSearch && want('WebSearch')) { tools.push('WebSearch'); allowed.push('WebSearch'); }
