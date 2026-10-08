@@ -11,3 +11,5 @@ __pycache__/
 # claude-mem writes a CLAUDE.md into folders it sees; only the root one is the project's.
 **/CLAUDE.md
 !/CLAUDE.md
+# Local notes kept by Claude Code sessions; never published.
+.claude/memory/
