@@ -51,7 +51,8 @@ const DRAFT_MAX_BYTES = 512 * 1024;
 // where no run can read without a rule (checked live on 2026-10-07 with the room's flags), so only the run they
 // were sent to gets one. One folder per job, deleted when that job ends. Per port, so a second room on this Mac
 // (a sandbox, the suite) only clears its own leftovers at start-up.
-const ATTACH_DIR = path.join(os.tmpdir(), `exec-room-attachments-${PORT}`);
+const ATTACH_PREFIX = 'exec-room-attachments-';
+const ATTACH_DIR = path.join(os.tmpdir(), `${ATTACH_PREFIX}${PORT}`);
 const ATTACH_MAX_FILES = 3;
 const ATTACH_MAX_BYTES = 5 * 1024 * 1024;
 // What the Read tool can open: text, PDFs and images. The value is how the file's first bytes are checked.
@@ -424,7 +425,20 @@ function toolDetail(input = {}) {
 fs.mkdirSync(ROOMS_DIR, { recursive: true });
 // No run survives a restart, so a job's attachment folder that is still there was left by a crash: remove it.
 // Only folders named like a job id, so nothing else that ends up in this folder is ever deleted.
-fs.mkdirSync(ATTACH_DIR, { recursive: true, mode: 0o700 });
+try { fs.mkdirSync(ATTACH_DIR, { recursive: true, mode: 0o700 }); } catch { /* something else has that name: the check below says so */ }
+// Creating it does nothing when it is already there, and its name can be guessed. Where the temp folder is shared
+// between users (/tmp on Linux), a folder or link someone else put there must not be trusted: the room only starts
+// with a real folder, owned by this user, that nobody else can open. (No owner or mode to test on Windows.)
+{
+  let st = null;
+  try { st = fs.lstatSync(ATTACH_DIR); } catch { /* couldn't be made at all */ }
+  const posix = typeof process.getuid === 'function';
+  if (!st || !st.isDirectory() || (posix && (st.uid !== process.getuid() || (st.mode & 0o077)))) {
+    console.error(`The folder for attached files, ${ATTACH_DIR}, ${st ? "already exists but isn't" : "couldn't be made as"} a private folder of this user (a real folder, owned by you, that nobody else can open).`);
+    console.error('Remove it and start the room again.');
+    process.exit(1);
+  }
+}
 for (const name of fs.readdirSync(ATTACH_DIR)) {
   if (ATTACH_JOB_DIR.test(name)) fs.rmSync(path.join(ATTACH_DIR, name), { recursive: true, force: true });
 }
@@ -689,6 +703,14 @@ function sensitiveDenied() {
   return [...dirs.map((d) => `Read(/${d}/**)`), ...files.map((f) => `Read(/${f})`)];
 }
 
+// Whether a folder is an attachments folder, sits inside one, or holds the temp folder they live in. Any room's
+// attachments folder counts, not only this port's (a sandbox on another port keeps its own next to it).
+function overlapsAttachments(folder) {
+  const tmp = (realOr(os.tmpdir()) || path.resolve(os.tmpdir())).toLowerCase();
+  const r = folder.toLowerCase();
+  return r === tmp || tmp.startsWith(r + '/') || r.startsWith(`${tmp}/${ATTACH_PREFIX}`);
+}
+
 // Folders must be real directories; the whole disk, the home folder and anything above it are too broad
 // (they'd include ~/.ssh and credentials). Symlinks are resolved, so the rule matches what is really read.
 function validateAccess(o) {
@@ -710,9 +732,7 @@ function validateAccess(o) {
     if (isSensitive([path.resolve(expanded), real], home)) throw new Error(`"${f}" holds keys or settings agents must never read (${[...SENSITIVE_DIRS, CLAUDE_DIR].map((d) => `~/${d}`).join(', ')}, and what they link to; in ~/.claude only ${INSTRUCTION_DIRS.join(', ')} are allowed): pick another folder`);
     // A room folder that is, holds or sits inside the attachments folder would let every run in that room read
     // files attached in another room.
-    const attach = (realOr(ATTACH_DIR) || path.resolve(ATTACH_DIR)).toLowerCase();
-    const r = real.toLowerCase();
-    if (r === attach || r.startsWith(attach + '/') || attach.startsWith(r + '/')) throw new Error(`"${f}" holds the files attached to messages, which only the run they were sent to may read: pick another folder`);
+    if (overlapsAttachments(real)) throw new Error(`"${f}" holds the files attached to messages, which only the run they were sent to may read: pick another folder`);
     return real;
   }))];
   const HOST = /^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))*\.[a-z]{2,63}$/;
@@ -1345,6 +1365,13 @@ for (const rec of Object.values(recs)) if (rec.action === 'email_draft' && rec.s
   const home = process.env.HOME;
   for (const space of Object.values(spaces.workspaces)) {
     try {
+      // A room saved before attachments existed (or edited by hand) may list a folder that holds them. It is left out
+      // of that room's runs (see permissionsFor) and reported here.
+      const attached = ((space.access && space.access.files) || []).filter((f) => typeof f === 'string' && overlapsAttachments(realOr(f) || f));
+      if (attached.length) {
+        console.warn(`Room "${space.name}" lists folders that hold files attached to messages: ${attached.map(tilde).join(', ')}. Agents in that room don't get them; remove them in the room's settings.`);
+        fs.appendFileSync(JOBS_FILE, JSON.stringify({ kind: 'warning', check: 'attachments folder as a room folder', room: space.id, name: space.name, folders: attached.map(tilde), at: new Date().toISOString() }) + '\n');
+      }
       const hits = ((space.access && space.access.files) || []).filter((f) => isSensitive([f, realOr(f) || f], home));
       if (!hits.length) continue;
       const folders = hits.map(tilde);
@@ -1366,19 +1393,25 @@ function validateAttachments(v) {
   const taken = new Set();
   return v.map((f) => {
     if (!f || typeof f !== 'object' || typeof f.name !== 'string' || typeof f.data !== 'string') throw new Error('Each file needs a name and its content.');
-    // The name as shown in messages: its last path part, without control characters, cut short.
-    const shown = (f.name.split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, '').trim() || 'file').slice(0, 80);
-    const ext = shown.includes('.') ? shown.split('.').pop().toLowerCase() : '';
+    // The name's last path part, without control characters. The extension is read from the whole name; only what
+    // is shown in messages is cut short, in the middle, so a long name keeps its type.
+    const full = f.name.split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f]/g, '').trim() || 'file';
+    const ext = full.includes('.') ? full.split('.').pop().toLowerCase() : '';
+    const shown = full.length > 80 ? `${full.slice(0, 60)}…${ext ? `.${ext.slice(0, 10)}` : ''}` : full;
     const kind = Object.hasOwn(ATTACH_TYPES, ext) ? ATTACH_TYPES[ext] : null;
     if (!kind) throw new Error(`"${shown}" can't be attached: only ${Object.keys(ATTACH_TYPES).map((e) => `.${e}`).join(', ')} files.`);
     if (f.data.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(f.data)) throw new Error(`"${shown}" didn't arrive intact. Try attaching it again.`);
     const bytes = Buffer.from(f.data, 'base64');
     if (!bytes.length) throw new Error(`"${shown}" is empty.`);
     if (bytes.length > ATTACH_MAX_BYTES) throw new Error(`"${shown}" is larger than ${ATTACH_MAX_BYTES / 1024 / 1024} MB.`);
-    if (!looksLike(kind, bytes)) throw new Error(`"${shown}" isn't a ${kind === 'text' ? 'plain text' : kind.toUpperCase()} file, whatever its name says.`);
+    // A text file that isn't UTF-8 is usually a real one in another encoding (Excel's plain "CSV"), so it gets its own
+    // sentence. It isn't converted here: the old encodings can't be told apart, and a wrong character in figures is worse.
+    if (!looksLike(kind, bytes)) throw new Error(kind === 'text'
+      ? `"${shown}" isn't saved as UTF-8 text.${ext === 'csv' ? ' In Excel, choose "CSV UTF-8" when saving.' : ''}`
+      : `"${shown}" isn't a ${kind.toUpperCase()} file, whatever its name says.`);
     // Stored under letters, digits, - and _ only, so the name can't leave its folder or look like a secret file.
     // (Names starting like an SSH key are blocked for every run, so those get a prefix.)
-    const safe = shown.slice(0, -(ext.length + 1)).replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'file';
+    const safe = full.slice(0, -(ext.length + 1)).replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'file';
     const stem = /^id_(rsa|ed25519|ecdsa)/i.test(safe) ? `file-${safe}` : safe;
     let name = `${stem}.${ext}`;
     for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = `${stem}-${n}.${ext}`;
@@ -1412,6 +1445,7 @@ function saveAttachments(job, files) {
   // doesn't match a read by the other (checked live on 2026-10-07).
   job.attachRead = [...new Set([dir, real])];
   for (const f of files) fs.writeFileSync(path.join(dir, f.name), f.bytes, { mode: 0o600, flag: 'wx' });
+  job.attachSaved = true;
   const one = files.length === 1;
   return [
     `[Added by the room server, not written by the owner.] The owner attached ${one ? 'a file' : `${files.length} files`} to this message. Open ${one ? 'it' : 'them'} with the Read tool, at exactly ${one ? 'this path' : 'these paths'}:`,
@@ -1442,7 +1476,8 @@ function permissionsFor(access, { lead = false, groups = null } = {}) {
   const allowed = [];
   if (want('Read')) {
     tools.push('Read', 'Grep', 'Glob');
-    allowed.push(...[DRAFTS_DIR, ...access.files].map((f) => `Read(/${f}/**)`), ...instructionReads());
+    // A stored folder that holds attached files is never handed out (a new one is refused when the room is saved).
+    allowed.push(...[DRAFTS_DIR, ...access.files.filter((f) => !overlapsAttachments(realOr(f) || f))].map((f) => `Read(/${f}/**)`), ...instructionReads());
   }
   if (access.webSearch && want('WebSearch')) { tools.push('WebSearch'); allowed.push('WebSearch'); }
   if (access.sites.length && want('WebFetch')) { tools.push('WebFetch'); allowed.push(...access.sites.map((d) => `WebFetch(domain:${d})`)); }
@@ -1525,7 +1560,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     jobId: crypto.randomUUID(), roomId: room.roomId, startedAt: new Date().toISOString(),
     prompt: text.slice(0, 500), peers: new Set(), toolCounts: {}, drafts: new Set(),
     turns: 0, costUsd: 0, costBase: 0, sessionTotal: 0, child: null, stopTimer: null, stopRequested: false, done: false,
-    events: [], subscribers: new Set(), coenText: '', focusText: '', attachDir: null, attachRead: [],
+    events: [], subscribers: new Set(), coenText: '', focusText: '', attachDir: null, attachRead: [], attachSaved: false,
   };
   const agentKey = dispatch ? (maker || dispatch.agent) : null;
   // Who the room is waiting for, for the busy messages: the maker, or the focus agent Coen hands to, or Coen.
@@ -1595,9 +1630,11 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       const names = files.map((f) => f.name).join(', ');
       let removed = true;
       try { fs.rmSync(job.attachDir, { recursive: true, force: true }); } catch { removed = false; }
-      send({ type: 'notice', text: removed
+      // Nothing to say when saving failed: no agent ran, so nothing was read (the folder is still cleared above).
+      if (!removed) send({ type: 'notice', text: `Couldn't delete ${names} after this turn. Remove the folder ${tilde(job.attachDir)} yourself.` });
+      else if (job.attachSaved) send({ type: 'notice', text: job.child
         ? `Deleted after this turn: ${names}. What was read from ${files.length > 1 ? 'them' : 'it'} stays in this chat.`
-        : `Couldn't delete ${names} after this turn. Remove the folder ${tilde(job.attachDir)} yourself.` });
+        : `Deleted: ${names}. The turn ended before an agent could read ${files.length > 1 ? 'them' : 'it'}.` });
     }
     // When a maker (or the whole chain) finishes, Coen gets a turn to propose the next step.
     const nudge = Boolean(dispatch) && status === 'ok' && !chainNext;
@@ -1629,9 +1666,10 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
   }
 
   // A failed run: the reason goes to the page and into the job log.
-  function fail(error) {
+  // `detail`: what goes into the job log when the page should get a plainer sentence than the raw error.
+  function fail(error, detail = error) {
     send({ type: 'error', who: 'coen', error });
-    finish('error', error);
+    finish('error', detail);
   }
 
   function run(resumeId) {
@@ -1792,7 +1830,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     try {
       prompt = `${prompt}\n\n${saveAttachments(job, files)}`;
     } catch (err) {
-      fail(`Couldn't save the attached files: ${err.message}`);
+      fail(`Couldn't save the attached file${files.length > 1 ? 's' : ''}, so the message wasn't sent to ${job.who}. Try again; if it keeps happening, check that the disk isn't full.`, `Couldn't save the attached files: ${err.message}`);
       return job;
     }
   }
@@ -2334,6 +2372,35 @@ app.post('/api/coen/reset', (req, res) => {
   if (jobs.has(currentRoom().roomId)) return res.status(409).json({ error: `${jobs.get(currentRoom().roomId).who} is still working. Press Stop first.` });
   res.json({ roomId: newRoom().roomId });
 });
+
+// Stopping the room (Ctrl-C, or a stop from the app): running agents are stopped first, and only once they are gone
+// are their attached files removed, so nothing is deleted while an agent may still be reading it. Each job's own
+// finish() does that as its agent exits; what is left (a job that was still reading linked issues) is cleared here.
+// A second signal doesn't wait.
+let stopping = false;
+function shutDown() {
+  if (stopping) process.exit(1);
+  stopping = true;
+  const signalled = new Set();
+  const started = Date.now();
+  const tick = () => {
+    const running = [...jobs.values()].filter((job) => job.child && !job.done);
+    for (const job of running) {
+      job.stopRequested = true;
+      if (!signalled.has(job)) { signalled.add(job); job.child.kill('SIGTERM'); }
+      else if (Date.now() - started > STOP_GRACE_MS) job.child.kill('SIGKILL');
+    }
+    if (running.length && Date.now() - started < STOP_GRACE_MS + 1000) return;
+    for (const job of jobs.values()) {
+      if (job.attachDir) try { fs.rmSync(job.attachDir, { recursive: true, force: true }); } catch { /* cleared at the next start */ }
+    }
+    process.exit(0);
+  };
+  setInterval(tick, 50);
+  tick();
+}
+process.on('SIGINT', shutDown);
+process.on('SIGTERM', shutDown);
 
 app.listen(PORT, HOST, () => {
   console.log(`Exec Room (headless Claude Code) at http://localhost:${PORT}/room.html`);
