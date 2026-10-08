@@ -38,9 +38,10 @@ The room runs on your own Claude plan. Every message, every advisor Coen consult
 ```bash
 git clone https://github.com/ANDRS-Projects/exec-room.git
 cd exec-room
-./setup.sh        # checks the requirements, installs dependencies, creates room.config.json
-npm run room      # then open http://127.0.0.1:4179
+./setup.sh        # checks the requirements, installs dependencies, creates room.config.json, offers to start the room
 ```
+
+Then open http://127.0.0.1:4179. Stop the room with Ctrl-C; start it again later with `npm run room`.
 
 Click **Add agent** to build your first advisor or maker, and **Room settings** to choose what the room may read, which sites it may open, and what it may propose.
 
