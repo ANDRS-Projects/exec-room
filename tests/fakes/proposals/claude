@@ -38,5 +38,5 @@ else:
     say("Here is my proposal."
         + rec({"action": "dispatch", "agent": "wren", "then": "iris", "then_brief": "Header image.", "summary": "LinkedIn post about dark mode", "brief": "Write a short LinkedIn post."})
         + rec({"action": "github_issue", "repo": "demo-app", "summary": "Track dark mode", "title": "Add dark mode\nsecond line", "body": "Scope: **theming tokens**."})
-        + rec({"action": "github_issue", "repo": "retro-reader", "summary": "Public repo", "title": "x", "body": "y"}))
+        + rec({"action": "github_issue", "repo": "other-app", "summary": "Public repo", "title": "x", "body": "y"}))
 out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})
