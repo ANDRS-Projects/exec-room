@@ -479,3 +479,9 @@ J replay, owner and decision events: ('the owner', [('approved', 'the owner'), (
 J new room has none: {'owner': 'the owner', 'total': 0, 'decisions': []}
 J moved chat takes its decisions along: (0, 6)
 J deleted room, its decisions are in no room: (0, (404, '{"error":"no such room"}'))
+R every short id is used, a new room gets a longer one: [True, True]
+R two new rooms, two ids: True
+R rooms that exist are kept: (32771, True)
+R a deleted room's decisions stay in no room: [0, 0]
+R the new room starts with an empty chat: (True, [])
+R another name still gets a short id: True
