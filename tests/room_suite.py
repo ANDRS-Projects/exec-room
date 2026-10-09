@@ -1280,6 +1280,18 @@ try:
     finally:
         s.stop()
     out("S hidden connectors warnings", [l for l in s.stderr.splitlines() if "hiddenConnectors" in l])
+    # S: "ownerName" in the config is the name decisions are recorded under, tidied to one line. (Scenario J runs
+    # without one and gets "the owner".)
+    named_config = os.path.join(TMP, "room.config.named.json")
+    with open(named_config, "w") as f:
+        json.dump({"notionDatabases": {}, "ownerName": "  Sam \n Lee "}, f)
+    data = os.path.join(TMP, "data-named")
+    old_chat(data)
+    s = Server("access", data_name="data-named", config=named_config)
+    try:
+        out("S owner name from the config", json.loads(call("/api/room")[1])["owner"])
+    finally:
+        s.stop()
     # U: paths are shown with ~ only for the home folder and what's inside it: with HOME=<tmp>/c, <tmp>/c2/x stays as it
     # is (not "~2/x"). node and the
     # fake claude's python3 come from real-bin, found with the real HOME: pyenv, asdf, mise or volta shims need it.
@@ -1397,6 +1409,78 @@ try:
     out("L signing line in the documents", (sorted({l for found in copied.values() for l in found}), {name: len(found) for name, found in copied.items()}))
     out("L agreement version and placeholders", (re.findall(r"^Version (\d+), (.*)$", docs["CLA.md"], re.M), re.findall(r"const VERSION = (\d+);", cla_yml),
                                                  re.findall(r"\[[a-z][a-zA-Z ]*\](?!\()", docs["CLA.md"])))
+
+    # J: who decided (the actor on a proposal, on its log lines and on the decision event) and a room's Decisions list,
+    # folded from the job log. The data folder starts with records saved before the actor existed (the old shape), a
+    # chat whose room was deleted, a proposal nobody decided on, and a broken line in the log.
+    data = os.path.join(TMP, "data-decisions")
+    os.makedirs(os.path.join(data, "rooms"))
+    chat = lambda room_id, **more: {"roomId": room_id, **more, "claudeSessionId": None, "title": None, "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": dict(chat("old-chat"), title="Launch plan\nfor ada@client.example"), "gone-chat": chat("gone-chat", workspaceId="gone-0000")}}, f)
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump(default_rooms(), f)
+    # One old proposal is still stored (it names the agent who proposed it); the others are in the log only.
+    with open(os.path.join(data, "recommendations.json"), "w") as f:
+        json.dump({"rec-issue": {"recId": "rec-issue", "roomId": "old-chat", "action": "github_issue", "summary": "Old rec-issue", "state": "done", "by": "tess"}}, f)
+    old = lambda rec, room_id, action, state, minute, **more: {"kind": "decision", "recId": rec, "roomId": room_id, "action": action, "summary": f"Old {rec}", "state": state, "at": f"2026-09-02T10:{minute:02d}:00.000Z", **more}
+    # No draft ships with the repo: the one that has to exist is written for this scenario and removed after it.
+    kept, gone = "2026-09-02-wren-kept.md", "2026-09-02-wren-gone.md"
+    os.makedirs(os.path.join(opts.root, "drafts"), exist_ok=True)
+    with open(os.path.join(opts.root, "drafts", kept), "w") as f:
+        f.write("kept\n")
+    old_log = [
+        old("rec-issue", "old-chat", "github_issue", "pending", 1), old("rec-issue", "old-chat", "github_issue", "approved", 2),
+        old("rec-issue", "old-chat", "github_issue", "done", 3, result={"url": "https://github.com/Example-Org/demo-app/issues/7"}),
+        old("rec-note", "old-chat", "dispatch", "pending", 4), old("rec-note", "old-chat", "dispatch", "revised", 5, note="PRIVATE NOTE"),
+        old("rec-open", "old-chat", "dispatch", "pending", 6),
+        old("rec-drafts", "old-chat", "dispatch", "pending", 7), old("rec-drafts", "old-chat", "dispatch", "approved", 8),
+        old("rec-drafts", "old-chat", "dispatch", "running", 9, result={"drafts": [kept]}, jobId="j1"),
+        old("rec-drafts", "old-chat", "dispatch", "done", 10, result={"drafts": [kept, gone, "2026-09-02-wren-fix.patch", "../outside.md"]}, jobId="j2"),
+        old("rec-mail", "old-chat", "email_draft", "pending", 11, domains=["client.example"], subject="Next steps"),
+        old("rec-mail", "old-chat", "email_draft", "approved", 12, domains=["client.example"], subject="Next steps"),
+        old("rec-gone", "gone-chat", "github_issue", "pending", 13), old("rec-gone", "gone-chat", "github_issue", "approved", 14),
+    ]
+    with open(os.path.join(data, "jobs.ndjson"), "w") as f:
+        f.write("".join(json.dumps(l) + "\n" for l in old_log) + "{not json\n")
+    s = Server("proposals", data_name="data-decisions")
+    try:
+        listed = lambda room_id, **kw: call(f"/api/workspaces/{room_id}/decisions", **kw)
+        rows = lambda room_id: json.loads(listed(room_id)[1])
+        log = lambda: [json.loads(l) for l in open(os.path.join(data, "jobs.ndjson")) if l.startswith('{"')]
+        got = rows("exec")
+        out("J old records, folded per proposal", [(d["recId"], d["action"], d["decision"], d["actor"], d["state"], d["at"][11:16]) for d in got["decisions"]])
+        out("J old records, owner and total", (got["owner"], got["total"]))
+        by_id = {d["recId"]: d for d in got["decisions"]}
+        out("J link to the issue", by_id["rec-issue"]["urls"])
+        out("J drafts, one no longer there, a patch named too", [(f["name"], f["exists"], f["opens"]) for f in by_id["rec-drafts"]["drafts"]])
+        out("J email shows subject and domains only", (by_id["rec-mail"]["subject"], by_id["rec-mail"]["domains"], sorted(by_id["rec-mail"])))
+        out("J proposer and chat per row", [(d["recId"], d.get("proposer"), d["chat"]) for d in got["decisions"] if d["recId"] in ("rec-issue", "rec-mail")])
+        out("J revision note left out", "PRIVATE NOTE" in listed("exec")[1])
+        out("J foreign origin", listed("exec", headers={"Origin": "https://evil.example"})[:2])
+        call("/api/coen", {"text": "propose things"})
+        recs = [e["rec"] for e in events(call("/api/stream")[1]) if e["type"] == "recommendation"]
+        issue = [r for r in recs if r["action"] == "github_issue"][0]
+        dispatch = [r for r in recs if r["action"] == "dispatch"][0]
+        out("J a new proposal has no actor", ("actor" in issue, [l.get("actor") for l in log() if l.get("recId") == issue["recId"]]))
+        code, body, _ = call(f"/api/recs/{issue['recId']}/approve", {})
+        out("J decision event names who decided", [(e["type"], e.get("actor")) for e in json.loads(body)["events"]])
+        saved = json.load(open(os.path.join(data, "recommendations.json")))[issue["recId"]]
+        out("J actor on the proposal and its log lines", (saved["actor"], [(l["state"], l.get("actor")) for l in log() if l.get("recId") == issue["recId"]]))
+        call(f"/api/recs/{dispatch['recId']}/dismiss", {})
+        out("J new decisions come first", [(d["action"], d["decision"], d["actor"], d["state"], d["urls"]) for d in rows("exec")["decisions"][:2]])
+        room = json.loads(call("/api/room")[1])
+        out("J replay, owner and decision events", (room["owner"], [(e["decision"], e.get("actor")) for e in room["events"] if e["type"] == "decision"]))
+        sales = json.loads(call("/api/workspaces", {"name": "Sales", "members": None})[1])["workspace"]["id"]
+        out("J new room has none", rows(sales))
+        call("/api/workspaces/exec/switch", {})
+        call(f"/api/workspaces/{sales}/move-chat", {})
+        out("J moved chat takes its decisions along", (rows("exec")["total"], rows(sales)["total"]))
+        call(f"/api/workspaces/{sales}/remove", {})
+        out("J deleted room, its decisions are in no room", (rows("exec")["total"], listed(sales)[:2]))
+    finally:
+        s.stop()
+        os.remove(os.path.join(opts.root, "drafts", kept))
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 

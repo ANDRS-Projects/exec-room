@@ -109,6 +109,25 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .space-panel { display: flex; flex-direction: column; gap: 14px; }
 .space-panel[hidden] { display: none; }
 .panel-note { margin: 0; font-size: 12px; color: var(--muted); }
+/* Decisions tab: read-only rows, one per decided proposal. Not part of the form. */
+.decision-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.decision { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.decision-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.decision-kind, .decision-when { font-size: 12px; color: var(--muted); }
+.decision-when { margin-left: auto; }
+.decision-summary { margin: 0; line-height: 1.45; overflow-wrap: anywhere; }
+/* Background tags on a row: the proposer in that agent's colour (as on their cards), and the chat with a dot in one
+   of the 8 tones, the same for every row from that chat. */
+.decision-tags { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.decision-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.decision-tag.by { --accent: var(--coen); --fill: var(--coen-fill); background: var(--fill); color: var(--accent); }
+.decision-tag.by.custom { --accent: var(--tone, var(--custom)); --fill: var(--tone-fill, var(--custom-fill)); }
+.decision-tag.chat { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); color: var(--muted); }
+.decision-tag.chat::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--tone, var(--muted)); }
+.decision-tag.chat span { overflow: hidden; text-overflow: ellipsis; }
+.decision-outcome { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.decision-outcome a { color: var(--coen); }
+.decision-missing { font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
 .sections { display: flex; flex-direction: column; gap: 8px; }
 .sec { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .sec-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); border-radius: 7px 7px 0 0; font-size: 13px; }
@@ -249,6 +268,9 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .rec { align-self: stretch; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
 .rec-head { display: flex; align-items: center; gap: 8px; }
 .rec-kind { font-weight: 600; font-size: 13px; }
+/* "approved by <name>, <time>" next to the pill; the head wraps when it doesn't fit on one line. */
+.rec-head { flex-wrap: wrap; }
+.rec-decided { font-size: 12px; color: var(--muted); }
 .pill.pending { background: #FAEEDA; color: #633806; }
 .pill.approved, .pill.running { background: var(--coen-fill); color: var(--coen); }
 .pill.done { background: #E1F5EE; color: #085041; }

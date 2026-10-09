@@ -134,6 +134,7 @@
         <button type="button" class="space-tab" role="tab" id="space-tab-general" aria-selected="true" aria-controls="space-panel-general">General</button>
         <button type="button" class="space-tab" role="tab" id="space-tab-use" aria-selected="false" aria-controls="space-panel-use" tabindex="-1">Can use <span class="count" id="space-tab-use-count"></span><span class="tab-dot" id="space-tab-use-dot" hidden><span class="sr-only">, reaches outside</span></span></button>
         <button type="button" class="space-tab" role="tab" id="space-tab-propose" aria-selected="false" aria-controls="space-panel-propose" tabindex="-1">Can propose <span class="count" id="space-tab-propose-count"></span><span class="tab-dot" id="space-tab-propose-dot" hidden><span class="sr-only">, reaches outside</span></span></button>
+        <button type="button" class="space-tab" role="tab" id="space-tab-decisions" aria-selected="false" aria-controls="space-panel-decisions" tabindex="-1">Decisions</button>
       </div>
     </div>
     <div class="viewer-body agent-fields">
@@ -258,6 +259,11 @@
           </div>
           <p class="access-empty sec-note" id="targets-notion-off" hidden>Notion actions are off: the room started without its Notion token.</p>
         </div>
+      </div>
+      <div class="space-panel" role="tabpanel" id="space-panel-decisions" aria-labelledby="space-tab-decisions" hidden>
+        <p class="panel-note">Read-only: what was decided on proposals in this room, across all its chats, newest first. Nothing on this tab is saved with the form.</p>
+        <p class="sec-note" id="decisions-empty" role="status" hidden></p>
+        <ul class="decision-list" id="decisions-list"></ul>
       </div>
       <div class="form-error" id="space-error"></div>
     </div>

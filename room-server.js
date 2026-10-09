@@ -63,6 +63,11 @@ const STDERR_CAP = 8 * 1024;
 const ERROR_LOG_MAX = 500;
 const STOP_GRACE_MS = 5000;
 
+// Who decides in this room: recorded as `actor` on every decision and named in the credit line on what an approved
+// proposal creates. Nothing else uses it. "ownerName" in room.config.json sets it (one line, up to 60 characters);
+// without one it is "the owner". It is a label, not a login.
+const OWNER_NAME = (typeof CONFIG.ownerName === 'string' && CONFIG.ownerName.replace(/\s+/g, ' ').trim().slice(0, 60)) || 'the owner';
+
 const AGENT = 'chief-operating-officer';
 // What agents may use is set per room by the owner (Room settings → "What this room can use"), not in code:
 // the folders they can read, web search, the exact sites they can open, Notion and Microsoft 365 mail (both read-only). Writing is
@@ -810,6 +815,8 @@ function logDecision(rec, extra) {
   fs.appendFileSync(JOBS_FILE, JSON.stringify({
     kind: 'decision', recId: rec.recId, roomId: rec.roomId, action: rec.action, summary: rec.summary,
     ...(rec.action === 'email_draft' && { domains: emailDomains(rec), subject: rec.subject }),
+    // Who decided, once someone has: the `pending` line of a new proposal has none.
+    ...(rec.actor && { actor: rec.actor }),
     state: rec.state, at: new Date().toISOString(), ...extra,
   }) + '\n');
 }
@@ -832,7 +839,7 @@ const listNames = (names) => (names.length > 1 ? `${names.slice(0, -1).join(', '
 // (the agents consulted in that turn, and the makers whose drafts it follows up on).
 function creditLine(rec) {
   const others = (rec.involved || []).filter((k) => k !== rec.by).map(agentName);
-  return `Proposed by ${proposer(rec)} in Exec Room (${spaceOf(rec.roomId).name})${others.length ? `, with input from ${listNames(others)},` : ''} and approved by the owner (${rec.recId}).`;
+  return `Proposed by ${proposer(rec)} in Exec Room (${spaceOf(rec.roomId).name})${others.length ? `, with input from ${listNames(others)},` : ''} and approved by ${rec.actor || OWNER_NAME} (${rec.recId}).`;
 }
 
 // ---- Email drafts: checked addresses, the room's list, and what's kept once the owner has decided.
@@ -1884,7 +1891,7 @@ app.get('/api/room', (req, res) => {
   const room = currentRoom();
   const live = jobs.has(room.roomId) ? jobs.get(room.roomId).jobId : null;
   const space = spaceOf(room.roomId);
-  res.json({ roomId: room.roomId, workspace: { id: space.id, name: space.name }, runningJobId: live,
+  res.json({ roomId: room.roomId, workspace: { id: space.id, name: space.name }, owner: OWNER_NAME, runningJobId: live,
     attachments: { maxFiles: ATTACH_MAX_FILES, maxBytes: ATTACH_MAX_BYTES, extensions: Object.keys(ATTACH_TYPES) }, events: readEvents(room.roomId).filter((ev) => !live || ev.jobId !== live) });
 });
 
@@ -1955,6 +1962,8 @@ function pendingRec(req, res) {
 function recordDecision(rec, decision, extra = {}) {
   rec.state = decision;
   rec.decidedAt = new Date().toISOString();
+  // Who decided. One fixed name: the room has no login, so this says whose room it is, not who was at the keyboard.
+  rec.actor = OWNER_NAME;
   Object.assign(rec, extra);
   if (rec.action === 'email_draft') {
     redactEmail(rec);
@@ -1962,7 +1971,7 @@ function recordDecision(rec, decision, extra = {}) {
   }
   saveRecs();
   logDecision(rec, extra);
-  const ev = { type: 'decision', recId: rec.recId, decision, ...extra, ts: Date.now() };
+  const ev = { type: 'decision', recId: rec.recId, decision, actor: rec.actor, ...extra, ts: Date.now() };
   appendEvent(rec.roomId, ev);
   return ev;
 }
@@ -2320,6 +2329,81 @@ app.post('/api/workspaces/:id/switch', (req, res) => {
   spaces.current = space.id;
   saveSpaces();
   res.json({ workspace: publicSpace(space), roomId: currentRoom().roomId });
+});
+
+// ---- Decisions (Room settings → Decisions): what was decided in a room, read back from the job log. Read-only.
+
+const DECISIONS_MAX = 200;
+const DECIDED = new Set(['approved', 'revised', 'dismissed']);
+// A draft as a job logged it: a plain file name in drafts/ (no leading dot, no path separators), of any kind.
+const DRAFT_FILE = /^[\w-][\w.-]*$/;
+
+// A draft counts as there only when it is a real file in drafts/. A link is not followed, as in the draft viewer.
+function draftExists(name) {
+  try { return fs.lstatSync(path.join(DRAFTS_DIR, name)).isFile(); } catch { return false; }
+}
+
+// One row per proposal that was decided, folded from its `kind: "decision"` lines in the job log: the pending line,
+// the decision, and the result lines after it. A proposal nobody has decided on yet is not a decision and is left out.
+// A log line holds the chat only, so the room is looked up in the chat index now: a chat that was moved counts for
+// the room it is in today. A chat whose room was deleted is in no room's list; spaceOf() is not used here, as it
+// would hand that chat to the default room. (A chat from before rooms has no workspaceId and is the default room's.)
+// Revision notes are never passed on, and an email draft has only what the log kept: subject and recipients' domains.
+function decisionsOf(space) {
+  let raw = '';
+  try { raw = fs.readFileSync(JOBS_FILE, 'utf8'); } catch { /* no job log yet */ }
+  const rows = new Map();
+  for (const text of raw.split('\n')) {
+    let line = null;
+    try { line = JSON.parse(text); } catch { /* an empty or broken line */ }
+    if (!line || line.kind !== 'decision' || typeof line.recId !== 'string') continue;
+    const chat = typeof line.roomId === 'string' && Object.hasOwn(index.rooms, line.roomId) ? index.rooms[line.roomId] : null;
+    if (!chat || (chat.workspaceId || DEFAULT_SPACE) !== space.id) continue;
+    if (!rows.has(line.recId)) rows.set(line.recId, { recId: line.recId, chatId: line.roomId, decision: null, at: '', actor: null });
+    const row = rows.get(line.recId);
+    Object.assign(row, { action: line.action, summary: line.summary, state: line.state });
+    if (line.action === 'email_draft') Object.assign(row, { subject: line.subject, domains: line.domains });
+    // Lines written before decisions carried an actor have none: the owner is filled in below.
+    if (typeof line.actor === 'string' && line.actor) row.actor = line.actor;
+    const at = typeof line.at === 'string' ? line.at : '';
+    // The decision itself; or, when its line is missing (a cut-off log), the first result line: a result can only follow an approval.
+    if (DECIDED.has(line.state) || (line.state !== 'pending' && !row.decision)) Object.assign(row, { decision: DECIDED.has(line.state) ? line.state : 'approved', at });
+    if (line.result && typeof line.result === 'object') row.result = line.result;
+  }
+  const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  return [...rows.values()].filter((r) => r.decision)
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))
+    .map((r) => {
+      const result = r.result || {};
+      // Background the log lines don't hold. Who proposed it comes from the stored proposal (Coen, unless it names
+      // another agent); a proposal that is no longer stored gets none. The chat is named by its title today, the
+      // start of its first message, with any address in it cut down to its domain, as in a decided email draft.
+      const rec = Object.hasOwn(recs, r.recId) ? recs[r.recId] : null;
+      const by = rec && typeof rec.by === 'string' && rec.by ? rec.by : 'coen';
+      const stored = String(index.rooms[r.chatId].title || '');
+      const title = stored.replace(/\s+/g, ' ').trim().replace(/[^\s@]+@([^\s@]+)/g, '…@$1');
+      return {
+        recId: r.recId, action: String(r.action || ''), summary: String(r.summary || ''), decision: r.decision, at: r.at,
+        actor: r.actor || OWNER_NAME, state: String(r.state || ''),
+        ...(rec && { proposer: { key: by, name: by === 'coen' ? 'Coen' : agentName(by) } }),
+        // A stored title is the first 80 characters of the message: one that long was cut off.
+        chat: { id: r.chatId, title, ...(stored.length >= 80 && { cut: true }) },
+        ...(r.action === 'email_draft' && { subject: String(r.subject || ''), domains: strings(r.domains) }),
+        // The page checks each address again before it becomes a link.
+        urls: [...strings([result.url]), ...strings(result.urls)],
+        // Every file a job saved is named, whatever its kind (a patch, a mockup); only a .md draft opens in the viewer.
+        drafts: strings(result.drafts).filter((n) => DRAFT_FILE.test(n)).map((name) => ({ name, exists: draftExists(name), opens: DRAFT_NAME.test(name) })),
+        ...(result.agent && typeof result.agent.name === 'string' && { agent: result.agent.name }),
+        ...(typeof result.error === 'string' && { error: result.error }),
+      };
+    });
+}
+
+app.get('/api/workspaces/:id/decisions', (req, res) => {
+  const space = knownSpace(req, res);
+  if (!space) return;
+  const all = decisionsOf(space);
+  res.json({ owner: OWNER_NAME, total: all.length, decisions: all.slice(0, DECISIONS_MAX) });
 });
 
 // The room goes; its chats stay on disk (data/rooms/) and in the job log, just no longer listed.

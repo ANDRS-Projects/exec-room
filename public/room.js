@@ -320,6 +320,7 @@ function handle(ev) {
     const entry = recCards.get(ev.recId);
     if (entry) {
       setRecState(entry, ev.decision);
+      showDecided(entry, ev);
       if (ev.note) entry.status.replaceChildren(el('span', null, 'Your note to Coen: ' + ev.note));
       if (ev.decision === 'approved' && entry.rec.action === 'email_draft') showEmailLinks(entry);
     }
@@ -349,6 +350,8 @@ narrow.addEventListener('change', () => groups.forEach(placeGroup));
 // ---- Proposal cards: Coen proposes, the owner approves or asks for a revision, the server acts.
 
 const recCards = new Map();
+// The owner's name, from /api/room: shown where a record saved before decisions carried an actor has none.
+let ownerName = 'the owner';
 const REC_STATES = {
   pending: 'waiting for you', approved: 'approved', running: 'in progress', done: 'done',
   failed: 'failed', stopped: 'stopped', revised: 'revision requested', dismissed: 'dismissed',
@@ -520,12 +523,30 @@ function setRecState(entry, state) {
   entry.el.classList.toggle('dismissed', state === 'dismissed');
 }
 
+// The only addresses a result may become a link to: a Notion page, or an issue or comment on GitHub. One check for
+// the card and for the Decisions tab in Room settings.
+const isNotionUrl = (u) => /^https:\/\/(app\.notion\.com|www\.notion\.so)\//.test(u || '');
+const isGithubUrl = (u) => /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(issues\/\d+(#issuecomment-\d+)?|pull\/\d+#issuecomment-\d+)$/.test(u || '');
+
+// A time as the page shows it: day, month, year, hour and minute, in this browser's own format ('' when there is none).
+function whenText(t) {
+  const d = t == null || t === '' ? null : new Date(t);
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+}
+
+// Who decided and when, next to the pill, so a folded (dismissed) card shows it too. Live and on replay; a decision
+// saved before the actor existed shows the owner.
+function showDecided(entry, ev) {
+  if (!entry.decided) entry.decided = entry.pill.parentNode.appendChild(el('span', 'rec-decided'));
+  const when = whenText(ev.ts);
+  entry.decided.textContent = `${ev.decision} by ${ev.actor || ownerName}${when ? `, ${when}` : ''}`;
+}
+
 function showRecResult(ev) {
   const entry = recCards.get(ev.recId);
   if (!entry) return;
   setRecState(entry, ev.state);
   entry.status.replaceChildren();
-  const isNotionUrl = (u) => /^https:\/\/(app\.notion\.com|www\.notion\.so)\//.test(u || '');
   const isNotion = isNotionUrl(ev.url);
   if (entry.rec.action === 'create_agent' && ev.agent) {
     entry.status.append(el('span', null, `${ev.agent.name} is in the room now.`));
@@ -552,7 +573,7 @@ function showRecResult(ev) {
       entry.status.append(link);
     }
     if (ev.error) entry.status.append(el('span', 'err-text', ' ' + ev.error));
-  } else if (isNotion || (ev.url && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(issues\/\d+(#issuecomment-\d+)?|pull\/\d+#issuecomment-\d+)$/.test(ev.url))) {
+  } else if (isNotion || isGithubUrl(ev.url)) {
     const comment = /#issuecomment-/.test(ev.url);
     const link = el('a', null, isNotion ? 'Open in Notion' : comment ? 'Open the comment on GitHub' : 'Open the issue on GitHub');
     link.href = ev.url;
@@ -1859,7 +1880,7 @@ function spaceAdditions() {
   ].flatMap(([label, now, was]) => now.filter((v) => !was.includes(v)).map((v) => `${label} ${v}`))];
 }
 
-// Tabs: General / Can use / Can propose. Roving tabindex; Left/Right (wrapping), Home and End move between them.
+// Tabs: General / Can use / Can propose / Decisions. Roving tabindex; Left/Right (wrapping), Home and End move between them.
 const spaceTabs = [...spaceEditor.querySelectorAll('[role="tab"]')];
 
 function selectSpaceTab(tab, focus) {
@@ -1870,6 +1891,8 @@ function selectSpaceTab(tab, focus) {
     $(t.getAttribute('aria-controls')).hidden = !on;
   }
   if (focus) tab.focus();
+  // The Decisions tab is read fresh each time it is opened; the other tabs are the form.
+  if (tab.id === 'space-tab-decisions') loadDecisions();
 }
 
 spaceTabs.forEach((tab, i) => {
@@ -1882,6 +1905,99 @@ spaceTabs.forEach((tab, i) => {
     selectSpaceTab(spaceTabs[to], true);
   });
 });
+
+// ---- Decisions tab (Room settings): read-only, the whole room across all its chats, one row per decided proposal.
+// It is no part of the form: it has no fields, so Save, the tab counts and the summary line never see it.
+
+const ACTION_LABELS = {
+  dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft',
+  notion_page: 'Notion page', email_draft: 'Email draft', create_agent: 'New agent',
+};
+const DECISION_WORDS = { approved: 'approved', revised: 'asked for a revision', dismissed: 'dismissed' };
+const DECISIONS_ABOUT = 'Every proposal you approve, send back for a revision or dismiss in this room is listed here, across all its chats: who decided, what it was, when, and what came of it.';
+const decisionsList = $('decisions-list');
+const decisionsEmpty = $('decisions-empty');
+let decisionsLoad = 0;   // only the latest request may fill the list
+const decisionChatTones = new Map();   // chat id → one of the 8 tones, in the order the chats appear in the list
+
+function decisionsMessage(text) {
+  decisionsList.replaceChildren();
+  decisionsEmpty.textContent = text;
+  decisionsEmpty.hidden = !text;
+}
+
+function decisionRow(d) {
+  const row = el('li', 'decision');
+  const head = el('div', 'decision-head');
+  head.append(el('b', null, d.actor || ownerName), el('span', null, DECISION_WORDS[d.decision] || d.decision || ''), el('span', 'decision-kind', Object.hasOwn(ACTION_LABELS, d.action) ? ACTION_LABELS[d.action] : 'Proposal'), el('span', 'decision-when', whenText(d.at)));
+  row.append(head, el('p', 'decision-summary', d.summary || ''));
+  // Background, as tags: who proposed it, in that agent's own colour, and the chat it came up in. Each chat gets a
+  // dot in one colour for this list, so rows from the same discussion are easy to spot. A row without them (an
+  // older server, a proposal that is no longer stored) just has fewer tags.
+  const tags = el('div', 'decision-tags');
+  if (d.proposer && d.proposer.key) {
+    const who = d.proposer.key;
+    const kind = who === 'coen' ? 'coen' : 'custom';
+    tags.append(el('span', `decision-tag by ${kind}${toneOf(who)}`, `Proposed by ${d.proposer.name || nameOf(who)}${who === 'coen' ? '' : ', via Coen'}`));
+  }
+  if (d.chat && d.chat.id) {
+    if (!decisionChatTones.has(d.chat.id)) decisionChatTones.set(d.chat.id, (decisionChatTones.size % 8) + 1);
+    const chat = el('span', `decision-tag chat tone-${decisionChatTones.get(d.chat.id)}`);
+    chat.title = d.chat.title ? `This chat started with: ${d.chat.title}` : 'A chat without a first message on record';
+    chat.append(el('span', null, d.chat.title ? `Chat · ${d.chat.title}${d.chat.cut ? '…' : ''}` : 'Chat · untitled'));
+    tags.append(chat);
+  }
+  if (tags.children.length) row.append(tags);
+  // An email draft keeps its subject and the recipients' domains only: addresses and text went when it was decided.
+  if (d.action === 'email_draft') row.append(el('p', 'rec-note', `Subject: ${d.subject || ''} · to ${(d.domains || []).join(', ')} (domains only)`));
+  const words = d.decision === 'dismissed' ? 'Closed, nothing was done.'
+    : d.decision === 'revised' ? 'Sent back for a revision.'
+    : d.action === 'email_draft' ? 'Nothing was sent from the room.'
+    : { done: 'Done.', failed: 'Failed.', stopped: 'Stopped.', running: 'In progress.' }[d.state] || 'No result logged.';
+  const outcome = el('div', 'decision-outcome');
+  outcome.append(el('span', null, words));
+  // Only what the card itself would link to: the same checks as showRecResult.
+  const urls = Array.isArray(d.urls) ? d.urls : [];
+  urls.forEach((u, i) => {
+    if (!isNotionUrl(u) && !isGithubUrl(u)) { outcome.append(el('span', 'rec-note', 'A link was left out: not a Notion page or a GitHub issue or comment.')); return; }
+    const label = isNotionUrl(u) ? 'Open in Notion' : /#issuecomment-/.test(u) ? 'Open the comment on GitHub' : 'Open the issue on GitHub';
+    const link = el('a', null, urls.length > 1 ? `${label} (${i + 1})` : label);
+    link.href = u;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    outcome.append(link);
+  });
+  if (d.agent) outcome.append(el('span', null, `Added ${d.agent} to the room.`));
+  // A draft that is gone is said so in words; it gets no chip, as there is nothing to open. A patch or a mockup is
+  // named without a chip too: the viewer opens .md drafts only.
+  for (const f of Array.isArray(d.drafts) ? d.drafts : []) {
+    if (f.exists && f.opens !== false) addDraftChip({ el: outcome }, f.name);
+    else outcome.append(el('span', 'decision-missing', f.exists ? `${f.name} · in drafts/` : `${f.name} · no longer in drafts/`));
+  }
+  if (d.error) outcome.append(el('span', 'err-text', d.error));
+  row.append(outcome);
+  return row;
+}
+
+async function loadDecisions() {
+  const load = ++decisionsLoad;
+  // A room that doesn't exist yet has nothing to ask the server for.
+  if (!editingSpace) { decisionsMessage(`${DECISIONS_ABOUT} There is nothing yet: this room starts its list once you have created it.`); return; }
+  decisionsMessage('Loading…');
+  try {
+    const res = await fetch(`/api/workspaces/${encodeURIComponent(editingSpace.id)}/decisions`);
+    const data = await res.json().catch(() => ({}));
+    if (load !== decisionsLoad) return;
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const rows = Array.isArray(data.decisions) ? data.decisions : [];
+    if (!rows.length) { decisionsMessage(`Nothing has been decided in this room yet. ${DECISIONS_ABOUT}`); return; }
+    decisionsMessage(data.total > rows.length ? `Showing the latest ${rows.length} of ${data.total}.` : '');
+    decisionChatTones.clear();
+    decisionsList.replaceChildren(...rows.map(decisionRow));
+  } catch (err) {
+    if (load === decisionsLoad) decisionsMessage(`Couldn't load the decisions: ${err.message}`);
+  }
+}
 
 $('targets-place-add').addEventListener('click', () => {
   const url = $('targets-place-url').value.trim();
@@ -2002,6 +2118,7 @@ $('space-remove').addEventListener('click', async () => {
   try {
     const res = await fetch('/api/room');
     const room = await res.json();
+    if (typeof room.owner === 'string' && room.owner) ownerName = room.owner;
     if (room.attachments) {
       attachLimits = room.attachments;
       attachInput.accept = attachLimits.extensions.map((e) => `.${e}`).join(',');

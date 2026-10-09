@@ -67,6 +67,8 @@ Posting, scheduling, sending messages and deploying can't be proposed at all.
 
 Chats, proposals and the job log live in `data/`, which is gitignored.
 
+`GET /api/workspaces/:id/decisions` (Room settings → Decisions) reads the job log back to the page, read-only: one row per decided proposal in that room across its chats, with who decided, the action and summary, when, the outcome, and the links or draft names it produced. Two things on a row come from outside the log: which agent proposed it (from the stored proposal) and the title of the chat it came up in (the start of that chat's first message, with any email address in it cut down to its domain). It sits behind the same `Host` and `Origin` checks as every other route and adds no login: the name it shows is the room's one owner (`ownerName` in `room.config.json`, or "the owner"), which says whose room this is, not who was at the keyboard. Revision notes are left out, an email draft shows only its subject and the recipients' domains (all the log ever kept), and decisions from a chat whose room was deleted are in no room's list. The page turns a result into a link only when it passes the same address checks as the proposal card (a Notion page, or a GitHub issue or comment). Agents can't call it: they have no Bash, and a room's sites can't be `localhost` or an IP address.
+
 ---
 
 ## CI Configuration

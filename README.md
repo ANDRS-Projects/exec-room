@@ -49,7 +49,7 @@ cd exec-room
 
 Then open http://127.0.0.1:4179. Stop the room with Ctrl-C; start it again later with `npm run room`.
 
-Click **Add agent** to build your first advisor or maker, and **Room settings** to choose what the room may read, which sites it may open, and what it may propose.
+Click **Add agent** to build your first advisor or maker, and **Room settings** to choose what the room may read, which sites it may open, and what it may propose. Its **Decisions** tab lists every proposal you approved, sent back or dismissed in that room, across all its chats: who decided, which agent proposed it, in which chat, when, and what came of it.
 
 ## Configuration
 
@@ -63,6 +63,7 @@ Most settings live in the room itself (Room settings), per room: folders agents 
 | `notionDatabases` | The Notion databases posts can be saved to, e.g. `{"social": {"name": "Social posts", "id": "<database id>", "accounts": ["Personal", "Company"]}}`. Each needs the properties Name (title), Status (status, with a `draft` option), Channel and Post Content (text), and optionally Account (select), Image Prompt and Source Insight (text). |
 | `notionChannels` | The channel names a post may have (default: X, LinkedIn, Substack Note, Substack Post, Instagram, Blog). |
 | `hiddenConnectors` | Other claude.ai connectors on your account to keep out of the agents' view, by the name in their tool names (`mcp__claude_ai_<name>__…`), e.g. `["My_Connector"]`. Agents can only call the tools a room allows; connectors that aren't hidden are still visible to them, so this keeps the rest out of their context. Claude Docs, Gmail, Slack, Google Drive and Google Calendar are always hidden. `Notion` and `Microsoft_365` can't be listed, as those are switched per room: such an entry is skipped with a warning at start-up, like an entry that isn't a connector name. |
+| `ownerName` | Your name as decisions are recorded under it: "approved by …" on a proposal card, the Decisions tab in Room settings, and the credit line on what an approved proposal creates (default: "the owner"). One line, up to 60 characters. It is a label, not a login. |
 
 Share the databases and pages with your Notion integration. Posts are always saved with Status `draft`; publishing stays with you.
 
@@ -82,7 +83,7 @@ Environment variables are listed in `.env.example`. The server reads them from y
 npm test
 ```
 
-464 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 464 checks match tests/expected.txt`.
+481 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 481 checks match tests/expected.txt`.
 
 ## Security
 
