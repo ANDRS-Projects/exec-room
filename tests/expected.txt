@@ -416,6 +416,7 @@ S hidden connectors, room starts: 200
 S hidden connectors blocked: ['mcp__claude_ai_Claude_Docs', 'mcp__claude_ai_Gmail', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Google_Drive', 'mcp__claude_ai_Google_Calendar', 'mcp__claude_ai_My_Connector', 'mcp__claude_ai_Microsoft_365']
 server stderr: room.config.json: skipped "hiddenConnectors" entry "Notion": the Notion and Microsoft 365 connectors are switched per room, not hidden here.
 S hidden connectors warnings: ['room.config.json: skipped "hiddenConnectors" entry "Notion": the Notion and Microsoft 365 connectors are switched per room, not hidden here.', 'room.config.json: skipped "hiddenConnectors" entry "not a name!": not a connector name (letters, digits, _ and - only).']
+S owner name from the config: Sam Lee
 U room list: ['<tmp>/c2/x', '~/y', '~/.ssh']
 U run note: What this room lets agents use: reading files in <tmp>/c2/x, ~/y, ~/.ssh, drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.
 U start-up check: [['~/.ssh']]
@@ -462,3 +463,19 @@ L a bot edits the signatures file: FAIL: This line added to CLA-SIGNATURES.md is
 L signatures file: (0, True, True)
 L signing line in the documents: (['- @your-username, YYYY-MM-DD: I have read the Contributor License Agreement (version 1) and I agree to it.'], {'CLA.md': 1, 'CLA-SIGNATURES.md': 1, 'CONTRIBUTING.md': 1})
 L agreement version and placeholders: ([('1', '7 October 2026')], ['1'], [])
+J old records, folded per proposal: [('rec-mail', 'email_draft', 'approved', 'the owner', 'approved', '10:12'), ('rec-drafts', 'dispatch', 'approved', 'the owner', 'done', '10:08'), ('rec-note', 'dispatch', 'revised', 'the owner', 'revised', '10:05'), ('rec-issue', 'github_issue', 'approved', 'the owner', 'done', '10:02')]
+J old records, owner and total: ('the owner', 4)
+J link to the issue: ['https://github.com/Example-Org/demo-app/issues/7']
+J drafts, one no longer there, a patch named too: [('2026-09-02-wren-kept.md', True, True), ('2026-09-02-wren-gone.md', False, True), ('2026-09-02-wren-fix.patch', False, False)]
+J email shows subject and domains only: ('Next steps', ['client.example'], ['action', 'actor', 'at', 'chat', 'decision', 'domains', 'drafts', 'recId', 'state', 'subject', 'summary', 'urls'])
+J proposer and chat per row: [('rec-mail', None, {'id': 'old-chat', 'title': 'Launch plan for …@client.example'}), ('rec-issue', {'key': 'tess', 'name': 'Tess'}, {'id': 'old-chat', 'title': 'Launch plan for …@client.example'})]
+J revision note left out: False
+J foreign origin: (403, '{"error":"forbidden origin"}')
+J a new proposal has no actor: (False, [None])
+J decision event names who decided: [('decision', 'the owner'), ('rec_result', None)]
+J actor on the proposal and its log lines: ('the owner', [('pending', None), ('approved', 'the owner'), ('done', 'the owner')])
+J new decisions come first: [('dispatch', 'dismissed', 'the owner', 'dismissed', []), ('github_issue', 'approved', 'the owner', 'done', ['https://github.com/Example-Org/demo-app/issues/999'])]
+J replay, owner and decision events: ('the owner', [('approved', 'the owner'), ('dismissed', 'the owner')])
+J new room has none: {'owner': 'the owner', 'total': 0, 'decisions': []}
+J moved chat takes its decisions along: (0, 6)
+J deleted room, its decisions are in no room: (0, (404, '{"error":"no such room"}'))
