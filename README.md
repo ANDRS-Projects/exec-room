@@ -83,7 +83,7 @@ Environment variables are listed in `.env.example`. The server reads them from y
 npm test
 ```
 
-481 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 481 checks match tests/expected.txt`.
+487 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 487 checks match tests/expected.txt`.
 
 ## Security
 

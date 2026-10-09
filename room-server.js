@@ -2286,12 +2286,30 @@ app.get('/api/workspaces', (req, res) => {
   });
 });
 
+// A room id is given out once. Taken are the ids of the rooms that exist and of every room a chat still names: a
+// deleted room's chats keep its id in the chat index, and a new room with that id would get those chats and their
+// decisions (one with a live room's id would replace that room). The chat index is the record of used ids; nothing
+// else is stored. The hex part is drawn at random; after a run of taken ids it gets a byte longer, so a name whose
+// short ids are all used still gets a room. Same shape as before (slug, dash, hex), so stored rooms and links keep
+// working.
+const SPACE_ID_DRAWS = 16;
+function freeSpaceId(slug) {
+  const used = new Set(Object.keys(spaces.workspaces));
+  for (const chat of Object.values(index.rooms)) if (chat && typeof chat.workspaceId === 'string') used.add(chat.workspaceId);
+  for (let bytes = 2; ; bytes += 1) {
+    for (let draw = 0; draw < SPACE_ID_DRAWS; draw += 1) {
+      const id = `${slug}-${crypto.randomBytes(bytes).toString('hex')}`;
+      if (!used.has(id)) return id;
+    }
+  }
+}
+
 // A new room starts with a fresh chat and becomes the current room.
 app.post('/api/workspaces', (req, res) => {
   let fields;
   try { fields = validateSpace(req.body); } catch (err) { return res.status(400).json({ error: err.message }); }
   const slug = fields.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'room';
-  const id = `${slug}-${crypto.randomBytes(2).toString('hex')}`;
+  const id = freeSpaceId(slug);
   let access;
   let targets;
   try {

@@ -1481,6 +1481,39 @@ try:
     finally:
         s.stop()
         os.remove(os.path.join(opts.root, "drafts", kept))
+    # R: a room id is given out once. The suite can't make the server draw a given id, so the data folder
+    # starts with every short id for the name "Sales" used: the lower half by rooms that exist, the upper half by deleted
+    # rooms that a chat still names (one of those chats holds a decision). The server then has to give a longer id. With
+    # either half of the check missing, a draw from that half would be accepted and the new room would get a short id.
+    data = os.path.join(TMP, "data-ids")
+    os.makedirs(os.path.join(data, "rooms"))
+    stamp = "2026-09-01T00:00:00.000Z"
+    space = lambda space_id, name: {"id": space_id, "name": name, "members": None, "chat": None, "createdAt": stamp,
+                                    "access": {"files": [], "webSearch": False, "sites": [], "notion": False, "m365": False},
+                                    "targets": {"repos": [], "publicRepos": [], "notionDbs": [], "notionPlaces": [], "allowedRecipients": [], "sendFrom": ""}}
+    live = [f"sales-{n:04x}" for n in range(0x8000)]
+    deleted = [f"sales-{n:04x}" for n in range(0x8000, 0x10000)]
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump({"current": "exec", "workspaces": {"exec": space("exec", "Ops room"), **{i: space(i, f"Sales {i[-4:]}") for i in live}}}, f)
+    # Each chat has its cost total, as any chat the server has seen: without it the start-up backfill reads the log once per chat.
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": None, "rooms": {f"chat-{i}": {"roomId": f"chat-{i}", "workspaceId": i, "claudeSessionId": None, "title": None, "createdAt": stamp, "updatedAt": stamp, "totalCostUsd": 0} for i in deleted}}, f)
+    with open(os.path.join(data, "jobs.ndjson"), "w") as f:
+        f.write("".join(json.dumps({"kind": "decision", "recId": "rec-old", "roomId": f"chat-{deleted[0]}", "action": "github_issue", "summary": "Old", "state": state, "at": f"2026-09-02T10:0{n}:00.000Z"}) + "\n" for n, state in enumerate(["pending", "approved"])))
+    s = Server("workspaces", data_name="data-ids")
+    try:
+        create = lambda name: json.loads(call("/api/workspaces", {"name": name, "members": None})[1])["workspace"]["id"]
+        first, second = create("Sales"), create("Sales")
+        out("R every short id is used, a new room gets a longer one", [bool(re.fullmatch(r"sales-[0-9a-f]{6}", i)) for i in (first, second)])
+        out("R two new rooms, two ids", first != second)
+        saved = json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]
+        out("R rooms that exist are kept", (len(saved), all(saved[i]["name"] == f"Sales {i[-4:]}" for i in live)))
+        out("R a deleted room's decisions stay in no room", [json.loads(call(f"/api/workspaces/{i}/decisions")[1])["total"] for i in (first, second)])
+        now = json.loads(call("/api/room")[1])
+        out("R the new room starts with an empty chat", (now["workspace"]["id"] == second, now["events"]))
+        out("R another name still gets a short id", bool(re.fullmatch(r"marketing-[0-9a-f]{4}", create("Marketing"))))
+    finally:
+        s.stop()
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 
