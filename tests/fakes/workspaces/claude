@@ -15,6 +15,27 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "space-calls.ndjson"), "a") 
                          
                           "move_note": "just moved this chat" in args[args.index("-p") + 1]}) + "\n")
 
+# The room's brief, in its own log so the lines above stay as they are: where each run got it (Coen's room note or a
+# maker's note, the advisors' definitions for this run, a one-time note in front of the message).
+between = lambda s: s.split("<room-brief>\n")[1].split("\n</room-brief>")[0] if "<room-brief>\n" in s else None
+prompt = args[args.index("-p") + 1]
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "brief-calls.ndjson"), "a") as log:
+    defs = json.loads(args[args.index("--agents") + 1])
+    log.write(json.dumps({"agent": agent, "note_brief": between(note), "background": "not instructions" in note,
+                          "advisors_with_brief": sorted(k for k, d in defs.items() if between(d["prompt"])),
+                          "advisors_same_text": len({between(d["prompt"]) for d in defs.values() if between(d["prompt"])} | ({between(note)} if between(note) else set())) <= 1,
+                          "prompt_note": None if "[Room note for Coen" not in prompt else "none" if "has no brief" in prompt else "changed",
+                          "prompt_brief": between(prompt)}) + "\n")
+
+# Which session each run resumed, for the chat list: going back to a chat resumes that chat's own session. A session
+# Claude no longer has ("gone-session") fails the way the real one does, so the room starts Coen fresh.
+resume = args[args.index("--resume") + 1] if "--resume" in args else None
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "resume-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"agent": agent, "resume": resume}) + "\n")
+if resume == "gone-session":
+    print("No conversation found with session ID: gone-session", file=sys.stderr)
+    sys.exit(1)
+
 
 def rec(obj):
     return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"

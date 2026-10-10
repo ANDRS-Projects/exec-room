@@ -125,6 +125,9 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .decision-tag.chat { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); color: var(--muted); }
 .decision-tag.chat::before { content: ""; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--tone, var(--muted)); }
 .decision-tag.chat span { overflow: hidden; text-overflow: ellipsis; }
+/* The chat tag opens that chat. */
+button.decision-tag.chat { border: none; font-family: inherit; cursor: pointer; }
+button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: var(--text); text-decoration: underline; }
 .decision-outcome { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .decision-outcome a { color: var(--coen); }
 .decision-missing { font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
@@ -153,6 +156,53 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 
 .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 680px) 120px; justify-content: center; gap: 16px; padding: 0 16px 16px; }
 .layout.rail-open { grid-template-columns: minmax(0, 680px) 360px; }
+
+/* The room's chats. On a wide window a panel left of the chat; below that a drawer over it, opened from the header. */
+.top .ghost ~ .ghost { margin-left: 0; }
+.chats, .chats-backdrop { display: none; }
+body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px; }
+.chats-head { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+.chats-title { margin: 0; font-weight: 600; font-size: 13px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chats-title small { font-weight: 400; color: var(--muted); margin-left: 4px; }
+.chats-close { border: none; background: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+.chats-close:hover, .chat-rename:hover { background: var(--bg); color: var(--text); }
+.chats-new { border: 1px dashed var(--border); background: none; border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; color: var(--text); text-align: left; cursor: pointer; }
+.chats-new:hover { border-color: var(--muted); }
+/* The open chat is a new, empty one: the button itself is the highlighted entry, instead of a row saying the same. */
+.chats-new.current { border: 1px solid transparent; background: var(--coen-fill); font-weight: 600; cursor: default; }
+.chat-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
+.chat-row { display: flex; align-items: flex-start; gap: 2px; border-radius: 8px; min-width: 0; }
+.chat-row:hover, .chat-row:focus-within { background: var(--bg); }
+.chat-row.current { background: var(--coen-fill); }
+.chat-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; border: none; background: none; padding: 7px 8px; font: inherit; color: var(--text); text-align: left; cursor: pointer; border-radius: 8px; }
+.chat-title { font-size: 13px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+.chat-row.current .chat-title { font-weight: 600; }
+.chat-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 11px; color: var(--muted); }
+.chat-flag { border-radius: 999px; padding: 0 6px; background: var(--bg); border: 1px solid var(--border); white-space: nowrap; }
+.chat-row.current .chat-flag { background: var(--surface); }
+.chat-flag.waiting { color: var(--coen); border-color: var(--coen); }
+.chat-flag.working { display: inline-flex; align-items: center; gap: 5px; border: none; background: none; padding: 0; color: var(--coen); }
+.chat-flag.working::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--coen); animation: hint-pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .chat-flag.working::before { animation: none; } }
+.chat-rename { flex: none; border: none; background: none; color: var(--muted); padding: 6px; margin: 3px 3px 0 0; border-radius: 6px; cursor: pointer; line-height: 0; }
+.chat-rename svg { width: 14px; height: 14px; }
+.chat-edit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 7px 8px; }
+.chat-edit input { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface); }
+.chat-edit-actions { display: flex; gap: 6px; align-items: center; }
+.chat-edit-actions button { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
+.chat-edit-actions .save { background: var(--text); border-color: var(--text); color: #fff; }
+.chat-edit-actions small { color: var(--muted); font-size: 11px; }
+.chats-note { margin: 0; padding: 0 4px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+@media (min-width: 1100px) {
+  /* The panel has its own New chat and its own way to hide: the header's two buttons only show while it is hidden. */
+  body.chats-open #chats-toggle, body.chats-open #reset { display: none; }
+  body.chats-open .layout { grid-template-columns: 240px minmax(0, 680px) 120px; }
+  body.chats-open .layout.rail-open { grid-template-columns: 240px minmax(0, 680px) 360px; }
+}
+@media (max-width: 1099px) {
+  body.chats-open .chats { position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); border-radius: 0 12px 12px 0; border-left: none; box-shadow: 0 8px 32px rgba(26, 26, 46, 0.22); }
+  body.chats-open .chats-backdrop { display: block; position: fixed; z-index: 30; inset: 0; background: rgba(26, 26, 46, 0.28); }
+}
 
 .main { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
 .coen-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
@@ -324,6 +374,8 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .field-label small { font-weight: 400; color: var(--muted); margin-left: 4px; }
 .field input:not([type]), .field textarea, .field select { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; color: var(--text); background: var(--surface); }
 .field textarea { resize: vertical; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; min-height: 160px; }
+.field textarea.prose { font-family: inherit; font-size: inherit; min-height: 140px; }
+.field-note { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .field select { align-self: flex-start; }
 .choice { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.4; cursor: pointer; }
 .choice input { margin: 2px 0 0; }

@@ -19,6 +19,8 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 
 - **Approve before act** — agents propose; you approve each action on a card, then the server carries it out
 - **Rooms** — separate chats, each with its own members, its own limits on what agents may read and propose, and a one-line description of what the room is for
+- **A brief per room** — what every agent in the room should know about your business (customers, pricing, tone), written by you in Room settings and given to Coen, every advisor and every maker as background
+- **Chat list** — every chat in a room is kept; go back to one from the Chats panel and give it a name
 - **GitHub** — issues and comments in the repos you allow per room (private repos only, unless you mark one as public)
 - **Notion** — posts saved as drafts in databases you configure, and long-form pages under pages you allow
 - **Email drafts** — to recipients you allow; the room never sends mail, you do
@@ -49,7 +51,7 @@ cd exec-room
 
 Then open http://127.0.0.1:4179. Stop the room with Ctrl-C; start it again later with `npm run room`.
 
-Click **Add agent** to build your first advisor or maker, and **Room settings** to choose what the room may read, which sites it may open, and what it may propose. Its **Decisions** tab lists every proposal you approved, sent back or dismissed in that room, across all its chats: who decided, which agent proposed it, in which chat, when, and what came of it.
+Click **Add agent** to build your first advisor or maker, and **Room settings** to choose what the room may read, which sites it may open, and what it may propose. Its **Decisions** tab lists every proposal you approved, sent back or dismissed in that room, across all its chats: who decided, which agent proposed it, in which chat, when, and what came of it. The **Chats** panel lists the room's chats; picking one opens it with its history. Coen picks up where he left off as long as Claude Code still has its own log of that chat (about 30 days after the last message, unless you changed Claude Code's `cleanupPeriodDays`); an older chat is marked "history only" and Coen starts fresh there.
 
 ## Configuration
 
@@ -83,7 +85,7 @@ Environment variables are listed in `.env.example`. The server reads them from y
 npm test
 ```
 
-487 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 487 checks match tests/expected.txt`.
+540 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 540 checks match tests/expected.txt`.
 
 ## Security
 
