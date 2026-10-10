@@ -7,7 +7,7 @@ Local web room (Node.js + Express 5, port 4179, localhost only) where the owner 
 ```bash
 ./setup.sh                             # first-time setup
 npm run room                           # start the room at http://127.0.0.1:4179
-npm test                               # 487 checks against fakes (expects "ok: all 487 checks match")
+npm test                               # 540 checks against fakes (expects "ok: all 540 checks match")
 python3 tests/room_suite.py --update   # rewrite tests/expected.txt (only for intended output changes)
 ```
 

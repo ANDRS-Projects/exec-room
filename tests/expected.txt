@@ -332,7 +332,7 @@ K revise: 200
 K the transcript clean-up keeps the file names: ([[{'name': 'Offer_final.pdf', 'size': 24}]], False)
 K approve the dispatch: 200
 K later turns get no rule and no file block: [(True, False, False), (False, False, False), (True, False, False)]
-K a retried run keeps the rule and the files: ([(True, True, [True]), (False, True, [True])], ['ok'], ["Coen's previous session couldn't be ", 'Deleted after this turn: Offer_final'], [])
+K a retried run keeps the rule and the files: ([(True, True, [True]), (False, True, [True])], ['ok'], ['Coen no longer has his memory of thi', 'Deleted after this turn: Offer_final'], [])
 K files and a linked issue: (True, True, [])
 K stop while the issue is read: (1, ['stopped'], ["Couldn't read Example-Org/example-app#7 (GitHub didn't answer within 1s).", 'Deleted: Offer_final.pdf. The turn ended before an agent could read it.'], True, [])
 K stopping the room mid-turn removes the files: (1, [], 'stopped')
@@ -485,3 +485,56 @@ R rooms that exist are kept: (32771, True)
 R a deleted room's decisions stay in no room: [0, 0]
 R the new room starts with an empty chat: (True, [])
 R another name still gets a short id: True
+O old rooms load without a brief: [('exec', ''), ('old-1234', '')]
+O no brief, nothing added: {'agent': 'chief-operating-officer', 'note_brief': None, 'background': False, 'advisors_with_brief': [], 'advisors_same_text': True, 'prompt_note': None, 'prompt_brief': None}
+O invalid brief: not text: (400, '{"error":"\\"brief\\" must be text"}')
+O invalid brief: too long: (400, '{"error":"the brief is longer than 3000 characters"}')
+O invalid brief: zero-width space: (400, '{"error":"the brief has an invisible character (U+200B) after \\"Price\\"; remove it or paste the text as plain text"}')
+O invalid brief: direction override: (400, '{"error":"the brief has an invisible character (U+202E) after \\"a\\"; remove it or paste the text as plain text"}')
+O invalid brief: control character: (400, '{"error":"the brief has an invisible character (U+0007) at the start of a line; remove it or paste the text as plain text"}')
+O invalid brief: its own tag: (400, '{"error":"the brief can\'t contain the text <room-brief>"}')
+O longest brief: 200
+O brief saved with its line breaks: (200, True)
+O Coen and every advisor get the brief: {'agent': 'chief-operating-officer', 'note_brief': True, 'background': True, 'advisors_with_brief': ['room-juno', 'room-otto', 'room-tess'], 'advisors_same_text': True, 'prompt_note': 'changed', 'prompt_brief': True}
+O the note is not shown in the chat: ['what do we sell?']
+O Coen is told once: None
+O the chat remembers which brief Coen has: ('exec', True)
+O a member change keeps the brief: (200, True)
+O saving the same brief tells Coen nothing: None
+O an edit reaches a chat that was going: ('changed', True, True)
+O a maker gets the brief: ('room-wren', True, True, None)
+O another room's agents don't get it: {'agent': 'chief-operating-officer', 'note_brief': None, 'background': False, 'advisors_with_brief': [], 'advisors_same_text': True, 'prompt_note': None, 'prompt_brief': None}
+O a chat moved to a room without a brief: none
+O a new room with a brief, first message: ('Fresh brief.', 'Fresh brief.', ['room-juno'], None)
+O brief cleared: (200, '')
+O a cleared brief is gone for everyone and Coen is told: (None, [], 'none')
+O nothing more after that: None
+O the job log never holds the brief: (False, False, False, False)
+O stored with the room: (True, True, False, '')
+O a chat in a room without a brief remembers none: 
+O the chat's transcript doesn't hold the brief: False
+N chats of the default room, latest first: [('c-recent', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', {'cut': True, 'current': True}), ('c-nosession', 'Never answered', {'historyOnly': True}), ('c-old', 'Old question about pricing for …@client.exam', {'historyOnly': True})]
+N chats of another room: [('c-side', 'Side chat', {})]
+N list says how long Coen remembers: (200, 3, 30)
+N unknown room: 404
+N going back to an old chat: (200, 'c-old', 'c-old', 'exec', ['Old question about pricing'])
+N the open chat is marked: ['c-old']
+N Coen's memory of it is gone: he starts fresh and the chat says so: (['Coen no longer has his memory of this chat (it may have expired). The history above is still here, but he starts fresh from this message.'], ['ok'], ['gone-session', None])
+N after a message the chat is first, remembered, with cards waiting: ('c-old', 'Old question about pricing for …@client.exam', {'current': True, 'waiting': 2})
+N invalid name: not text: (400, '{"error":"\\"name\\" must be text"}')
+N invalid name: missing: (400, '{"error":"\\"name\\" must be text"}')
+N invalid name: too long: (400, '{"error":"the name is longer than 80 characters"}')
+N invalid name: invisible character: (400, '{"error":"the name has an invisible character (U+200B); type it again as plain text"}')
+N rename: (200, ('c-old', 'Pricing talk', {'named': True, 'started': 'Old question about pricing for …@client.example', 'current': True, 'waiting': 2}))
+N its decisions show the name: {'id': 'c-old', 'title': 'Pricing talk', 'named': True, 'started': 'Old question about pricing for …@client.example'}
+N an empty name goes back to the first message: (200, ('Old question about pricing for …@client.exam', {'current': True, 'waiting': 2}), {'id': 'c-old', 'title': 'Old question about pricing for …@client.example'}, False)
+N unknown chat: ((404, '{"error":"chat not found"}'), 404, 404)
+N a deleted room's chat: ((404, '{"error":"chat not found"}'), 404)
+N each chat resumes its own session: coen-session
+N a card only answers in its own chat: (404, '{"error":"proposal not found"}')
+N back in its chat the card works: (200, [1])
+N a chat of another room opens that room: (200, 'side-1234', 'side-1234', 'side-1234')
+N a new chat is listed while it is open: [('new', '', {'current': True})]
+N an empty chat that was left is not listed: ['c-recent', 'c-old', 'c-nosession']
+N stored: ('Pricing talk', 'Old question about pricing for anna@client.example', False, 'c-nosession')
+N names stay out of the job log: False

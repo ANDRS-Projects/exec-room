@@ -279,6 +279,7 @@ function cardFor(ev) {
 
 function endTurn(ev) {
   clearProposalHint();
+  loadChats();
   if (turn && !turn.ended) {
     turn.ended = true;
     for (const card of turn.cards.values()) {
@@ -871,14 +872,14 @@ document.querySelectorAll('.chip[data-who]').forEach((chip) => {
   chip.addEventListener('click', () => setRail(!layout.classList.contains('rail-open')));
 });
 
-$('reset').addEventListener('click', async () => {
+async function newChat() {
   const res = await fetch('/api/coen/reset', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     appendToThread(el('div', 'bubble err', data.error || `HTTP ${res.status}`));
     return;
   }
-  const empty = el('div', 'empty', 'Fresh chat. Coen has forgotten the previous conversation.');
+  const empty = el('div', 'empty', 'Fresh chat. Coen starts without the previous conversation; it stays in the chat list.');
   empty.id = 'empty';
   empty.dataset.fresh = '1';
   thread.replaceChildren(empty);
@@ -889,7 +890,11 @@ $('reset').addEventListener('click', async () => {
   coenMsg = null;
   turnCount = 0;
   setRail(false);
-});
+  // What the room is for goes above it, as in an empty chat after a reload.
+  if (space) applyMembership();
+  loadChats();
+}
+$('reset').addEventListener('click', newChat);
 
 // ---- Room-built agents: chips in the rail, and the editor to add, change or remove them.
 
@@ -1318,7 +1323,7 @@ async function refreshWorking() {
   } catch { /* try again next time */ }
 }
 
-setInterval(() => { if (!document.hidden) refreshWorking(); }, 10000);
+setInterval(() => { if (!document.hidden) { refreshWorking(); loadChats(); } }, 10000);
 
 // The rail and the empty-state line only show this room's members.
 function applyMembership() {
@@ -1432,6 +1437,175 @@ async function switchSpace(w) {
   }
 }
 
+// ---- The room's chats: a panel beside the chat on a wide window, a drawer over it otherwise. Every chat of the
+// room is listed, the latest first; picking one goes back to it (the page reloads, as for another room).
+
+const chatsWide = window.matchMedia('(min-width: 1100px)');
+const chatList = $('chat-list');
+const chatsNote = $('chats-note');
+let renamingChat = false;   // the list isn't redrawn under a name that is being typed
+let chatKeepDays = 30;
+const PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+
+// Whether the panel is wanted on a wide window is remembered in this browser; a drawer always starts closed.
+function chatsPref() {
+  try { return localStorage.getItem('room-chats') !== 'closed'; } catch { return true; }
+}
+function setChats(open, remember = false) {
+  document.body.classList.toggle('chats-open', open);
+  $('chats-toggle').setAttribute('aria-expanded', String(open));
+  if (remember && chatsWide.matches) { try { localStorage.setItem('room-chats', open ? 'open' : 'closed'); } catch { /* private window: not remembered */ } }
+  if (open) loadChats();
+}
+const chatsOpen = () => document.body.classList.contains('chats-open');
+// On a wide window the button disappears once the panel is open, so the focus moves into the panel.
+$('chats-toggle').addEventListener('click', () => { setChats(!chatsOpen(), true); if (chatsOpen() && chatsWide.matches) $('chats-new').focus(); });
+$('chats-close').addEventListener('click', () => { setChats(false, true); $('chats-toggle').focus(); });
+$('chats-backdrop').addEventListener('click', () => setChats(false));
+// When the open chat is already a new, empty one, the button is that chat's entry and only takes you to the message box.
+$('chats-new').addEventListener('click', async () => {
+  if (!chatsWide.matches) setChats(false);
+  if ($('chats-new').classList.contains('current')) { input.focus(); return; }
+  await newChat();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && chatsOpen() && !chatsWide.matches && !renamingChat) { setChats(false); $('chats-toggle').focus(); }
+});
+chatsWide.addEventListener('change', () => setChats(chatsWide.matches && chatsPref()));
+
+function chatWhen(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day(new Date()) - day(d)) / 86400000);
+  if (days === 0) return `Today ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  if (days === 1) return 'Yesterday';
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() && { year: 'numeric' }) });
+}
+
+async function openChat(id) {
+  try {
+    await agentRequest(`/api/chats/${encodeURIComponent(id)}/open`, {});
+    location.reload();
+  } catch (err) {
+    chatsNote.textContent = err.message;
+    chatsNote.hidden = false;
+    appendToThread(el('div', 'bubble err', err.message));
+  }
+}
+
+function chatRow(c) {
+  const row = el('li', `chat-row${c.current ? ' current' : ''}`);
+  const label = c.title ? `${c.title}${c.cut ? '…' : ''}` : 'New chat';
+  const open = el('button', 'chat-open');
+  open.type = 'button';
+  if (c.current) open.setAttribute('aria-current', 'true');
+  const started = c.named && c.started ? `Started with: ${c.started}${c.startedCut ? '…' : ''}` : '';
+  open.title = c.current ? `The chat that's open${started ? `. ${started}` : ''}` : started || 'Go back to this chat';
+  const meta = el('span', 'chat-meta');
+  if (c.working) meta.append(el('span', 'chat-flag working', 'working'));
+  if (c.title) meta.append(el('span', null, chatWhen(c.updatedAt)));
+  if (c.waiting) {
+    const waiting = el('span', 'chat-flag waiting', `${c.waiting} waiting`);
+    waiting.title = `${c.waiting} proposal${c.waiting > 1 ? 's' : ''} waiting for your decision`;
+    meta.append(waiting);
+  }
+  if (c.historyOnly) {
+    const flag = el('span', 'chat-flag', 'history only');
+    flag.title = `Coen has probably forgotten this chat: his memory of a chat is kept for about ${chatKeepDays} days after its last message. You can still read it and carry on here; he starts fresh.`;
+    meta.append(flag);
+  }
+  open.append(el('span', 'chat-title', label), meta);
+  open.addEventListener('click', () => { if (c.current) { if (!chatsWide.matches) setChats(false); } else openChat(c.id); });
+  row.append(open);
+  if (c.title) {
+    const rename = el('button', 'chat-rename');
+    rename.type = 'button';
+    rename.innerHTML = PENCIL;
+    rename.title = 'Rename';
+    rename.setAttribute('aria-label', `Rename the chat “${label}”`);
+    rename.addEventListener('click', () => editChatName(row, c));
+    row.append(rename);
+  }
+  return row;
+}
+
+// The row becomes a small form in place: Enter or Save stores the name, Esc or Cancel leaves it. An empty name goes
+// back to how the chat started.
+function editChatName(row, c) {
+  renamingChat = true;
+  const form = el('form', 'chat-edit');
+  const input = el('input');
+  input.maxLength = 80;
+  input.value = c.named ? c.title : '';
+  input.placeholder = c.named ? c.started || '' : c.title;
+  input.setAttribute('aria-label', 'Name for this chat');
+  input.autocomplete = 'off';
+  const actions = el('div', 'chat-edit-actions');
+  const save = el('button', 'save', 'Save');
+  save.type = 'submit';
+  const cancel = el('button', null, 'Cancel');
+  cancel.type = 'button';
+  actions.append(save, cancel, el('small', null, 'empty = first message'));
+  const error = el('p', 'form-error');
+  error.setAttribute('role', 'alert');
+  error.hidden = true;
+  form.append(input, actions, error);
+  const done = () => { renamingChat = false; chatsDrawn = ''; loadChats(); };
+  cancel.addEventListener('click', done);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(); } });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    save.disabled = true;
+    try {
+      await agentRequest(`/api/chats/${encodeURIComponent(c.id)}/rename`, { name: input.value });
+      done();
+    } catch (err) {
+      error.textContent = err.message;
+      error.hidden = false;
+      save.disabled = false;
+      input.focus();
+    }
+  });
+  row.replaceChildren(form);
+  row.classList.remove('current');
+  input.focus();
+  input.select();
+}
+
+// Asked for from several places (a finished turn, the timer, opening the panel), and once per old turn while a
+// chat is replayed on load: the calls of one moment become one request.
+let chatsTimer = null;
+let chatsDrawn = '';
+function loadChats() {
+  clearTimeout(chatsTimer);
+  chatsTimer = setTimeout(fetchChats, 120);
+}
+
+async function fetchChats() {
+  if (!space || !chatsOpen() || renamingChat) return;
+  try {
+    const res = await fetch(`/api/workspaces/${encodeURIComponent(space.id)}/chats`);
+    if (!res.ok) return;   // an older server has no chat list: the panel stays empty
+    const data = await res.json();
+    // Redrawn only when something changed, so the regular check doesn't take the focus out of the list.
+    const drawn = JSON.stringify([space.id, data, new Date().toDateString()]);
+    if (renamingChat || drawn === chatsDrawn) return;
+    chatsDrawn = drawn;
+    if (Number.isFinite(data.keepDays)) chatKeepDays = data.keepDays;
+    $('chats-room').textContent = `· ${space.name}`;
+    // An open chat without a message yet gets no row: "New chat" itself is highlighted for it.
+    const fresh = (data.chats || []).some((c) => c.current && !c.title);
+    $('chats-new').classList.toggle('current', fresh);
+    $('chats-new').textContent = fresh ? 'New chat' : '+ New chat';
+    if (fresh) $('chats-new').setAttribute('aria-current', 'true'); else $('chats-new').removeAttribute('aria-current');
+    chatList.replaceChildren(...(data.chats || []).filter((c) => c.title || !c.current).map(chatRow));
+    const more = (data.total || 0) - (data.chats || []).length;
+    chatsNote.textContent = more > 0 ? `Showing the latest ${data.chats.length} of ${data.total} chats.` : !(data.chats || []).some((c) => c.title) ? 'Chats in this room are kept here, so you can go back to one.' : '';
+    chatsNote.hidden = !chatsNote.textContent;
+  } catch { /* try again next time */ }
+}
+
 const spaceEditor = $('space-editor');
 const spaceForm = $('space-form');
 const spaceError = $('space-error');
@@ -1445,6 +1619,8 @@ function openSpaceEditor(w) {
   $('space-remove').hidden = !w || w.isDefault;
   $('space-name').value = w ? w.name : '';
   $('space-description').value = w ? w.description || '' : '';
+  // A room list from before briefs (an older server) has none.
+  $('space-brief').value = w ? w.brief || '' : '';
   $('space-everyone').checked = Boolean(w && w.members == null);
   const list = $('space-members');
   list.replaceChildren();
@@ -1942,9 +2118,16 @@ function decisionRow(d) {
   }
   if (d.chat && d.chat.id) {
     if (!decisionChatTones.has(d.chat.id)) decisionChatTones.set(d.chat.id, (decisionChatTones.size % 8) + 1);
-    const chat = el('span', `decision-tag chat tone-${decisionChatTones.get(d.chat.id)}`);
-    chat.title = d.chat.title ? `This chat started with: ${d.chat.title}` : 'A chat without a first message on record';
+    // A button: it opens that chat. A chat the owner named shows its name, with how it started in the hover text.
+    const chat = el('button', `decision-tag chat tone-${decisionChatTones.get(d.chat.id)}`);
+    chat.type = 'button';
+    const started = d.chat.named ? d.chat.started && `${d.chat.started}${d.chat.startedCut ? '…' : ''}` : d.chat.title;
+    chat.title = `Open this chat. ${started ? `It started with: ${started}` : 'It has no first message on record.'}`;
     chat.append(el('span', null, d.chat.title ? `Chat · ${d.chat.title}${d.chat.cut ? '…' : ''}` : 'Chat · untitled'));
+    chat.addEventListener('click', async () => {
+      if (spaceDirty() && !(await askConfirm('Discard changes to this room?', 'Discard'))) return;
+      openChat(d.chat.id);
+    });
     tags.append(chat);
   }
   if (tags.children.length) row.append(tags);
@@ -2038,6 +2221,7 @@ function spaceBody() {
   return {
     name: $('space-name').value.trim(),
     description: $('space-description').value.trim(),
+    brief: $('space-brief').value.trim(),
     members: $('space-everyone').checked ? null : [...$('space-members').querySelectorAll('input:checked')].map((b) => b.dataset.member),
     focus: $('space-focus').value || null,
     access: { files: accessLists.files, sites: accessLists.sites, webSearch: $('access-websearch').checked, notion: $('access-notion').checked, m365: $('access-m365').checked },
@@ -2123,6 +2307,7 @@ $('space-remove').addEventListener('click', async () => {
       attachLimits = room.attachments;
       attachInput.accept = attachLimits.extensions.map((e) => `.${e}`).join(',');
     }
+    setChats(chatsWide.matches && chatsPref());
     for (const ev of room.events) handle(ev);
     // A finished job with no end event was cut off (the server stopped mid-answer).
     if (turn && !turn.ended) endTurn({ type: 'end', status: 'interrupted' });

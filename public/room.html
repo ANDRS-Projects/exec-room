@@ -19,11 +19,22 @@
       <div class="space-menu" id="space-menu" role="menu" hidden></div>
     </div>
   </div>
-  <button type="button" class="ghost" id="reset" title="Coen forgets the conversation">New chat</button>
+  <button type="button" class="ghost" id="chats-toggle" aria-controls="chats" aria-expanded="false" title="This room's chats">Chats</button>
+  <button type="button" class="ghost" id="reset" title="Start a new chat in this room; the one you leave stays in the chat list">New chat</button>
   <button type="button" class="ghost add-agent-top" id="add-agent-top" title="Add an agent you built to this room, or build a new one">+ Agent</button>
 </header>
 
 <div class="layout" id="layout">
+  <aside class="chats" id="chats" aria-label="Chats in this room">
+    <div class="chats-head">
+      <p class="chats-title">Chats <small id="chats-room"></small></p>
+      <button type="button" class="chats-close" id="chats-close" aria-label="Hide the chat list" title="Hide the chat list">×</button>
+    </div>
+    <button type="button" class="chats-new" id="chats-new">+ New chat</button>
+    <ul class="chat-list" id="chat-list"></ul>
+    <p class="chats-note" id="chats-note" hidden></p>
+  </aside>
+  <div class="chats-backdrop" id="chats-backdrop"></div>
   <main class="main">
     <div class="coen-head">
       <div class="head-avatars" id="head-avatars">
@@ -146,6 +157,11 @@
         <label class="field">
           <span class="field-label">What this room is for <small>optional · shown in the room menu and an empty chat, and told to Coen</small></span>
           <input id="space-description" maxlength="140" placeholder="e.g. Where campaigns are planned and posts get written" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">Brief <small>optional · what everyone working in this room should know about the business</small></span>
+          <textarea id="space-brief" class="prose" rows="8" maxlength="3000" placeholder="e.g. Who the customers are, what we sell and at what price, the tone we write in, words we never use"></textarea>
+          <small class="field-note">Plain text, up to 3,000 characters. Coen, the advisors and the makers get it as background with every run in this room; only you can change it. After an edit, advisors and makers have the new text from your next message, and Coen is told once in a chat that was already going.</small>
         </label>
         <fieldset class="field">
           <legend class="field-label">Members <span class="count" id="space-count-general"></span> <small>who Coen can consult or send work to in this room</small></legend>

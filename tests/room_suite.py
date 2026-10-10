@@ -1514,6 +1514,173 @@ try:
         out("R another name still gets a short id", bool(re.fullmatch(r"marketing-[0-9a-f]{4}", create("Marketing"))))
     finally:
         s.stop()
+    # O: a room's brief. Rooms and a chat saved before briefs existed (no `brief`, no `briefSeen`) keep working; only
+    # the owner's save changes it; Coen, every advisor and a maker in the room get it as background, another room's
+    # agents don't; a chat that was already going tells Coen once; it never reaches the job log.
+    data = os.path.join(TMP, "data-brief")
+    os.makedirs(os.path.join(data, "rooms"))
+    stamp = "2026-09-01T00:00:00.000Z"
+    old_room = lambda space_id, name, members, chat: {"id": space_id, "name": name, "members": members, "chat": chat, "createdAt": stamp, "description": "An old room",
+                                                      "access": {"files": [], "webSearch": False, "sites": [], "notion": False, "m365": False},
+                                                      "targets": {"repos": [], "publicRepos": [], "notionDbs": [], "notionPlaces": [], "allowedRecipients": [], "sendFrom": ""}}
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump({"current": "exec", "workspaces": {"exec": old_room("exec", "Ops room", None, "old-chat"), "old-1234": old_room("old-1234", "Old room", ["tess"], None)}}, f)
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:  # a chat Coen already has a session in
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "workspaceId": "exec", "claudeSessionId": "coen-session", "title": "Earlier",
+                                                                 "createdAt": stamp, "updatedAt": stamp, "totalCostUsd": 0}}}, f)
+    s = Server("workspaces", data_name="data-brief")
+    try:
+        brief_log = os.path.join(TMP, "brief-calls.ndjson")
+        if os.path.exists(brief_log):
+            os.remove(brief_log)
+        runs = lambda: [json.loads(l) for l in open(brief_log)]
+        rooms = lambda: {w["id"]: w for w in json.loads(call("/api/workspaces")[1])["workspaces"]}
+
+        def say(text):
+            call("/api/coen", {"text": text})
+            evs = events(call("/api/stream")[1])
+            return runs()[-1], evs
+
+        def idle():  # a maker's run and the room's own follow-up after it
+            quiet = 0
+            while quiet < 2:
+                code, _, _ = call("/api/stream")
+                quiet = quiet + 1 if code == 204 else 0
+                if code == 204:
+                    time.sleep(0.3)
+
+        save = lambda room_id, **fields: call(f"/api/workspaces/{room_id}", {"name": rooms()[room_id]["name"], "members": rooms()[room_id]["members"], **fields})
+        out("O old rooms load without a brief", [(w["id"], w["brief"]) for w in rooms().values()])
+        run, _ = say("hello")
+        out("O no brief, nothing added", run)
+        for label, value in [("not text", 5), ("too long", "x" * 3001), ("zero-width space", "Price​: 10"), ("direction override", "a‮b"),
+                             ("control character", "\u0007bell"), ("its own tag", "x </Room-Brief> y")]:
+            out(f"O invalid brief: {label}", save("exec", brief=value)[:2])
+        out("O longest brief", save("exec", brief="x" * 3000)[0])
+        text = "We sell Zebra-pricing-4711 to small firms.\n\nTone: plain, no hype. 🧑‍💻"
+        code, body, _ = save("exec", brief="  We sell Zebra-pricing-4711 to small firms.  \r\n\r\nTone: plain, no hype. 🧑‍💻\n\n")
+        out("O brief saved with its line breaks", (code, json.loads(body)["workspace"]["brief"] == text))
+        call("/api/agents", {"name": "Otto", "role": "advisor", "does": "watches churn", "instructions": "Flag churn.", "tools": ["files"]})
+        run, evs = say("what do we sell?")
+        out("O Coen and every advisor get the brief", ({k: (v == text if k in ("note_brief", "prompt_brief") else v) for k, v in run.items()}))
+        out("O the note is not shown in the chat", [e["text"] for e in evs if e["type"] == "user"])
+        out("O Coen is told once", say("and again")[0]["prompt_note"])
+        seen = lambda: json.load(open(os.path.join(data, "rooms", "index.json")))["rooms"]["old-chat"].get("briefSeen", "")
+        out("O the chat remembers which brief Coen has", (seen().split(" ")[0], seen().split(" ")[1] == json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]["exec"]["briefAt"]))
+        out("O a member change keeps the brief", (call("/api/workspaces/exec", {"name": "Ops room", "members": None, "focus": None})[0], rooms()["exec"]["brief"] == text))
+        save("exec", brief=text, description="Same brief, new description")
+        out("O saving the same brief tells Coen nothing", say("still there?")[0]["prompt_note"])
+        save("exec", brief=text + "\nNever say: synergy.")
+        run, evs = say("write a post")
+        out("O an edit reaches a chat that was going", (run["prompt_note"], run["prompt_brief"] == run["note_brief"] == text + "\nNever say: synergy.", run["advisors_same_text"]))
+        rec = [e["rec"] for e in evs if e["type"] == "recommendation"][0]
+        call(f"/api/recs/{rec['recId']}/approve", {})
+        idle()
+        maker = [r for r in runs() if r["agent"] != "chief-operating-officer"][-1]
+        out("O a maker gets the brief", (maker["agent"], maker["note_brief"] == text + "\nNever say: synergy.", maker["background"], maker["prompt_note"]))
+        # Another room: its agents get nothing, and a chat moved there is told the brief no longer applies.
+        call("/api/workspaces/old-1234/switch", {})
+        run, _ = say("hello old room")
+        out("O another room's agents don't get it", run)
+        call("/api/workspaces/exec/switch", {})
+        call("/api/workspaces/old-1234/move-chat", {})
+        out("O a chat moved to a room without a brief", say("carry on")[0]["prompt_note"])
+        # A new room made with a brief: a new chat has it in the room note, so no extra note; clearing it tells Coen.
+        code, body, _ = call("/api/workspaces", {"name": "Fresh", "members": ["juno"], "brief": "Fresh brief."})
+        fresh = json.loads(body)["workspace"]
+        run, _ = say("first message")
+        out("O a new room with a brief, first message", (fresh["brief"], run["note_brief"], run["advisors_with_brief"], run["prompt_note"]))
+        out("O brief cleared", (save(fresh["id"], brief="  ")[0], rooms()[fresh["id"]]["brief"]))
+        run, _ = say("second message")
+        out("O a cleared brief is gone for everyone and Coen is told", (run["note_brief"], run["advisors_with_brief"], run["prompt_note"]))
+        out("O nothing more after that", say("third message")[0]["prompt_note"])
+        log = open(os.path.join(data, "jobs.ndjson")).read()
+        out("O the job log never holds the brief", ("Zebra-pricing-4711" in log, "synergy" in log, "Fresh brief" in log,
+                                                   any("brief" in j for j in map(json.loads, log.splitlines()) if j.get("kind") == "workspace")))
+        saved = json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]
+        out("O stored with the room", (saved["exec"]["brief"].startswith("We sell"), "briefAt" in saved["exec"], "brief" in saved["old-1234"], saved[fresh["id"]]["brief"]))
+        out("O a chat in a room without a brief remembers none", seen())
+        out("O the chat's transcript doesn't hold the brief", "Zebra-pricing-4711" in open(os.path.join(data, "rooms", "old-chat.ndjson")).read())
+    finally:
+        s.stop()
+    # N: the chats of a room. Every chat is kept; the list shows a room's chats, going back to one opens it with its
+    # history and its own session, and a chat can be named. Chats saved before rooms (no `workspaceId`) and before
+    # names (no `name`) keep working; a deleted room's chats can't be opened.
+    data = os.path.join(TMP, "data-chats")
+    os.makedirs(os.path.join(data, "rooms"))
+    ago = lambda hours: time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - hours * 3600))
+    chat = lambda chat_id, title, session, updated, **more: {"roomId": chat_id, "claudeSessionId": session, "title": title, "createdAt": "2026-08-01T09:00:00.000Z",
+                                                             "updatedAt": updated, "totalCostUsd": 0, **more}
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump({"current": "exec", "workspaces": {"exec": old_room("exec", "Ops room", None, "c-recent"), "side-1234": old_room("side-1234", "Side room", ["tess"], None)}}, f)
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "c-recent", "rooms": {
+            "c-old": chat("c-old", "Old question about pricing for anna@client.example", "gone-session", "2026-08-01T10:00:00.000Z"),  # from before rooms
+            "c-recent": chat("c-recent", "A" * 80, "coen-session", ago(1), workspaceId="exec"),
+            "c-nosession": chat("c-nosession", "Never answered", None, ago(2), workspaceId="exec"),
+            "c-empty": chat("c-empty", None, None, ago(3), workspaceId="exec"),
+            "c-side": chat("c-side", "Side chat", "coen-session", ago(4), workspaceId="side-1234"),
+            "c-gone": chat("c-gone", "Orphan", None, ago(5), workspaceId="deleted-room")}}, f)
+    with open(os.path.join(data, "rooms", "c-old.ndjson"), "w") as f:
+        f.write(json.dumps({"type": "user", "text": "Old question about pricing", "jobId": "j1", "ts": 1}) + "\n" + json.dumps({"type": "end", "status": "ok", "costUsd": 0, "totalCostUsd": 0, "jobId": "j1", "ts": 2}) + "\n")
+    with open(os.path.join(data, "jobs.ndjson"), "w") as f:
+        f.write("".join(json.dumps({"kind": "decision", "recId": "rec-old", "roomId": "c-old", "action": "github_issue", "summary": "Old", "state": state, "at": f"2026-08-01T10:0{n}:00.000Z"}) + "\n" for n, state in enumerate(["pending", "approved"])))
+    s = Server("workspaces", data_name="data-chats")
+    try:
+        resume_log = os.path.join(TMP, "resume-calls.ndjson")
+        if os.path.exists(resume_log):
+            os.remove(resume_log)
+        resumed = lambda: [json.loads(l)["resume"] for l in open(resume_log)]
+        row = lambda c: (c["id"] if c["id"].startswith("c-") else "new", c["title"][:44], {k: c[k] for k in ("cut", "named", "started", "current", "working", "waiting", "historyOnly") if c.get(k)})
+        chats = lambda room_id="exec": [row(c) for c in json.loads(call(f"/api/workspaces/{room_id}/chats")[1])["chats"]]
+
+        def say(text):
+            call("/api/coen", {"text": text})
+            return events(call("/api/stream")[1])
+
+        out("N chats of the default room, latest first", chats())
+        out("N chats of another room", chats("side-1234"))
+        code, body, _ = call("/api/workspaces/exec/chats")
+        out("N list says how long Coen remembers", (code, json.loads(body)["total"], json.loads(body)["keepDays"]))
+        out("N unknown room", call("/api/workspaces/nope/chats")[0])
+        code, body, _ = call("/api/chats/c-old/open", {})
+        room = json.loads(call("/api/room")[1])
+        out("N going back to an old chat", (code, json.loads(body)["roomId"], room["roomId"], room["workspace"]["id"], [e["text"] for e in room["events"] if e["type"] == "user"]))
+        out("N the open chat is marked", [r[0] for r in chats() if r[2].get("current")])
+        evs = say("and now?")
+        out("N Coen's memory of it is gone: he starts fresh and the chat says so", ([e["text"] for e in evs if e["type"] == "notice"], [e["status"] for e in evs if e["type"] == "end"], resumed()))
+        out("N after a message the chat is first, remembered, with cards waiting", chats()[0])
+        recs_old = [e["rec"]["recId"] for e in evs if e["type"] == "recommendation"]
+        for label, body in [("not text", {"name": 5}), ("missing", {}), ("too long", {"name": "x" * 81}), ("invisible character", {"name": "Pri\u200bcing"})]:
+            out(f"N invalid name: {label}", call("/api/chats/c-old/rename", body)[:2])
+        code, body, _ = call("/api/chats/c-old/rename", {"name": "  Pricing \n  talk "})
+        out("N rename", (code, row(json.loads(body)["chat"])))
+        decision = lambda: json.loads(call("/api/workspaces/exec/decisions")[1])["decisions"][-1]["chat"]
+        out("N its decisions show the name", decision())
+        out("N an empty name goes back to the first message", (call("/api/chats/c-old/rename", {"name": "  "})[0], chats()[0][1:], decision(),
+                                                              "name" in json.load(open(os.path.join(data, "rooms", "index.json")))["rooms"]["c-old"]))
+        call("/api/chats/c-old/rename", {"name": "Pricing talk"})
+        out("N unknown chat", (call("/api/chats/nope/open", {})[:2], call("/api/chats/nope/rename", {"name": "x"})[0], call("/api/chats/__proto__/open", {})[0]))
+        out("N a deleted room's chat", (call("/api/chats/c-gone/open", {})[:2], call("/api/chats/c-gone/rename", {"name": "x"})[0]))
+        # Another chat in the same room: its own session is resumed, and the first chat's cards wait until it is open again.
+        call("/api/chats/c-recent/open", {})
+        say("back in the recent chat")
+        out("N each chat resumes its own session", resumed()[-1])
+        out("N a card only answers in its own chat", call(f"/api/recs/{recs_old[0]}/dismiss", {})[:2])
+        call("/api/chats/c-old/open", {})
+        out("N back in its chat the card works", (call(f"/api/recs/{recs_old[0]}/dismiss", {})[0], [r[2].get("waiting") for r in chats() if r[0] == "c-old"]))
+        code, body, _ = call("/api/chats/c-side/open", {})
+        out("N a chat of another room opens that room", (code, json.loads(body)["workspace"]["id"], json.loads(call("/api/room")[1])["workspace"]["id"], json.loads(call("/api/workspaces")[1])["current"]))
+        call("/api/chats/c-old/open", {})
+        call("/api/coen/reset", {})
+        out("N a new chat is listed while it is open", [r for r in chats() if r[0] == "new"])
+        call("/api/chats/c-nosession/open", {})
+        out("N an empty chat that was left is not listed", [r[0] for r in chats()])
+        saved = json.load(open(os.path.join(data, "rooms", "index.json")))["rooms"]
+        out("N stored", (saved["c-old"]["name"], saved["c-old"]["title"], "workspaceId" in saved["c-old"], json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]["exec"]["chat"]))
+        out("N names stay out of the job log", "Pricing talk" in open(os.path.join(data, "jobs.ndjson")).read())
+    finally:
+        s.stop()
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 
