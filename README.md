@@ -103,7 +103,11 @@ The choice is made when the room starts and holds until you stop it: the plan an
 
 What is different in key mode:
 
-- **Notion and Microsoft 365 reading are off.** Agents read those through the claude.ai connectors of a Claude plan sign-in, and key-mode runs don't use that sign-in. A room's settings are kept for when it runs on the plan. Saving Notion drafts and pages (the integration token) and email drafts still work.
+- **Agents have no Notion or Microsoft 365 tools.** They read those through the claude.ai connectors of a Claude plan sign-in, and key-mode runs don't use that sign-in. A room's settings are kept for when it runs on the plan. Saving Notion drafts and pages (the integration token) and email drafts still work.
+- **Notion pages you link are read for them.** In a room with Notion reading on, put the link of a Notion page or database in your message and the room reads it with your integration token and hands it to the agents (you see a notice saying what was read). Up to three links per message, and only what is shared with your integration.
+  - **A page** comes with its text and its properties, so a row of a database (a post, say) arrives with its content.
+  - **A database** comes with its row count, an overview with one line per row (title and short columns, for up to its 500 most recently edited rows) and its newest rows in full, so agents can count, filter and find rows across the table. For an older row in full, link that row.
+  - Agents can't search Notion or follow links inside a page themselves, and Microsoft 365 mail is not available on a key.
 - **Chats don't carry over.** A chat last used on the plan starts fresh on the key, and the other way round; the room says so and the history stays.
 - **The cost is spend.** The page shows an "API key" badge next to the room's name, and a run's cost reads "$0.012 API spend" instead of "~$0.012 equiv.".
 - **Key-mode runs keep their own Claude Code folder** (`data/claude-key`), without your plan sign-in. With a plan sign-in present Claude Code uses the plan and not the key, so this is what makes the key the one that pays.
@@ -142,7 +146,7 @@ Environment variables are listed in `.env.example`. The server reads them from y
 npm test
 ```
 
-568 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 568 checks match tests/expected.txt`.
+583 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 583 checks match tests/expected.txt`.
 
 ## Security
 

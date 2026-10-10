@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Test double for `claude -p` with the room on an API key (or back on the plan): logs how each run was started
-# (the key, its config folder, the spend cap, --resume, the Notion and Microsoft 365 rules) to
+# (the key, its config folder, the spend cap, --resume, the Notion and Microsoft 365 rules, linked Notion pages) to
 # $ROOM_TEST_TMP/keymode-calls.ndjson. By the message: prints the key on stderr or in its result, ends at its
 # spend cap, or proposes a dispatch to Wren. A maker's run costs 1.20. Emits stream-json.
 import json, os, sys
@@ -35,7 +35,9 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "keymode-calls.ndjson"), "a"
                           "notion_allowed": any("Notion" in t for t in flag("--allowedTools")),
                           "m365_allowed": any("Microsoft_365" in t for t in flag("--allowedTools")),
                           "tool_search": "ToolSearch" in flag("--tools"),
-                          "note": note[start:note.find(" Anything else", start)] if start >= 0 else None}) + "\n")
+                          "note": note[start:note.find(" Anything else", start)] if start >= 0 else None,
+                          # What the server put after the message about linked Notion pages, if anything.
+                          "notion_block": prompt[prompt.find("[Added by the room server"):] if "linked Notion pages" in prompt else None}) + "\n")
 
 coen = agent == "chief-operating-officer"
 out({"type": "system", "subtype": "init", "session_id": ("key-session" if key else "plan-session-2") if coen else "maker-session"})
