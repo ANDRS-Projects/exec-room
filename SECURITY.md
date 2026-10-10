@@ -27,7 +27,18 @@ npm dependencies: `express`, `marked`, `dompurify` (the last two vendored into `
 
 ### 1. No credentials in source files
 
-No keys or tokens are committed. The room never uses an Anthropic API key: it strips `ANTHROPIC_API_KEY` from the environment so agents bill the owner's Claude plan. The Notion token is read once at start-up (from `ROOM_NOTION_TOKEN`, or from a 1Password reference via `op read`) and kept in memory only. `gh` uses the CLI's own login.
+No keys or tokens are committed. By default the room never uses an Anthropic API key: it strips `ANTHROPIC_API_KEY` from the environment so agents bill the owner's Claude plan. It strips what else would take a run off that plan the same way: a token (`ANTHROPIC_AUTH_TOKEN`), another endpoint (`ANTHROPIC_BASE_URL`) and the switches to another provider (`CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`). The Notion token is read once at start-up (from `ROOM_NOTION_TOKEN`, or from a 1Password reference via `op read`) and kept in memory only. `gh` uses the CLI's own login.
+
+**Running on an API key instead.** The room can be started on an Anthropic API key, which is pay-as-you-go: `npm run room:key` (`ROOM_AUTH=api-key`). The choice is made at start-up and holds until the room stops, so the plan and a key never run side by side, and it is never guessed from a key that happens to be in the environment.
+
+- **The key** is read once at start-up from `ROOM_ANTHROPIC_API_KEY`, or from 1Password through `ROOM_ANTHROPIC_API_KEY_REF` (an `op://` reference). It is kept in memory and handed to the `claude` runs only. It is never written to `data/`, the job log or the page, and it is taken out of any error text (Claude's own reason, stderr) before that is shown or logged. The page has no field for it. Without a key the room does not start.
+- **Its own config folder.** With a Claude plan login present, the CLI uses that login and not the key (checked on 2026-10-10 with Claude Code 2.1.289: an invalid key still got an answer, and the run still reported the key as its source). So key-mode runs get `CLAUDE_CONFIG_DIR=data/claude-key`, where no plan login exists; a plan token in the environment (`CLAUDE_CODE_OAUTH_TOKEN`) is stripped too. Only then is the key what pays, and a wrong key fails. The folder holds those runs' session files; like the rest of `data/` it is git-ignored and unreadable for agents.
+- **No connectors.** Notion and Microsoft 365 reading come through the claude.ai connectors of the plan login, so they are off in this mode whatever a room's settings say (the settings are kept). Notion proposals use the room's own token and email drafts use no API, so both still work.
+- **Chats don't carry over.** A chat's Claude session lives in its mode's config folder, so a chat last used in the other mode starts fresh (the room says so; the history stays).
+- **Spend caps.** One run: `ROOM_RUN_CAP_USD` (default 2), passed as the CLI's `--max-budget-usd`. The CLI checks it after each turn, so a run can pass it by one turn. One day: `ROOM_DAY_CAP_USD` (default 10), summed from the job log's key-mode lines for this Mac's date and checked before any run starts, including the turns the room starts itself. Job lines without a mode are from the plan and don't count.
+- **What shows it.** The page has an "API key" badge, a key-mode run's cost reads as spend (not "equiv."), and each key-mode line in the job log carries `auth: "api-key"`.
+
+Checked live on 2026-10-10 with a real key and Claude Code 2.1.289: a run through the room, a resumed chat, the per-run cap, and that the key was in no file under `data/` nor in the server's output.
 
 CI enforces this: `.github/workflows/gitleaks.yml` scans the full git history for secrets on every push and PR.
 

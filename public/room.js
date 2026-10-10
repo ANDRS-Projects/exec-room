@@ -292,8 +292,14 @@ function endTurn(ev) {
   const parts = [];
   if (ev.turns) parts.push(`${ev.turns} turn${ev.turns === 1 ? '' : 's'}`);
   if (typeof ev.costUsd === 'number' && ev.costUsd > 0) {
-    const total = typeof ev.totalCostUsd === 'number' ? ` (chat total ~$${ev.totalCostUsd.toFixed(2)})` : '';
-    parts.push(`~$${ev.costUsd.toFixed(3)} equiv.${total}`);
+    // A run on an API key is real spend, not what the plan's usage would have cost. A chat that only ever ran on
+    // a key has a plain total; one with runs in both modes says which part of its total was spent.
+    const keySpend = typeof ev.keyCostUsd === 'number' && ev.keyCostUsd > 0 ? ev.keyCostUsd : 0;
+    const allSpend = keySpend > 0 && typeof ev.totalCostUsd === 'number' && Math.abs(ev.totalCostUsd - keySpend) < 0.005;
+    const total = typeof ev.totalCostUsd !== 'number' ? ''
+      : allSpend ? ` (chat total $${ev.totalCostUsd.toFixed(2)})`
+        : ` (chat total ~$${ev.totalCostUsd.toFixed(2)}${keySpend ? `, of which $${keySpend.toFixed(2)} API spend` : ''})`;
+    parts.push(ev.auth === 'api-key' ? `$${ev.costUsd.toFixed(3)} API spend${total}` : `~$${ev.costUsd.toFixed(3)} equiv.${total}`);
   }
   const label = { stopped: 'Stopped', interrupted: 'Interrupted (the room server stopped)', error: 'Ended with an error' }[ev.status];
   if (label) parts.unshift(label);
@@ -1306,6 +1312,8 @@ async function loadSpaces() {
     catalogue = data.agents;
     notionDbs = data.notionDbs || [];
     notionOn = Boolean(data.notion);
+    // On an API key the connectors don't exist: the settings say so next to the two choices (which are kept).
+    for (const id of ['access-notion-key', 'access-m365-key']) $(id).hidden = data.auth !== 'api-key';
     space = spaceList.find((w) => w.id === data.current) || null;
     if (space) spaceButton.textContent = space.name;
     markWorking();
@@ -2312,6 +2320,12 @@ $('space-remove').addEventListener('click', async () => {
     const res = await fetch('/api/room');
     const room = await res.json();
     if (typeof room.owner === 'string' && room.owner) ownerName = room.owner;
+    if (room.auth === 'api-key') {
+      const caps = room.caps || {};
+      const money = (n) => (typeof n === 'number' ? `$${n.toFixed(2)}` : 'a set amount');
+      $('auth-badge').title = `Runs are paid with an Anthropic API key (pay-as-you-go): at most ${money(caps.run)} a run and ${money(caps.day)} a day. Notion and Microsoft 365 reading are off. Start the room with "npm run room" to use your Claude plan.`;
+      $('auth-badge').hidden = false;
+    }
     if (room.attachments) {
       attachLimits = room.attachments;
       attachInput.accept = attachLimits.extensions.map((e) => `.${e}`).join(',');

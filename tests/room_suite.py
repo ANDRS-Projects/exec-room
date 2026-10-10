@@ -554,7 +554,10 @@ try:
         s.stop()
     # X: what a room can use (per-room access): the default room's settings from the rooms file, validation, a new room's
     # minimal default, and the exact tools and allow-rules each run gets from them
-    s = Server("access")
+    # The server's own environment holds everything that could take a run off the Claude plan (fake values), to show
+    # none of it is passed on.
+    s = Server("access", {"ANTHROPIC_API_KEY": "fake-key", "ANTHROPIC_AUTH_TOKEN": "fake-token", "ANTHROPIC_BASE_URL": "http://127.0.0.1:9",
+                          "CLAUDE_CODE_USE_BEDROCK": "1", "CLAUDE_CODE_USE_VERTEX": "1", "CLAUDE_CODE_USE_FOUNDRY": "1"})
     try:
         home, root = os.environ["HOME"], os.path.realpath(opts.root)
         # Machine paths out of the snapshot: the repo (also as the room shows it, with ~) and the home folder.
@@ -644,6 +647,9 @@ try:
             not any(covers(c["denied_read"], p) for p in instructions),
             all(covers([r for r in c["allowed"] if r.startswith("Read(")], p) for p in instructions)) for c in raw}))
         out("X permission mode", sorted({(c["agent"], c["permission_mode"]) for c in calls}))
+        # A key, a token, another endpoint or another provider in the server's environment reaches no run; a variable
+        # the server does pass on (ROOM_TEST_TMP) shows the fake would have listed them.
+        out("X nothing that leaves the Claude plan reaches a run", sorted({(c["agent"], *c["auth_env"]) for c in calls}))
         # Secret-looking files anywhere on disk (env files, .dev.vars, keys, registry credentials, git folders) on every run.
         secrets = ["Read(//**/.env)", "Read(//**/.env.*)", "Read(//**/.dev.vars)", "Read(//**/*.pem)", "Read(//**/*.key)", "Read(//**/id_rsa*)",
                    "Read(//**/id_ed25519*)", "Read(//**/.npmrc)", "Read(//**/.netrc)", "Read(//**/.git-credentials)", "Read(//**/.git/**)"]
@@ -1681,8 +1687,142 @@ try:
         out("N names stay out of the job log", "Pricing talk" in open(os.path.join(data, "jobs.ndjson")).read())
     finally:
         s.stop()
+    # Q: runs paid with an API key instead of the Claude plan. Chosen when the room starts, never
+    # guessed from the environment; the key reaches the runs and nothing else; spend is capped per run and per day.
+    KEY = "sk-fake-room-key"
+
+    def key_start(what, **extra):
+        tmpd = os.path.join(TMP, f"key-start-{what.replace(' ', '-')}")
+        env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "keymode") + os.pathsep + os.environ["PATH"], PORT=str(PORT),
+                   ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token", ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"), **extra)
+        done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
+        out(f"Q start-up refuses {what}", (done.returncode, done.stderr.strip().splitlines()))
+
+    key_start("an unknown mode", ROOM_AUTH="plan")
+    key_start("key mode without a key", ROOM_AUTH="api-key")
+    key_start("a key reference 1Password can't read", ROOM_AUTH="api-key", ROOM_ANTHROPIC_API_KEY_REF="op://Test/other/credential")
+    key_start("a cap that is not an amount", ROOM_AUTH="api-key", ROOM_ANTHROPIC_API_KEY=KEY, ROOM_DAY_CAP_USD="lots")
+
+    kcalls = lambda: [json.loads(l) for l in open(os.path.join(TMP, "keymode-calls.ndjson"))]
+    kroom = lambda: json.loads(call("/api/room")[1])
+    errors = lambda evs: [e["error"] for e in evs if e["type"] == "error"]
+    notices = lambda evs: [e["text"] for e in evs if e["type"] == "notice"]
+    kends = lambda evs: [{k: (round(v, 2) if isinstance(v, float) else v) for k, v in e.items() if k in ("status", "costUsd", "totalCostUsd", "auth", "keyCostUsd")}
+                         for e in evs if e["type"] == "end"]
+
+    def ksay(text):
+        """One message; its events as the chat keeps them, once the run has ended (also when it never started)."""
+        job = json.loads(call("/api/coen", {"text": text})[1])["jobId"]
+        call("/api/stream")
+        return [e for e in kroom()["events"] if e.get("jobId") == job]
+
+    data = os.path.join(TMP, "data-keymode")
+    index = lambda: json.load(open(os.path.join(data, "rooms", "index.json")))["rooms"]
+    job_log = lambda: [j for j in (json.loads(l) for l in open(os.path.join(data, "jobs.ndjson"))) if j.get("kind") == "job"]
+    # The key comes from 1Password here. Another key and a plan token in the server's own environment are not used.
+    s = Server("keymode", {"ROOM_AUTH": "api-key", "ROOM_ANTHROPIC_API_KEY_REF": "op://Test/room-key/credential", "ROOM_DAY_CAP_USD": "1",
+                           "ANTHROPIC_API_KEY": "sk-some-other-key", "CLAUDE_CODE_OAUTH_TOKEN": "fake-plan-token"})
+    try:
+        out("Q the page is told the mode and the caps", (kroom()["auth"], kroom().get("caps"), json.loads(call("/api/workspaces")[1])["auth"]))
+        evs = ksay("hello")
+        run = kcalls()[-1]
+        out("Q a run gets the room's key, a config folder of its own and a cap", (run["key"], run["config_dir"], run["budget"], run["resume"]))
+        out("Q the room's own key variable and a plan token don't reach it", (run["room_key_var"], run["oauth_token"]))
+        # The default room here has Notion reading on: off for the run, unchanged in its settings.
+        stored = json.loads(call("/api/workspaces")[1])["workspaces"][0]["access"]
+        out("Q Notion and mail reading are off, the room's settings kept", (run["notion_allowed"], run["m365_allowed"], run["tool_search"], stored["notion"]))
+        out("Q the agents are told", run["note"][run["note"].find("no Notion"):])
+        out("Q the cost is spend", kends(evs))
+        chat = kroom()["roomId"]
+        out("Q the chat keeps its mode and its spend", (index()[chat].get("sessionAuth"), round(index()[chat].get("keyCostUsd"), 2)))
+        evs = ksay("again")
+        out("Q the chat resumes in the same mode", (kcalls()[-1]["resume"], notices(evs)))
+        # Whatever Claude or the CLI prints, the key is taken out before it reaches the page or the job log.
+        out("Q a key on stderr is taken out", errors(ksay("leak on stderr")))
+        out("Q a key in Claude's own reason is taken out", errors(ksay("leak in the result")))
+        everything = "".join(open(os.path.join(folder, f), errors="replace").read() for folder, _, names in os.walk(data) for f in names)
+        out("Q the key is nowhere in the room's data or what the page gets", (KEY in everything, KEY in call("/api/room")[1], KEY in call("/api/workspaces")[1]))
+        evs = ksay("long job")
+        out("Q a run that ends at its own cap says so", (errors(evs), kends(evs)))
+        # The day's cap ($1 here): the maker's run takes the day past it, so the turn the room starts itself
+        # afterwards (Coen's follow-up) is refused, and so is the next message. No run is started for either.
+        rec = [e["rec"] for e in ksay("please dispatch") if e["type"] == "recommendation"][0]
+        n = len(kcalls())
+        call(f"/api/recs/{rec['recId']}/approve", {})
+        call("/api/stream")
+        evs = kroom()["events"]
+        out("Q past the day's cap the room's own next turn is refused", ([c["agent"] for c in kcalls()[n:]], errors(evs)[-1:], kends(evs)[-2:]))
+        n = len(kcalls())
+        evs = ksay("one more")
+        out("Q and so is a message", (errors(evs), kends(evs), len(kcalls()) - n))
+        out("Q the job log records the mode", sorted({(j["agent"], j.get("auth"), j["status"]) for j in job_log()}))
+    finally:
+        s.stop()
+    # Saved before the modes existed: a chat with a session and no mode (it was on the plan), and job lines without
+    # one. In key mode the chat starts fresh and says so, and the old lines don't count towards today's cap.
+    data = os.path.join(TMP, "data-keymode-old")
+    os.makedirs(os.path.join(data, "rooms"))
+    now = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": "plan-session", "title": "Old", "createdAt": now, "updatedAt": now,
+                                                                 "totalCostUsd": 50, "sessionCostUsd": 50}}}, f)
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump(default_rooms(), f)
+    with open(os.path.join(data, "jobs.ndjson"), "w") as f:
+        f.write(json.dumps({"kind": "job", "agent": "chief-operating-officer", "jobId": "j0", "roomId": "old-chat", "claudeSessionId": "plan-session", "startedAt": now,
+                            "endedAt": now, "status": "ok", "prompt": "old", "turns": 1, "costUsd": 50, "sessionCostUsd": 50}) + "\n")
+    s = Server("keymode", {"ROOM_AUTH": "api-key", "ROOM_ANTHROPIC_API_KEY": KEY}, data_name="data-keymode-old")
+    try:
+        out("Q default caps", kroom().get("caps"))
+        evs = ksay("hello")
+        out("Q a plan chat starts fresh on the key, old job lines don't count", (kcalls()[-1]["resume"], kcalls()[-1]["key"], notices(evs), errors(evs), kends(evs)))
+        out("Q the next message resumes the key's session", (ksay("again") and kcalls()[-1]["resume"], index()["old-chat"].get("sessionAuth")))
+    finally:
+        s.stop()
+    # Back on the plan (the default): no key, no cap, no folder of its own; the chat starts fresh once more.
+    s = Server("keymode", {"ANTHROPIC_API_KEY": "sk-some-other-key", "ROOM_ANTHROPIC_API_KEY": KEY}, data_name="data-keymode-old")
+    try:
+        out("Q on the plan the page gets no caps", (kroom()["auth"], kroom().get("caps")))
+        evs = ksay("hello")
+        run = kcalls()[-1]
+        out("Q a key chat starts fresh on the plan", (run["resume"], run["key"], run["room_key_var"], run["config_dir"], run["budget"], notices(evs)))
+        out("Q the plan's cost is not spend, the chat's earlier spend stays", kends(evs))
+        out("Q Notion reading is back", (run["notion_allowed"], run["note"][run["note"].find("Notion"):]))
+        out("Q the plan's job line has no mode", (job_log()[-1].get("auth"), index()["old-chat"].get("sessionAuth")))
+    finally:
+        s.stop()
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
+
+# A scenario's letter is its own: every check starts with it, and looking up "the M checks" must give one feature.
+# Nothing else notices a new scenario taking a letter that is in use (the checks still pass; it happened three
+# times), so here a letter's checks must sit together in the run. Lines without a letter (a server's stderr)
+# don't count. The three letters below were already spread out when this was added; don't add to them.
+SPREAD_BEFORE = {"C", "F", "V"}
+
+
+def reused_letters(labels):
+    """The letters whose checks come in more than one block, each with the 1-based positions of its blocks."""
+    blocks, last = {}, None
+    for n, label in enumerate(labels, 1):
+        m = re.match(r"([A-Z][0-9]*) ", label)
+        if not m:
+            continue
+        letter = m.group(1)
+        if letter != last:
+            blocks.setdefault(letter, []).append([n, n])
+        blocks[letter][-1][1] = n
+        last = letter
+    return {k: v for k, v in blocks.items() if len(v) > 1}, sorted(set("ABCDEFGHIJKLMNOPQRSTUVWXYZ") - set(k[0] for k in blocks))
+
+
+reused, free = reused_letters(lines)
+clash = {k: v for k, v in reused.items() if k not in SPREAD_BEFORE}
+if clash:
+    for letter, where in sorted(clash.items()):
+        print(f"scenario letter {letter} is used by more than one scenario (checks {', '.join(f'{a} to {b}' for a, b in where)}).")
+    print(f"Give the newer scenario a letter of its own. Free: {', '.join(free) or 'none (use a letter with a number, like A2)'}.")
+    sys.exit(1)
 
 expected_path = os.path.join(TESTS, "expected.txt")
 result = "\n".join(lines) + "\n"

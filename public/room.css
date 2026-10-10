@@ -143,6 +143,9 @@ button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: 
 .sec .tag-out { margin-left: auto; flex: none; font-size: 11px; color: #633806; }
 .sec-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .sec-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.sec-note.key-off { margin-top: 6px; color: #633806; }
+/* Shown only while runs are paid with an API key (pay-as-you-go), next to the room's name. */
+.auth-badge { flex: none; font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: #FAEEDA; color: #633806; white-space: nowrap; cursor: help; }
 .sec-sub { margin: 4px 0 0; font-size: 13px; font-weight: 600; }
 .sec-sub small { font-weight: 400; color: var(--muted); margin-left: 4px; }
 .sec.outside { border-color: #EFC98B; }

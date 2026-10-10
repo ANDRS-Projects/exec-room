@@ -224,6 +224,7 @@ X m365 room-built advisor: {'room-tess': ['Read', 'Grep', 'Glob', 'WebSearch', '
 X data folder blocked: [('chief-operating-officer', 'Read(/<tmp>/data-access/**)'), ('room-wren', 'Read(/<tmp>/data-access/**)')]
 X sensitive folders blocked: [('chief-operating-officer', True, True, True, True, True), ('room-wren', True, True, True, True, True)]
 X permission mode: [('chief-operating-officer', 'default'), ('room-wren', 'default')]
+X nothing that leaves the Claude plan reaches a run: [('chief-operating-officer', 'ROOM_TEST_TMP'), ('room-wren', 'ROOM_TEST_TMP')]
 X secret files blocked: [('chief-operating-officer', True), ('room-wren', True)]
 X docker and kube folders blocked: [('chief-operating-officer', True, True), ('room-wren', True, True)]
 X new secret patterns blocked: [('chief-operating-officer', True), ('room-wren', True)]
@@ -538,3 +539,30 @@ N a new chat is listed while it is open: [('new', '', {'current': True})]
 N an empty chat that was left is not listed: ['c-recent', 'c-old', 'c-nosession']
 N stored: ('Pricing talk', 'Old question about pricing for anna@client.example', False, 'c-nosession')
 N names stay out of the job log: False
+Q start-up refuses an unknown mode: (1, ['ROOM_AUTH must be "subscription" (the Claude plan, the default) or "api-key", not "plan".'])
+Q start-up refuses key mode without a key: (1, ['ROOM_AUTH is "api-key" but no key was found. Set ROOM_ANTHROPIC_API_KEY, or ROOM_ANTHROPIC_API_KEY_REF to its 1Password reference (op://…), or start the room on the Claude plan with `npm run room`.'])
+Q start-up refuses a key reference 1Password can't read: (1, ['ROOM_AUTH is "api-key" but no key was found. Set ROOM_ANTHROPIC_API_KEY, or ROOM_ANTHROPIC_API_KEY_REF to its 1Password reference (op://…), or start the room on the Claude plan with `npm run room`.'])
+Q start-up refuses a cap that is not an amount: (1, ['ROOM_DAY_CAP_USD must be a number above 0, not "lots".'])
+Q the page is told the mode and the caps: ('api-key', {'run': 2, 'day': 1}, 'api-key')
+Q a run gets the room's key, a config folder of its own and a cap: ("the room's key", ['claude-key', True, '0o700'], '2', None)
+Q the room's own key variable and a plan token don't reach it: (False, False)
+Q Notion and mail reading are off, the room's settings kept: (False, False, False, True)
+Q the agents are told: no Notion and no Microsoft 365 (reading them is not possible while the room runs on an API key, whatever its settings say); writing only in drafts/.
+Q the cost is spend: [{'status': 'ok', 'costUsd': 0.01, 'totalCostUsd': 0.01, 'auth': 'api-key', 'keyCostUsd': 0.01}]
+Q the chat keeps its mode and its spend: ('api-key', 0.01)
+Q the chat resumes in the same mode: ('key-session', [])
+Q a key on stderr is taken out: ['request failed: x-api-key [API key removed] was refused']
+Q a key in Claude's own reason is taken out: ['Invalid API key [API key removed] · Fix external API key']
+Q the key is nowhere in the room's data or what the page gets: (False, False, False)
+Q a run that ends at its own cap says so: (['This run stopped at the spend cap for one run ($2.00). What was written so far is above. Send a message to carry on, or restart the room with a higher ROOM_RUN_CAP_USD.'], [{'status': 'error', 'costUsd': 0.29, 'totalCostUsd': 0.3, 'auth': 'api-key', 'keyCostUsd': 0.3}])
+Q past the day's cap the room's own next turn is refused: (['room-wren'], ["Today's API key spend cap is reached ($1.50 of $1.00), so Coen wasn't started. It starts again tomorrow; to go on today, restart the room with a higher ROOM_DAY_CAP_USD."], [{'status': 'ok', 'costUsd': 1.2, 'totalCostUsd': 1.5, 'auth': 'api-key', 'keyCostUsd': 1.5}, {'status': 'error', 'costUsd': 0, 'totalCostUsd': 1.5, 'auth': 'api-key', 'keyCostUsd': 1.5}])
+Q and so is a message: (["Today's API key spend cap is reached ($1.50 of $1.00), so Coen wasn't started. It starts again tomorrow; to go on today, restart the room with a higher ROOM_DAY_CAP_USD."], [{'status': 'error', 'costUsd': 0, 'totalCostUsd': 1.5, 'auth': 'api-key', 'keyCostUsd': 1.5}], 0)
+Q the job log records the mode: [('chief-operating-officer', 'api-key', 'error'), ('chief-operating-officer', 'api-key', 'ok'), ('room-wren', 'api-key', 'ok')]
+Q default caps: {'run': 2, 'day': 10}
+Q a plan chat starts fresh on the key, old job lines don't count: (None, "the room's key", ["This chat was last used on the Claude plan, and Coen's memory of it doesn't carry over to the API key. The history above is still here, but he starts fresh from this message."], [], [{'status': 'ok', 'costUsd': 0.01, 'totalCostUsd': 50.01, 'auth': 'api-key', 'keyCostUsd': 0.01}])
+Q the next message resumes the key's session: ('key-session', 'api-key')
+Q on the plan the page gets no caps: ('subscription', None)
+Q a key chat starts fresh on the plan: (None, None, False, None, None, ["This chat was last used with an API key, and Coen's memory of it doesn't carry over to the Claude plan. The history above is still here, but he starts fresh from this message."])
+Q the plan's cost is not spend, the chat's earlier spend stays: [{'status': 'ok', 'costUsd': 0.01, 'totalCostUsd': 50.02, 'keyCostUsd': 0.01}]
+Q Notion reading is back: (True, 'Notion, read-only; no Microsoft 365; writing only in drafts/.')
+Q the plan's job line has no mode: (None, None)

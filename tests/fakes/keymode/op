@@ -1,0 +1,8 @@
+#!/bin/sh
+# Test double for 1Password's `op read`: knows one reference (a fake key), fails for any other.
+if [ "$1" = "read" ] && [ "$2" = "op://Test/room-key/credential" ]; then
+  echo "sk-fake-room-key"
+  exit 0
+fi
+echo "[ERROR] could not read secret" >&2
+exit 1
