@@ -8,6 +8,8 @@
 
 Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of Claude Code agents. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, jobs for other agents). They never get a shell, and nothing happens until you approve it.
 
+![Exec Room: the chat list, a conversation with Coen with two proposals waiting for approval, and the advisors' replies](docs/screenshots/01-room.png)
+
 The room starts with one agent: **Coen**, the room lead. Every message goes to him first. You build the rest of the team yourself, in the room:
 
 - **Advisors** — Coen consults them before he answers (for example a technical or a marketing advisor).
@@ -26,6 +28,31 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Email drafts** — to recipients you allow; the room never sends mail, you do
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Local and locked down** — binds to 127.0.0.1, read-only tools, writes only in `drafts/`, secret files blocked
+
+
+## Screenshots
+
+The pictures show a demo install with a made-up bike repair shop; every name and number in them is invented.
+
+**Approve before act.** Coen asked two advisors, then proposed a job for two makers and a GitHub issue. Nothing happens until you approve; you can also send a proposal back with a note or dismiss it.
+
+![Two proposal cards with Approve, Revise and Dismiss](docs/screenshots/02-proposals.png)
+
+**A brief per room.** What every agent in the room should know about the business, written by you.
+
+![Room settings, General tab, with the room's brief](docs/screenshots/03-room-settings-brief.png)
+
+**What a room can use.** Folders, sites, web search and connectors are set per room; anything not listed is refused.
+
+![Room settings, Can use tab](docs/screenshots/04-room-settings-can-use.png)
+
+**Decisions.** Every proposal you approved, sent back or dismissed in the room, across its chats.
+
+![Room settings, Decisions tab](docs/screenshots/05-decisions.png)
+
+**Narrow windows.** The same room in a phone-width window; the chat list opens as a drawer.
+
+<img src="docs/screenshots/06-narrow.png" alt="The room in a narrow window" width="320">
 
 ## What it costs
 
