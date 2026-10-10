@@ -6,7 +6,7 @@
 [![Runs locally](https://img.shields.io/badge/runs-locally-2ea44f)](SECURITY.md)
 [![Actions: approve first](https://img.shields.io/badge/actions-approve--first-6f42c1)](SECURITY.md)
 
-Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of Claude Code agents. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, jobs for other agents). They never get a shell, and nothing happens until you approve it.
+Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of Claude Code agents. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, jobs for other agents). They can't run commands on your computer, and nothing happens until you approve it.
 
 ![Exec Room: the chat list, a conversation with Coen with two proposals waiting for approval, and the advisors' replies](docs/screenshots/01-room.png)
 
@@ -146,7 +146,7 @@ npm test
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for the full model. In short: the room binds to localhost and rejects other hosts and origins; agents get read-only tools (never Bash), write only in `drafts/`, and can't read secret files (`.env`, keys, `.git`) or the room's own data; every action is a proposal you approve.
+See [SECURITY.md](SECURITY.md) for the full model. In short: the room binds to localhost and rejects other hosts and origins; agents get read-only tools (never Bash, the tool that runs commands), write only in `drafts/`, and can't read secret files (`.env`, keys, `.git`) or the room's own data; every action is a proposal you approve.
 
 **These are permission rules, not a sandbox.** The blocks work by name: tool names, folder paths and file-name patterns, passed to Claude Code as allow and deny rules. Nothing isolates the agents from your machine at the operating-system level, so a secret in a file with a name that isn't on the list, inside a folder you gave a room, is readable. Everything agents read can also carry prompt injection: files, web pages, Notion pages, GitHub issues and pull requests, and mail previews can contain text that tries to steer an agent. Give each room only what its job needs, and read a proposal before you approve it.
 
