@@ -2323,7 +2323,7 @@ $('space-remove').addEventListener('click', async () => {
     if (room.auth === 'api-key') {
       const caps = room.caps || {};
       const money = (n) => (typeof n === 'number' ? `$${n.toFixed(2)}` : 'a set amount');
-      $('auth-badge').title = `Runs are paid with an Anthropic API key (pay-as-you-go): at most ${money(caps.run)} a run and ${money(caps.day)} a day. Notion and Microsoft 365 reading are off. Start the room with "npm run room" to use your Claude plan.`;
+      $('auth-badge').title = `Runs are paid with an Anthropic API key (pay-as-you-go): at most ${money(caps.run)} a run and ${money(caps.day)} a day. Agents can't search Notion or Outlook mail; Notion pages you link in a message are read for them. Start the room with "npm run room" to use your Claude plan.`;
       $('auth-badge').hidden = false;
     }
     if (room.attachments) {
