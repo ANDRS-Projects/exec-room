@@ -9,6 +9,7 @@
   },
   "scripts": {
     "room": "node room-server.js",
+    "room:key": "ROOM_AUTH=api-key node room-server.js",
     "test": "python3 tests/room_suite.py"
   },
   "dependencies": {

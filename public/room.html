@@ -18,6 +18,7 @@
       <button type="button" class="workspace" id="brand-workspace" aria-haspopup="menu" aria-expanded="false" title="Switch room">Ops room</button>
       <div class="space-menu" id="space-menu" role="menu" hidden></div>
     </div>
+    <span class="auth-badge" id="auth-badge" hidden>API key</span>
   </div>
   <button type="button" class="ghost" id="chats-toggle" aria-controls="chats" aria-expanded="false" title="This room's chats">Chats</button>
   <button type="button" class="ghost" id="reset" title="Start a new chat in this room; the one you leave stays in the chat list">New chat</button>
@@ -207,6 +208,7 @@
             <div class="sec-body">
               <label class="choice"><input type="checkbox" id="access-notion"> <span><b>Notion</b> · read-only</span></label>
               <p class="sec-note">Read-only, through your Notion connector.</p>
+              <p class="sec-note key-off" id="access-notion-key" hidden>Not available while the room runs on an API key. Your choice is kept for when it runs on your Claude plan.</p>
             </div>
           </div>
           <div class="sec">
@@ -214,6 +216,7 @@
             <div class="sec-body">
               <label class="choice"><input type="checkbox" id="access-m365"> <span><b>Outlook mail</b> · search</span></label>
               <p class="sec-note">Read-only, through your Microsoft 365 connector: agents can search mail (sender, subject, date and a short preview) but can't open emails, and never send, reply or delete. Switch it on only in rooms that need client mail.</p>
+              <p class="sec-note key-off" id="access-m365-key" hidden>Not available while the room runs on an API key. Your choice is kept for when it runs on your Claude plan.</p>
             </div>
           </div>
         </div>

@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+# Test double for `claude -p` with the room on an API key (or back on the plan): logs how each run was started
+# (the key, its config folder, the spend cap, --resume, the Notion and Microsoft 365 rules) to
+# $ROOM_TEST_TMP/keymode-calls.ndjson. By the message: prints the key on stderr or in its result, ends at its
+# spend cap, or proposes a dispatch to Wren. A maker's run costs 1.20. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+agent = args[args.index("--agent") + 1]
+prompt = args[args.index("-p") + 1]
+note = args[args.index("--append-system-prompt") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+one = lambda name: args[args.index(name) + 1] if name in args else None
+
+
+def flag(name):
+    i = args.index(name) + 1
+    vals = []
+    while i < len(args) and not args[i].startswith("--"):
+        vals.append(args[i])
+        i += 1
+    return vals
+
+
+key = os.environ.get("ANTHROPIC_API_KEY")
+config = os.environ.get("CLAUDE_CONFIG_DIR")
+data = os.environ["ROOM_DATA_DIR"]
+start = note.find("What this room lets agents use:")
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "keymode-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"agent": agent, "resume": one("--resume"), "budget": one("--max-budget-usd"),
+                          # Never the key itself: only whether it is the one the room was started with.
+                          "key": None if key is None else "the room's key" if key == "sk-fake-room-key" else "another key",
+                          "room_key_var": "ROOM_ANTHROPIC_API_KEY" in os.environ, "oauth_token": "CLAUDE_CODE_OAUTH_TOKEN" in os.environ,
+                          "config_dir": None if config is None else (os.path.relpath(config, data), os.path.isdir(config), oct(os.stat(config).st_mode & 0o777)),
+                          "notion_allowed": any("Notion" in t for t in flag("--allowedTools")),
+                          "m365_allowed": any("Microsoft_365" in t for t in flag("--allowedTools")),
+                          "tool_search": "ToolSearch" in flag("--tools"),
+                          "note": note[start:note.find(" Anything else", start)] if start >= 0 else None}) + "\n")
+
+coen = agent == "chief-operating-officer"
+out({"type": "system", "subtype": "init", "session_id": ("key-session" if key else "plan-session-2") if coen else "maker-session"})
+if coen and "leak on stderr" in prompt:
+    sys.stderr.write(f"request failed: x-api-key {key} was refused\n")
+    sys.exit(1)
+if coen and "leak in the result" in prompt:
+    out({"type": "result", "is_error": True, "num_turns": 1, "total_cost_usd": 0, "result": f"Invalid API key {key} · Fix external API key", "session_id": "x"})
+    sys.exit(1)
+text = "Done."
+if coen and "dispatch" in prompt:
+    text = "Sending.\n```recommendation\n" + json.dumps({"action": "dispatch", "agent": "wren", "summary": "Post", "brief": "Write it."}) + "\n```\n"
+if coen and "long job" in prompt:
+    text = "Half an answer."
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+if coen and "long job" in prompt:
+    # Like the real CLI at --max-budget-usd: the reason only as the result's subtype, no text.
+    out({"type": "result", "subtype": "error_max_budget_usd", "is_error": True, "num_turns": 3, "total_cost_usd": 0.3, "session_id": "x"})
+    sys.exit(0)
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01 if coen else 1.2, "session_id": "x"})
