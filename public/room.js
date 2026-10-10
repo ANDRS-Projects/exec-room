@@ -348,6 +348,11 @@ function handle(ev) {
 
 narrow.addEventListener('change', () => groups.forEach(placeGroup));
 
+// The hint about Shift+Enter needs room: in a narrow message box it wrapped onto a second line that was cut off,
+// so there the box only says what it is for. The full hint takes about 330px at the page's font size.
+const INPUT_HINT = input.placeholder;
+new ResizeObserver(() => { input.placeholder = input.clientWidth < 345 ? 'Message the team…' : INPUT_HINT; }).observe(input);
+
 // ---- Proposal cards: Coen proposes, the owner approves or asks for a revision, the server acts.
 
 const recCards = new Map();
