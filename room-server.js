@@ -274,8 +274,8 @@ const minimalTargets = () => ({ repos: [], publicRepos: [], notionDbs: [], notio
 const MAX_PLACES = 20;
 const NOTION_CHANNELS = CONFIG.notionChannels || ['X', 'LinkedIn', 'Substack Note', 'Substack Post', 'Instagram', 'Blog'];
 const NOTION_PAGE_URL = /^https:\/\/(app\.notion\.com|www\.notion\.so)\//;
-// email_draft (issue #45): the room never sends mail. Approving records the owner's decision; they open the draft in
-// Outlook web or their mail app from the card and send it themselves. Recipients must be on the room's list: exact
+// email_draft (issue #45): the room never sends mail. Approving records the owner's decision; the draft is then opened in
+// Outlook web or a mail app from the card and sent by hand. Recipients must be on the room's list: exact
 // addresses or bare domains (that exact domain, no subdomains). An address holding a comma, ?, & or a line break
 // is refused, never cleaned up: in a mail link those add recipients or fields.
 const MAX_RECIPIENTS = 50;
@@ -304,7 +304,7 @@ const NOTION_TOKEN = readNotionToken();
 
 // Built per job for the chat's room, so agents the owner adds, removes or moves show up in Coen's next message.
 // The room's focus agent, if it's (still) an advisor in the room. Coen hands the owner's requests to it, and its
-// reply and proposals reach them directly (shown in the main chat, cards taken from its own text).
+// reply and proposals reach the owner directly (shown in the main chat, cards taken from its own text).
 function focusOf(space) {
   const key = space && space.focus;
   if (!key || !inSpace(space, key)) return null;
@@ -315,24 +315,24 @@ function focusOf(space) {
 
 // Added to the focus agent's own prompt in that room only (its AGENT.md stays as it is).
 function focusNote(space, focus) {
-  return `\n\n## In the owner's Exec Room\nYou are the focus agent of the room "${space.name}": Coen (COO) hands the owner's requests to you unchanged, and your reply is shown to them directly as the answer; Coen doesn't summarise or rework it. Write to the owner, not to Coen, and do not prefix your messages with your name. You can save files only in drafts/, named YYYY-MM-DD-${focus.name.toLowerCase()}-<short-topic>.md; everything else is read-only. ${accessLine(runAccess(space))}\n\n${proposalRules(space)}`;
+  return `\n\n## In the owner's Exec Room\nYou are the focus agent of the room "${space.name}": Coen (COO) hands the owner's requests to you unchanged, and your reply is shown to the owner directly as the answer; Coen doesn't summarise or rework it. Write to the owner, not to Coen, and do not prefix your messages with your name. You can save files only in drafts/, named YYYY-MM-DD-${focus.name.toLowerCase()}-<short-topic>.md; everything else is read-only. ${accessLine(runAccess(space))}\n\n${proposalRules(space)}`;
 }
 
 // How to propose cards: shared by Coen and a room's focus agent, whose proposals reach the owner directly.
 function proposalRules(space) {
   const all = makers(space);
   const targets = targetsOf(space);
-  return `To get something done beyond advice, propose it for the owner's approval: end your message with up to three fenced blocks tagged recommendation, each containing one JSON object. the owner sees it as a card with Approve, Revise and Dismiss buttons; nothing happens until they approve, so never say it's done. A dismissed proposal is closed for good: don't propose the same thing again unless the owner asks for it. You are told about a dismissal in a room note with their next message (through Coen, when you are a room's focus agent), with their reason when they gave one; it needs no reply. Supported actions:${Object.keys(all).length ? `
+  return `To get something done beyond advice, propose it for the owner's approval: end your message with up to three fenced blocks tagged recommendation, each containing one JSON object. the owner sees it as a card with Approve, Revise and Dismiss buttons; nothing happens until it is approved, so never say it's done. A dismissed proposal is closed for good: don't propose the same thing again unless the owner asks for it. You are told about a dismissal in a room note with the owner's next message (through Coen, when you are a room's focus agent), with the reason when one was given; it needs no reply. Supported actions:${Object.keys(all).length ? `
 - Dispatch to a maker, who writes the output into drafts/: {"action": "dispatch", "agent": one of ${Object.keys(all).map((k) => `"${k}"`).join(', ')}, "summary": "one line", "brief": "what it's about, the source, account, audience and links", optional "then": a second maker who runs right after with the first maker's draft (e.g. an image maker for the header image), optional "then_brief": extra context for that second maker}. One approval covers the whole chain. Makers: ${Object.entries(all).map(([k, m]) => `${k} = ${m.name}, ${m.does}`).join('; ')}.` : ''}
 ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {"action": "github_issue", "repo": one of ${targets.repos.map((r) => `"${r}"`).join(', ')}, "summary": "one line", "title": "…", "body": "markdown"}.${targets.publicRepos.length ? ` These repos are public, so an issue there is visible to everyone: ${targets.publicRepos.join(', ')}. Write those issues for outsiders and leave out anything internal (Notion content, private repos, costs, clients, plans, the room itself); the others are private.` : ' All of them are private.'}
 - Comment on an existing issue in one of this room's repos (e.g. your review of it, or an update): {"action": "github_comment", "repo": one of the repos above, "issue": its number, "summary": "one line", "body": "markdown"}.${targets.publicRepos.length ? ' Comments on the public repos are visible to everyone too; write them the same way.' : ''}
-` : ''}${NOTION_TOKEN && targets.notionDbs.length ? `- Save social posts as Notion drafts, one row per post (Status is always draft; the owner schedules them): {"action": "notion_draft", "database": one of ${targets.notionDbs.map((k) => [k, NOTION_DBS[k]]).map(([k, db]) => `"${k}" (${db.name}, accounts: ${db.accounts.join(' / ')})`).join(', ')}, "summary": "one line", "posts": [up to 5 of {"channel": one of ${NOTION_CHANNELS.map((c) => `"${c}"`).join(', ')}, "title": "…", "content": "the post text, copied verbatim from the maker's draft (keep X thread 'Tweet N:' markers)", optional "account"}], optional "account" for all posts, "image_prompt", "source_insight"}. Put a whole package (e.g. LinkedIn + X + Notes, with an image maker's prompt as image_prompt) in one proposal. Output DBs are only for posts meant for delivery.
+` : ''}${NOTION_TOKEN && targets.notionDbs.length ? `- Save social posts as Notion drafts, one row per post (Status is always draft; scheduling stays with the owner): {"action": "notion_draft", "database": one of ${targets.notionDbs.map((k) => [k, NOTION_DBS[k]]).map(([k, db]) => `"${k}" (${db.name}, accounts: ${db.accounts.join(' / ')})`).join(', ')}, "summary": "one line", "posts": [up to 5 of {"channel": one of ${NOTION_CHANNELS.map((c) => `"${c}"`).join(', ')}, "title": "…", "content": "the post text, copied verbatim from the maker's draft (keep X thread 'Tweet N:' markers)", optional "account"}], optional "account" for all posts, "image_prompt", "source_insight"}. Put a whole package (e.g. LinkedIn + X + Notes, with an image maker's prompt as image_prompt) in one proposal. Output DBs are only for posts meant for delivery.
 ` : ''}${NOTION_TOKEN && targets.notionPlaces.length ? `- Save anything else as a new Notion page (a long article, research, a strategy doc, a review, meeting notes, a digest): {"action": "notion_page", "parent": the Notion URL or id of the page to put it under, "summary": "one line", "title": "…", "content": "markdown (headings, lists, quotes, code, links), up to ${NOTION_PAGE_MAX} characters"}. You choose the place, one of this room's: ${targets.notionPlaces.map((p) => `${p.name} (${p.id})${p.for ? ` for ${p.for}` : ''}`).join('; ')}. You may also pick a more fitting sub-page inside one of these places that you find with Notion search (it's checked when the owner approves); it only works where the owner has shared the page with the room.
-` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send themselves (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. This is allowed because the room never sends it: approving only records the owner's decision, then they open the draft in their own mail app and send it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
-` : `- Email drafts are off in this room because it has no email recipients. If the owner asks for an email, say that they can turn them on by adding the recipient (an address, or a domain) under Room settings → "Email recipients for drafts", and then ask again in a new chat. Don't write the email as a file instead.
-`}Nothing that publishes, schedules, posts or sends messages can be proposed${targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer their note and propose again.${targets.repos.length ? `
+` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send by hand (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. This is allowed because the room never sends it: approving only records the owner's decision, then the owner opens the draft in a mail app and sends it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
+` : `- Email drafts are off in this room because it has no email recipients. If the owner asks for an email, say that these can be turned on by adding the recipient (an address, or a domain) under Room settings → "Email recipients for drafts", and then ask again in a new chat. Don't write the email as a file instead.
+`}Nothing that publishes, schedules, posts or sends messages can be proposed${targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer the note and propose again.${targets.repos.length ? `
 
-You can't open GitHub yourself (no gh, and opening github.com can't reach private repos), but when the owner's message includes the full link to an issue or a pull request in one of this room's repos (https://github.com/<owner>/<repo>/issues/<number> or …/pull/<number>, up to ${MAX_LINKED_ISSUES}), the server reads it and adds it after their message; a pull request comes with its changed files, reviews and diff (the diff is cut when it's long). To look at one, ask them for its link; don't suggest adding github.com to the room's sites. To add something to an issue, propose a github_comment rather than asking them to paste it. CI results and branches only on GitHub can't be read; the local copy of a repo can, if the room has its folder.` : ''}`;
+You can't open GitHub yourself (no gh, and opening github.com can't reach private repos), but when the owner's message includes the full link to an issue or a pull request in one of this room's repos (https://github.com/<owner>/<repo>/issues/<number> or …/pull/<number>, up to ${MAX_LINKED_ISSUES}), the server reads it and adds it after the message; a pull request comes with its changed files, reviews and diff (the diff is cut when it's long). To look at one, ask for its link; don't suggest adding github.com to the room's sites. To add something to an issue, propose a github_comment rather than asking the owner to paste it. CI results and branches only on GitHub can't be read; the local copy of a repo can, if the room has its folder.` : ''}`;
 }
 
 function roomNote(space) {
@@ -344,9 +344,9 @@ function roomNote(space) {
   const consult = names.length
     ? `When you consult ${names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names.at(-1)}` : names[0]}, their replies are already shown to the owner in their own panels, so do not repeat them verbatim: end with only your own synthesis and recommendation, and name the peer when you use their point (e.g. "${names[0]}: …").`
     : 'Nobody in this room is there for you to consult, so answer yourself.';
-  const members = space.members ? ` This room's members are only: ${[...names, ...Object.values(all).map((m) => m.name)].join(', ') || 'you alone'}. The other agents exist but aren't in this room, so don't consult or dispatch to them; if the owner needs one, tell them to add them to the room.` : '';
+  const members = space.members ? ` This room's members are only: ${[...names, ...Object.values(all).map((m) => m.name)].join(', ') || 'you alone'}. The other agents exist but aren't in this room, so don't consult or dispatch to them; if the owner needs one, say that it has to be added to the room first.` : '';
   const about = space.description ? ` The owner describes this room as: "${space.description}".` : '';
-  return `You are running inside the owner's Exec Room, in the room "${space.name}".${about}${members} ${accessLine(runAccess(space))} ${consult} Do not prefix your messages with your name. Never mention connectors that need authorisation; the owner knows, and only the ones this room allows (Notion and Microsoft 365 mail, both read-only) matter here. You (and anyone you consult) can save work only as files in the drafts/ folder, named YYYY-MM-DD-<your-first-name>-<short-topic>.md; everything else is read-only, so propose other changes instead of attempting them. The owner can attach files to a message (${Object.keys(ATTACH_TYPES).map((e) => `.${e}`).join(', ')}): the server then adds their paths after their message, readable for that turn only. When you need a file that isn't in the room's folders, ask them to attach it to their next message.
+  return `You are running inside the owner's Exec Room, in the room "${space.name}".${about}${members} ${accessLine(runAccess(space))} ${consult} Do not prefix your messages with your name. Never mention connectors that need authorisation; the owner knows, and only the ones this room allows (Notion and Microsoft 365 mail, both read-only) matter here. You (and anyone you consult) can save work only as files in the drafts/ folder, named YYYY-MM-DD-<your-first-name>-<short-topic>.md; everything else is read-only, so propose other changes instead of attempting them. The owner can attach files to a message (${Object.keys(ATTACH_TYPES).map((e) => `.${e}`).join(', ')}): the server then adds their paths after the message, readable for that turn only. When you need a file that isn't in the room's folders, ask for it to be attached to the next message.
 
 ${briefNote(space) ? `${briefNote(space)}\n\n` : ''}${handOver}${proposalRules(space)}${advisors.length ? `
 
@@ -414,7 +414,7 @@ const groupTools = (groups) => new Set(groups.flatMap((g) => TOOL_GROUPS[g].tool
 function customDefinition(a) {
   const def = {
     description: a.does,
-    prompt: `You are ${a.name}, an agent the owner added to their Exec Room. Your job: ${a.does}\n\n${a.instructions}`,
+    prompt: `You are ${a.name}, an agent the owner added to this Exec Room. Your job: ${a.does}\n\n${a.instructions}`,
   };
   if (a.model) def.model = a.model;
   return def;
@@ -585,7 +585,7 @@ function saveIndex() {
   fs.renameSync(tmp, INDEX_FILE);
 }
 
-// ---- Rooms (the owner's word): in this code a "room" is one chat, so their rooms are workspaces:
+// ---- Rooms (the owner's word): in this code a "room" is one chat, so the rooms on the page are workspaces:
 // data/workspaces.json holds each one's name, its members (agent keys; null = everyone, also agents added
 // later) and its current chat. Coen leads every room; agents live once and rooms pick from them.
 
@@ -733,7 +733,7 @@ function validateTargets(o) {
     const what = typeof p.for === 'string' ? p.for.trim().slice(0, 200) : '';
     return { id, name, ...(what && { for: what }) };
   }).filter((p) => !seen.has(p.id) && seen.add(p.id));
-  // Repos the owner marked as public (e.g. their open-source repos): issues there are visible to everyone.
+  // Repos the owner marked as public (e.g. open-source repos): issues there are visible to everyone.
   const publicRepos = [...new Set(list(o.publicRepos, 'public repos', MAX_REPOS).map((r) => {
     if (!repos.includes(r)) throw new Error(`"${r}" is marked public but isn't one of the room's repos`);
     return r;
@@ -1925,7 +1925,7 @@ function buildArgs(text, resumeId, maker, space, attachRead = []) {
 // `maker` (the chain's second maker) or else the dispatch's own agent.
 // `auto` marks a turn the room starts itself (the nudge, or a chain's next step), not one the owner sent.
 // `room` is the chat the job belongs to: the one the owner is looking at, or for a follow-up the chat of the
-// job that led to it, even if they have switched rooms since.
+// job that led to it, even if the owner has switched rooms since.
 // `after`: the makers whose work this follow-up is about, so proposals made in it credit them.
 // `files`: what the owner attached to this message (from validateAttachments), readable for this job only.
 function startJob(text, dispatch = null, auto = false, maker = null, room = currentRoom(), after = [], files = []) {
@@ -2538,12 +2538,12 @@ app.post('/api/recs/:id/revise', (req, res) => {
   const busy = busyReason(rec.roomId);
   if (busy) return res.status(409).json({ error: busy });
   const decision = recordDecision(rec, 'revised', { note });
-  const job = startJob(`the owner asks you to revise your proposal "${rec.summary}" (${rec.recId}). Their note:\n\n${note}`);
+  const job = startJob(`the owner asks you to revise your proposal "${rec.summary}" (${rec.recId}). Note from the owner:\n\n${note}`);
   res.json({ events: [decision], jobId: job.jobId });
 });
 
 // Dismiss closes a pending proposal and does nothing else: no job, no outside call, so it also works while an agent runs.
-// The owner may say why. Their reason is kept with the decision (on the proposal, in the job log and in the chat); a
+// A reason is optional. It is kept with the decision (on the proposal, in the job log and in the chat); a
 // dismissal without one is stored exactly as before reasons existed.
 app.post('/api/recs/:id/dismiss', (req, res) => {
   const given = req.body ? req.body.reason : undefined;
@@ -2563,7 +2563,7 @@ app.post('/api/recs/:id/dismiss', (req, res) => {
 });
 
 // What Coen is told about proposals the owner dismissed since his last run in a chat: one line each, in the order
-// they were dismissed, with the owner's reason when one was given (also for an email draft: his own memory of the
+// they were dismissed, with the reason when one was given (also for an email draft: his own memory of the
 // chat still has the draft). Built from the stored proposals when the run starts, so the chat record only holds
 // their ids; one that is no longer stored, or not dismissed, is left out. A focus agent's proposal is named as that
 // agent's, and Coen passes the line on while that agent is still the room's focus.
@@ -2575,7 +2575,7 @@ function dismissalNote(ids, focus) {
     if (!rec || rec.state !== 'dismissed') continue;
     const whose = rec.by ? `${agentName(rec.by)}'s proposal` : 'your proposal';
     // A reason of several lines stays under its own proposal: its later lines are indented.
-    const why = typeof rec.reason === 'string' && rec.reason ? `Their reason: ${rec.reason.replace(/\r?\n/g, '\n  ')}` : 'They gave no reason.';
+    const why = typeof rec.reason === 'string' && rec.reason ? `Reason given: ${rec.reason.replace(/\r?\n/g, '\n  ')}` : 'No reason was given.';
     const passOn = rec.by && focus && rec.by === focus.key ? ` Pass this on to ${focus.name} with the message.` : '';
     lines.push(`- ${whose} "${rec.summary}" (${rec.recId}). ${why}${passOn}`);
   }
@@ -2963,9 +2963,9 @@ function draftExists(name) {
 // A log line holds the chat only, so the room is looked up in the chat index now: a chat that was moved counts for
 // the room it is in today. A chat whose room was deleted is in no room's list; spaceOf() is not used here, as it
 // would hand that chat to the default room. (A chat from before rooms has no workspaceId and is the default room's.)
-// What the owner wrote with a decision (their reason for a dismissal, their note for a revision) is on the row, except for
-// an email draft: there they may have quoted the draft, whose addresses and text were removed, so the row only says
-// that they wrote something (it is on the card in the chat). An email draft has only what the log kept: subject and
+// What the owner wrote with a decision (the reason for a dismissal, the note for a revision) is on the row, except for
+// an email draft: there it may quote the draft, whose addresses and text were removed, so the row only says
+// that something was written (it is on the card in the chat). An email draft has only what the log kept: subject and
 // recipients' domains.
 function decisionsOf(space) {
   let raw = '';
@@ -2986,7 +2986,7 @@ function decisionsOf(space) {
     const at = typeof line.at === 'string' ? line.at : '';
     // The decision itself; or, when its line is missing (a cut-off log), the first result line: a result can only follow an approval.
     if (DECIDED.has(line.state) || (line.state !== 'pending' && !row.decision)) Object.assign(row, { decision: DECIDED.has(line.state) ? line.state : 'approved', at });
-    // The owner's own words with the decision. Lines from before dismissals took a reason have none.
+    // What was written with the decision. Lines from before dismissals took a reason have none.
     if (line.state === 'dismissed' && typeof line.reason === 'string' && line.reason) row.reason = line.reason;
     if (line.state === 'revised' && typeof line.note === 'string' && line.note) row.note = line.note;
     if (line.result && typeof line.result === 'object') row.result = line.result;
