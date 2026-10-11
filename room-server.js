@@ -1968,6 +1968,12 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       appendEvent(room.roomId, { ...tagged, ts: Date.now() });
     }
   };
+  // For what only matters while it lasts (an `activity`): to the pages watching now, not into the transcript or the
+  // job's own list, so a page that joins later doesn't get it and a replay never does.
+  const sendLive = (ev) => {
+    const line = JSON.stringify({ ...ev, jobId: job.jobId }) + '\n';
+    for (const sub of job.subscribers) sub.write(line);
+  };
 
   function finish(status, error = '') {
     if (job.done) return;
@@ -2083,6 +2089,11 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     const streamed = new Set();       // parents whose text already arrived as partial deltas
     const shown = new Set();          // consults whose reply already reached their panel
     const pendingDrafts = new Map();  // Write/Edit tool_use id → draft file name, until its result arrives
+    const peerSteps = new Map();      // consult → how many of that peer's steps are still running
+    // A consulted peer sends no sign of thinking or composing, only its finished steps and its reply. Between those
+    // it can only be at work, so the page is told that: when the consult starts, and when its last running step
+    // comes back. `inferred` tells it apart from what the lead agent of a run reports itself.
+    const atWork = (cid) => sendLive({ type: 'activity', who: consults.get(cid), cid, inferred: true });
     // Coen's own events have no parent; a consulted peer's carry the Agent call id (cid).
     const route = (parent) => (parent == null ? self : consults.has(parent) ? { who: consults.get(parent), cid: parent } : null);
 
@@ -2111,6 +2122,12 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       } else if (ev.type === 'stream_event') {
         const to = route(parent);
         if (to && ev.event && ev.event.type === 'message_start') send({ type: 'break', ...to });
+        // What the agent has just started on: thinking, or composing a step (its `tool` event only comes once the
+        // whole call is written, which for a draft is the whole draft). Only the lead agent of a run sends these
+        // (Coen, a maker); a consulted peer's steps arrive complete.
+        const started = ev.event && ev.event.type === 'content_block_start' && ev.event.content_block;
+        if (to && started && started.type === 'thinking') sendLive({ type: 'activity', ...to });
+        if (to && started && started.type === 'tool_use' && typeof started.name === 'string') sendLive({ type: 'activity', ...to, name: started.name });
         const d = ev.event && ev.event.delta;
         if (to && d && d.type === 'text_delta') {
           streamed.add(parent);
@@ -2132,14 +2149,22 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
               job.peers.add(peer);
               // The focus agent's reply belongs in the main chat, not the rail; saved on the event so old chats keep their layout.
               send({ type: 'consult', who: peer, cid: block.id, prompt: shownPrompt(block.input.prompt || block.input.description || ''), ...(focus && peer === focus.key && { focus: true }) });
+              atWork(block.id);
             } else {
               send({ type: 'tool', ...to, name: block.name, detail: toolDetail(block.input) });
+              if (to.cid && consults.has(to.cid)) peerSteps.set(to.cid, (peerSteps.get(to.cid) || 0) + 1);
             }
           }
         }
       } else if (ev.type === 'user') {
         for (const block of (ev.message && ev.message.content) || []) {
           if (block.type !== 'tool_result') continue;
+          // A consulted peer's step came back: with none left running, it is at work on what comes next.
+          let peerFree = false;
+          if (parent != null && peerSteps.get(parent) > 0) {
+            peerSteps.set(parent, peerSteps.get(parent) - 1);
+            peerFree = peerSteps.get(parent) === 0;
+          }
           // A draft chip only appears once the write actually succeeded (refused writes get none).
           if (pendingDrafts.has(block.tool_use_id)) {
             const name = pendingDrafts.get(block.tool_use_id);
@@ -2148,8 +2173,10 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
               job.drafts.add(name);
               send({ type: 'draft', ...(route(parent) || self), name });
             }
+            if (peerFree) atWork(parent);
             continue;
           }
+          if (peerFree) atWork(parent);
           if (parent != null || !consults.has(block.tool_use_id)) continue;
           const cid = block.tool_use_id;
           const who = consults.get(cid);
