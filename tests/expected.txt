@@ -12,6 +12,26 @@ A static /mark.svg: 200
 A static /vendor/inter/inter-latin-wght-normal.woff2: 200
 A static /.gitignore: 404
 A static /%2e%2e/package.json: 404
+A static /tool-step.js: 200
+A page loads tool-step.js before room.js: True
+A tool step: Reading plan.md… · 1 tool call
+A tool step: Searching files for startJob… · 2 tool calls
+A tool step: Looking for files named **/*.md… · 1 tool call
+A tool step: Searching the web for exec room… · 3 tool calls
+A tool step: Opening https://docs.example.com/guide… · 1 tool call
+A tool step: Writing 2026-10-11-coen-plan.md… · 1 tool call
+A tool step: Editing a.md… · 2 tool calls
+A tool step: Loading tools… · 1 tool call
+A tool step: Asking another agent: Check the numbers… · 1 tool call
+A tool step: Searching Notion for pricing… · 1 tool call
+A tool step: Reading Notion… · 1 tool call
+A tool step: Searching mail for invoice… · 1 tool call
+A tool step: Using do-thing… · 1 tool call
+A tool step: Bash · ls… · 1 tool call
+A tool step, no detail: ['Reading a file… · 1 tool call', 'Searching files… · 1 tool call', 'Looking for files… · 1 tool call', 'Searching the web… · 1 tool call', 'Opening a web page… · 1 tool call', 'Asking another agent… · 1 tool call', 'Bash… · 1 tool call']
+A tool step, old and odd shapes: ['Working… · 1 tool call', 'Working… · 2 tool calls', 'Working… · 1 tool call', 'Reading a b.md… · 1 tool call']
+A tool step, long detail is cut: [95, 95, 95]
+A tool step over: ['1 tool call', '4 tool calls']
 A foreign origin: (403, '{"error":"forbidden origin"}')
 A foreign host: (403, '{"error":"forbidden host"}')
 A form post: (415, '{"error":"JSON only"}')

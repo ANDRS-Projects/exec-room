@@ -149,6 +149,25 @@ try:
         out("A GET /spike.html", call("/spike.html")[0])
         for path in ["/room.js", "/room.css", "/vendor/marked.umd.js", "/vendor/purify.min.js", "/avatars/coen.svg", "/theme.json", "/mark.svg", "/vendor/inter/inter-latin-wght-normal.woff2", "/.gitignore", "/%2e%2e/package.json"]:
             out(f"A static {path}", call(path)[0])
+
+        def steps(calls):  # the page's tool line for each [count, name, detail], from public/tool-step.js run in node's vm
+            script = ("const vm = require('vm'), fs = require('fs'); const ctx = vm.createContext({});"
+                      "vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);"
+                      "console.log(JSON.stringify(JSON.parse(process.argv[2]).map(([n, name, detail]) => ctx.ToolStep.summary(n, name === false ? '' : ctx.ToolStep.doing(name, detail)))));")
+            done = subprocess.run(["node", "-e", script, os.path.join(opts.root, "public", "tool-step.js"), json.dumps(calls)], capture_output=True, text=True, check=True)
+            return json.loads(done.stdout)
+
+        out("A static /tool-step.js", call("/tool-step.js")[0])
+        out("A page loads tool-step.js before room.js", re.search(r'<script src="tool-step\.js"></script>\s*<script src="room\.js">', str(call("/room.html")[1])) is not None)
+        for line in steps([[1, "Read", "/Users/x/Dev/notes/plan.md"], [2, "Grep", "startJob"], [1, "Glob", "**/*.md"], [3, "WebSearch", "exec room"], [1, "WebFetch", "https://docs.example.com/guide"],
+                           [1, "Write", "drafts/2026-10-11-coen-plan.md"], [2, "Edit", "drafts/a.md"], [1, "ToolSearch", "select:x"], [1, "Agent", "Check the numbers"],
+                           [1, "mcp__claude_ai_Notion__notion-search", "pricing"], [1, "mcp__claude_ai_Notion__notion-fetch", ""], [1, "mcp__claude_ai_Microsoft_365__outlook_email_search", "invoice"],
+                           [1, "mcp__other__do-thing", "x"], [1, "Bash", "ls"]]):
+            out("A tool step", line)
+        out("A tool step, no detail", steps([[1, n, ""] for n in ("Read", "Grep", "Glob", "WebSearch", "WebFetch", "Agent", "Bash")]))
+        out("A tool step, old and odd shapes", steps([[1, None, None], [2, "", "x"], [1, 7, {}], [1, "Read", "a\n  b.md"]]))
+        out("A tool step, long detail is cut", [len(s) for s in steps([[1, "WebSearch", "q" * 300], [1, "Bash", "x" * 300], [1, "mcp__s__" + "t" * 300, ""]])])
+        out("A tool step over", steps([[1, False, ""], [4, False, ""]]))
         out("A foreign origin", call("/api/coen", {"text": "x"}, {"Origin": "https://evil.example"})[:2])
         out("A foreign host", call("/api/room", headers={"Host": "attacker.example"})[:2])
         out("A form post", call("/api/coen", raw=b"text=hi", headers={"content-type": "text/plain"})[:2])
