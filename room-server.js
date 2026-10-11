@@ -294,7 +294,7 @@ function focusNote(space, focus) {
 function proposalRules(space) {
   const all = makers(space);
   const targets = targetsOf(space);
-  return `To get something done beyond advice, propose it for the owner's approval: end your message with up to three fenced blocks tagged recommendation, each containing one JSON object. the owner sees it as a card with Approve, Revise and Dismiss buttons; nothing happens until they approve, so never say it's done. A dismissed proposal is closed for good (you aren't told when it happens): don't propose the same thing again unless the owner asks for it. Supported actions:${Object.keys(all).length ? `
+  return `To get something done beyond advice, propose it for the owner's approval: end your message with up to three fenced blocks tagged recommendation, each containing one JSON object. the owner sees it as a card with Approve, Revise and Dismiss buttons; nothing happens until they approve, so never say it's done. A dismissed proposal is closed for good: don't propose the same thing again unless the owner asks for it. You are told about a dismissal in a room note with their next message (through Coen, when you are a room's focus agent), with their reason when they gave one; it needs no reply. Supported actions:${Object.keys(all).length ? `
 - Dispatch to a maker, who writes the output into drafts/: {"action": "dispatch", "agent": one of ${Object.keys(all).map((k) => `"${k}"`).join(', ')}, "summary": "one line", "brief": "what it's about, the source, account, audience and links", optional "then": a second maker who runs right after with the first maker's draft (e.g. an image maker for the header image), optional "then_brief": extra context for that second maker}. One approval covers the whole chain. Makers: ${Object.entries(all).map(([k, m]) => `${k} = ${m.name}, ${m.does}`).join('; ')}.` : ''}
 ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {"action": "github_issue", "repo": one of ${targets.repos.map((r) => `"${r}"`).join(', ')}, "summary": "one line", "title": "…", "body": "markdown"}.${targets.publicRepos.length ? ` These repos are public, so an issue there is visible to everyone: ${targets.publicRepos.join(', ')}. Write those issues for outsiders and leave out anything internal (Notion content, private repos, costs, clients, plans, the room itself); the others are private.` : ' All of them are private.'}
 - Comment on an existing issue in one of this room's repos (e.g. your review of it, or an update): {"action": "github_comment", "repo": one of the repos above, "issue": its number, "summary": "one line", "body": "markdown"}.${targets.publicRepos.length ? ' Comments on the public repos are visible to everyone too; write them the same way.' : ''}
@@ -1920,6 +1920,14 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     delete room.movedNote;
     saveIndex();
   }
+  // Proposals the owner dismissed since Coen's last run in this chat: he is told once, in front of this message (not
+  // shown to the owner). A maker's run leaves the list for Coen's next one. A chat from before this has no list.
+  if (!dispatch && room.dismissedToTell) {
+    const told = dismissalNote(room.dismissedToTell, focus);
+    if (told) prompt = `${told}\n\n${prompt}`;
+    delete room.dismissedToTell;
+    saveIndex();
+  }
   // The room's brief changed (or the chat moved to a room with another one) since Coen's session got it: a resumed
   // session keeps the room note it started with, so he is told once, in front of this message (not shown to
   // the owner). A chat without a session yet gets the brief in its room note.
@@ -2525,8 +2533,36 @@ app.post('/api/recs/:id/dismiss', (req, res) => {
   const rec = pendingRec(req, res);
   if (!rec) return;
   const decision = recordDecision(rec, 'dismissed', reason ? { reason } : {});
+  // Coen hears about it with the next run he leads in this chat (see dismissalNote), never through a job started here.
+  const chat = index.rooms[rec.roomId];
+  if (chat) {
+    chat.dismissedToTell = [...(Array.isArray(chat.dismissedToTell) ? chat.dismissedToTell : []), rec.recId].slice(-DISMISSED_TELL_MAX);
+    saveIndex();
+  }
   res.json({ events: [decision] });
 });
+
+// What Coen is told about proposals the owner dismissed since his last run in a chat: one line each, in the order
+// they were dismissed, with the owner's reason when one was given (also for an email draft: his own memory of the
+// chat still has the draft). Built from the stored proposals when the run starts, so the chat record only holds
+// their ids; one that is no longer stored, or not dismissed, is left out. A focus agent's proposal is named as that
+// agent's, and Coen passes the line on while that agent is still the room's focus.
+const DISMISSED_TELL_MAX = 20;
+function dismissalNote(ids, focus) {
+  const lines = [];
+  for (const id of Array.isArray(ids) ? ids : []) {
+    const rec = typeof id === 'string' && Object.hasOwn(recs, id) ? recs[id] : null;
+    if (!rec || rec.state !== 'dismissed') continue;
+    const whose = rec.by ? `${agentName(rec.by)}'s proposal` : 'your proposal';
+    // A reason of several lines stays under its own proposal: its later lines are indented.
+    const why = typeof rec.reason === 'string' && rec.reason ? `Their reason: ${rec.reason.replace(/\r?\n/g, '\n  ')}` : 'They gave no reason.';
+    const passOn = rec.by && focus && rec.by === focus.key ? ` Pass this on to ${focus.name} with the message.` : '';
+    lines.push(`- ${whose} "${rec.summary}" (${rec.recId}). ${why}${passOn}`);
+  }
+  if (!lines.length) return '';
+  const many = lines.length > 1;
+  return `[Room note for Coen, not part of the message: the owner dismissed ${many ? 'these proposals' : 'this proposal'} since your last turn. ${many ? 'They are' : 'It is'} closed for good: no reply to this is needed, and don't propose ${many ? 'them' : 'it'} again unless the owner asks.\n${lines.join('\n')}]`;
+}
 
 // ---- Room-built agents: the owner adds, edits and removes them here; Coen can only propose one.
 

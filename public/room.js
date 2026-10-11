@@ -595,7 +595,9 @@ function addRecCard(rec) {
   const dismissCancel = el('button', 'ghost', 'Cancel');
   dismissCancel.type = 'button';
   dismissButtons.append(dismissGo, dismissCancel);
-  dismissForm.append(reason, el('p', 'rec-note', "This is final: the proposal is closed and can't be reopened."), dismissError, dismissButtons);
+  // Whoever proposed it is told with the next message in this chat, reason or not (the server adds a note for Coen).
+  dismissForm.append(reason, el('p', 'rec-note', "This is final: the proposal is closed and can't be reopened."),
+    el('p', 'rec-note', `${rec.by ? nameOf(rec.by) : 'Coen'} hears about this with your next message.`), dismissError, dismissButtons);
 
   const status = el('div', 'rec-status');
   card.append(actions, form, dismissForm, status);
