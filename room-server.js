@@ -2515,10 +2515,16 @@ app.post('/api/recs/:id/revise', (req, res) => {
 });
 
 // Dismiss closes a pending proposal and does nothing else: no job, no outside call, so it also works while an agent runs.
+// The owner may say why. Their reason is kept with the decision (on the proposal, in the job log and in the chat); a
+// dismissal without one is stored exactly as before reasons existed.
 app.post('/api/recs/:id/dismiss', (req, res) => {
+  const given = req.body ? req.body.reason : undefined;
+  if (given != null && typeof given !== 'string') return res.status(400).json({ error: 'The reason must be text.' });
+  const reason = (given || '').trim();
+  if (reason.length > 4000) return res.status(400).json({ error: 'That reason is too long (4000 characters max).' });
   const rec = pendingRec(req, res);
   if (!rec) return;
-  const decision = recordDecision(rec, 'dismissed');
+  const decision = recordDecision(rec, 'dismissed', reason ? { reason } : {});
   res.json({ events: [decision] });
 });
 
@@ -2901,7 +2907,10 @@ function draftExists(name) {
 // A log line holds the chat only, so the room is looked up in the chat index now: a chat that was moved counts for
 // the room it is in today. A chat whose room was deleted is in no room's list; spaceOf() is not used here, as it
 // would hand that chat to the default room. (A chat from before rooms has no workspaceId and is the default room's.)
-// Revision notes are never passed on, and an email draft has only what the log kept: subject and recipients' domains.
+// What the owner wrote with a decision (their reason for a dismissal, their note for a revision) is on the row, except for
+// an email draft: there they may have quoted the draft, whose addresses and text were removed, so the row only says
+// that they wrote something (it is on the card in the chat). An email draft has only what the log kept: subject and
+// recipients' domains.
 function decisionsOf(space) {
   let raw = '';
   try { raw = fs.readFileSync(JOBS_FILE, 'utf8'); } catch { /* no job log yet */ }
@@ -2921,6 +2930,9 @@ function decisionsOf(space) {
     const at = typeof line.at === 'string' ? line.at : '';
     // The decision itself; or, when its line is missing (a cut-off log), the first result line: a result can only follow an approval.
     if (DECIDED.has(line.state) || (line.state !== 'pending' && !row.decision)) Object.assign(row, { decision: DECIDED.has(line.state) ? line.state : 'approved', at });
+    // The owner's own words with the decision. Lines from before dismissals took a reason have none.
+    if (line.state === 'dismissed' && typeof line.reason === 'string' && line.reason) row.reason = line.reason;
+    if (line.state === 'revised' && typeof line.note === 'string' && line.note) row.note = line.note;
     if (line.result && typeof line.result === 'object') row.result = line.result;
   }
   const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
@@ -2939,6 +2951,9 @@ function decisionsOf(space) {
         ...(rec && { proposer: { key: by, name: by === 'coen' ? 'Coen' : agentName(by) } }),
         chat: { id: r.chatId, ...chatLabel(index.rooms[r.chatId]) },
         ...(r.action === 'email_draft' && { subject: String(r.subject || ''), domains: strings(r.domains) }),
+        ...(r.action === 'email_draft'
+          ? (r.reason || r.note) && { noteWithheld: true }
+          : { ...(r.decision === 'dismissed' && r.reason && { reason: r.reason }), ...(r.decision === 'revised' && r.note && { note: r.note }) }),
         // The page checks each address again before it becomes a link.
         urls: [...strings([result.url]), ...strings(result.urls)],
         // Every file a job saved is named, whatever its kind (a patch, a mockup); only a .md draft opens in the viewer.

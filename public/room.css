@@ -332,8 +332,11 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .pill.revised { background: var(--bg); color: var(--muted); }
 .pill.dismissed { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
 .rec.dismissed { gap: 4px; padding: 8px 12px; background: var(--bg); }
-.rec.dismissed > :not(.rec-head):not(.rec-summary) { display: none; }
+.rec.dismissed:not(.unfolded) > :not(.rec-head):not(.rec-summary):not(.rec-said):not(.rec-more) { display: none; }
 .rec.dismissed .rec-summary { color: var(--muted); }
+/* On a dismissed card: the owner's reason, and the button that shows what was proposed again. */
+.rec-said, .decision-said { margin: 0; font-size: 12px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rec-more { align-self: flex-start; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .rec-summary { margin: 0; line-height: 1.45; }
 .rec-field { display: flex; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
 .rec-label { color: var(--muted); min-width: 84px; }
@@ -349,6 +352,8 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .rec-revise { display: flex; flex-direction: column; gap: 6px; }
 .rec-revise textarea { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; resize: vertical; }
 .rec-revise .approve { align-self: flex-start; }
+.rec-form-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.rec-form-buttons .ghost { margin-left: 0; height: 34px; }
 .form-error, .err-text { color: #A32D2D; font-size: 12px; }
 .rec-status { font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rec-status a { color: var(--coen); }

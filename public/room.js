@@ -385,6 +385,11 @@ function handle(ev) {
       setRecState(entry, ev.decision);
       showDecided(entry, ev);
       if (ev.note) entry.status.replaceChildren(el('span', null, 'Your note to Coen: ' + ev.note));
+      // A dismissal from before reasons existed, or one without a reason, has none and shows nothing.
+      if (ev.decision === 'dismissed' && typeof ev.reason === 'string' && ev.reason) {
+        entry.said.textContent = 'Your reason: ' + ev.reason;
+        entry.said.hidden = false;
+      }
       if (ev.decision === 'approved' && entry.rec.action === 'email_draft') showEmailLinks(entry);
     }
   } else if (ev.type === 'rec_result') {
@@ -458,7 +463,15 @@ function addRecCard(rec) {
     : rec.action === 'notion_page' ? 'Proposal · Notion page'
     : rec.action === 'github_comment' ? 'Proposal · GitHub comment' : 'Proposal · GitHub issue';
   head.append(el('span', 'rec-kind', rec.by ? title.replace(/^Proposal/, `Proposal from ${nameOf(rec.by)}`) : title), pill);
-  card.append(head, el('p', 'rec-summary', rec.summary));
+  // Under the summary, for a dismissed card only: why it was dismissed (when the owner said), and a way to read
+  // what was proposed again, as the card folds to its header and summary.
+  const said = el('p', 'rec-said');
+  said.hidden = true;
+  const more = el('button', 'rec-more', 'Show what was proposed');
+  more.type = 'button';
+  more.hidden = true;
+  more.setAttribute('aria-expanded', 'false');
+  card.append(head, el('p', 'rec-summary', rec.summary), said, more);
   if (rec.action === 'dispatch') {
     card.append(recField(rec.then ? 'Chain' : 'Maker', `${makers} · writes into drafts/`), recDetails('Brief', rec.brief));
     if (rec.then) card.append(recField('Then', `${nameOf(rec.then)} works from ${nameOf(rec.agent)}'s draft automatically`));
@@ -568,16 +581,54 @@ function addRecCard(rec) {
   const formError = el('div', 'form-error');
   form.append(note, formError, sendNote);
 
+  // Dismiss asks first, in a form like Revise: nothing is dismissed until "Dismiss for good", with or without a reason.
+  const dismissForm = el('form', 'rec-revise rec-dismiss-form');
+  dismissForm.hidden = true;
+  const reason = el('textarea');
+  reason.rows = 2;
+  reason.placeholder = 'Why are you dismissing this? (optional)';
+  reason.setAttribute('aria-label', 'Why are you dismissing this? (optional)');
+  const dismissError = el('div', 'form-error');
+  const dismissButtons = el('div', 'rec-form-buttons');
+  const dismissGo = el('button', 'approve', 'Dismiss for good');
+  dismissGo.type = 'submit';
+  const dismissCancel = el('button', 'ghost', 'Cancel');
+  dismissCancel.type = 'button';
+  dismissButtons.append(dismissGo, dismissCancel);
+  dismissForm.append(reason, el('p', 'rec-note', "This is final: the proposal is closed and can't be reopened."), dismissError, dismissButtons);
+
   const status = el('div', 'rec-status');
-  card.append(actions, form, status);
+  card.append(actions, form, dismissForm, status);
   appendToThread(card);
-  const entry = { rec, el: card, pill, actions, form, status };
+  const entry = { rec, el: card, pill, actions, form, dismissForm, status, said, more };
   recCards.set(rec.recId, entry);
   setRecState(entry, rec.state || 'pending');
 
   approve.addEventListener('click', () => decide(entry, 'approve', {}));
-  dismiss.addEventListener('click', () => decide(entry, 'dismiss', {}));
-  revise.addEventListener('click', () => { form.hidden = !form.hidden; if (!form.hidden) note.focus(); });
+  // One form at a time: opening one closes the other.
+  dismiss.addEventListener('click', () => {
+    dismissForm.hidden = !dismissForm.hidden;
+    form.hidden = true;
+    if (!dismissForm.hidden) reason.focus();
+  });
+  const closeDismiss = () => { dismissForm.hidden = true; dismissError.textContent = ''; dismiss.focus(); };
+  dismissCancel.addEventListener('click', closeDismiss);
+  dismissForm.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeDismiss(); } });
+  reason.addEventListener('input', () => { dismissError.textContent = ''; });
+  dismissForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const why = reason.value.trim();
+    if (why.length > 4000) { dismissError.textContent = 'That reason is too long (4000 characters max).'; return; }
+    dismissGo.disabled = true;
+    await decide(entry, 'dismiss', why ? { reason: why } : {});
+    dismissGo.disabled = false;
+  });
+  more.addEventListener('click', () => {
+    const open = card.classList.toggle('unfolded');
+    more.textContent = open ? 'Hide what was proposed' : 'Show what was proposed';
+    more.setAttribute('aria-expanded', String(open));
+  });
+  revise.addEventListener('click', () => { form.hidden = !form.hidden; dismissForm.hidden = true; if (!form.hidden) note.focus(); });
   note.addEventListener('input', () => { formError.textContent = ''; });
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -591,9 +642,11 @@ function setRecState(entry, state) {
   entry.pill.textContent = REC_STATES[state] || state;
   const open = state === 'pending';
   entry.actions.hidden = !open;
-  if (!open) entry.form.hidden = true;
-  // A dismissed card folds to its header and summary; this runs live, on replay and for a stored state.
+  if (!open) { entry.form.hidden = true; entry.dismissForm.hidden = true; }
+  // A dismissed card folds to its header and summary, with a button to read the rest again; this runs live, on
+  // replay and for a stored state.
   entry.el.classList.toggle('dismissed', state === 'dismissed');
+  entry.more.hidden = state !== 'dismissed';
 }
 
 // The only addresses a result may become a link to: a Notion page, or an issue or comment on GitHub. One check for
@@ -2234,6 +2287,12 @@ function decisionRow(d) {
   }
   if (d.error) outcome.append(el('span', 'err-text', d.error));
   row.append(outcome);
+  // What the owner wrote with the decision. For an email draft the server holds it back (they may have quoted the
+  // draft) and the row only says so; a decision from before reasons existed has neither.
+  const kind = d.decision === 'dismissed' ? 'reason' : d.decision === 'revised' ? 'note' : '';
+  const wrote = kind && typeof d[kind] === 'string' && d[kind] ? `${kind === 'reason' ? 'Reason' : 'Note'}: ${d[kind]}`
+    : kind && d.noteWithheld ? `A ${kind} was given. It is on the card in the chat.` : '';
+  if (wrote) row.append(el('p', 'decision-said', wrote));
   return row;
 }
 
