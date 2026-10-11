@@ -13,7 +13,7 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "targets-calls.ndjson"), "a"
     log.write(json.dumps({"issues": '"github_issue"' in note, "demo_app": "demo-app" in note, "private_app": "Example-Org/private-app" in note,
                           "drafts": '"notion_draft"' in note, "log1": '"output-log-1"' in note, "log2": '"output-log-2"' in note,
                           "pages": '"notion_page"' in note, "exec_meetings": "Exec Team Meetings" in note, "product_notes": "Product notes" in note,
-                          "public_rule": "visible to everyone" in note, "reads_issues": "the server reads it and adds it after their message" in note, "comments": '"github_comment"' in note}) + "\n")
+                          "public_rule": "visible to everyone" in note, "reads_issues": "the server reads it and adds it after the message" in note, "comments": '"github_comment"' in note}) + "\n")
 
 
 def rec(obj):

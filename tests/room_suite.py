@@ -1535,7 +1535,7 @@ try:
         out("J drafts, one no longer there, a patch named too", [(f["name"], f["exists"], f["opens"]) for f in by_id["rec-drafts"]["drafts"]])
         out("J email shows subject and domains only", (by_id["rec-mail"]["subject"], by_id["rec-mail"]["domains"], sorted(by_id["rec-mail"])))
         out("J proposer and chat per row", [(d["recId"], d.get("proposer"), d["chat"]) for d in got["decisions"] if d["recId"] in ("rec-issue", "rec-mail")])
-        # What the owner wrote with a decision is on its row, except for an email draft, where they may have quoted the draft.
+        # What the owner wrote with a decision is on its row, except for an email draft, where it may quote the draft.
         out("J a revision's note is on its row", (by_id["rec-note"].get("note"), "reason" in by_id["rec-note"]))
         out("J a dismissal from before reasons existed", sorted(k for k in by_id["rec-plain"] if k in ("reason", "note", "noteWithheld")))
         out("J email drafts: what the owner wrote is held back", ([(by_id[i]["decision"], by_id[i].get("reason"), by_id[i].get("note"), by_id[i].get("noteWithheld")) for i in ("rec-mail-no", "rec-mail-back")], "QUOTED" in listed("exec")[1]))

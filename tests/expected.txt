@@ -94,8 +94,8 @@ D approve after dismiss: (409, '{"error":"this proposal is already dismissed"}')
 D dismiss twice: (409, '{"error":"this proposal is already dismissed"}')
 D no note before any dismissal: 
 D the chat remembers which dismissal Coen has not heard of: True
-D a dismissal without a reason is told: ('[Room note for Coen, not part of the message: the owner dismissed this proposal since your last turn. It is closed for good: no reply to this is needed, and don\'t propose it again unless the owner asks.\n- your proposal "Track dark mode" (rec-id). They gave no reason.]', True, [])
-D two dismissals, in order, with a reason and without: ["[Room note for Coen, not part of the message: the owner dismissed these proposals since your last turn. They are closed for good: no reply to this is needed, and don't propose them again unless the owner asks.", '- your proposal "Track dark mode" (rec-1). Their reason: Too early.', '  Ask again in Q1.', '- your proposal "LinkedIn post about dark mode" (rec-2). They gave no reason.]']
+D a dismissal without a reason is told: ('[Room note for Coen, not part of the message: the owner dismissed this proposal since your last turn. It is closed for good: no reply to this is needed, and don\'t propose it again unless the owner asks.\n- your proposal "Track dark mode" (rec-id). No reason was given.]', True, [])
+D two dismissals, in order, with a reason and without: ["[Room note for Coen, not part of the message: the owner dismissed these proposals since your last turn. They are closed for good: no reply to this is needed, and don't propose them again unless the owner asks.", '- your proposal "Track dark mode" (rec-1). Reason given: Too early.', '  Ask again in Q1.', '- your proposal "LinkedIn post about dark mode" (rec-2). No reason was given.]']
 D the job log keeps the message as it was written: and now?
 D told once: 
 D a maker's run leaves the note for Coen's next one: [('room-wren', False), ('room-iris', False), ('chief-operating-officer', True)]
@@ -147,7 +147,7 @@ H advisor reply in card: ['Nova here: looks fine.']
 H proposals: [('create_agent', 'echo'), ('dispatch', 'scout'), ('dispatch', 'scout')]
 H create_agent fields: ['avatar', 'does', 'instructions', 'key', 'model', 'name', 'role', 'tone', 'tools']
 H coen knows: ['chief-operating-officer', 'room-nova']
-H advisor definition: (['Read', 'Grep', 'Glob', 'WebSearch'], 'You are Nova, an agent the owner added to their Exec Room. Your job: reviews pricing pages.')
+H advisor definition: (['Read', 'Grep', 'Glob', 'WebSearch'], 'You are Nova, an agent the owner added to this Exec Room. Your job: reviews pricing pages.')
 H room note: (True, True, True)
 H room note, free avatars: ('"bear", "bee", "butterfly", "cat", "chameleon", "crab", "dolphin", "fox", "frog", "hedgehog", "mouse", "octopus", "penguin", "rabbit", "raven", "snail", "turtle", "whale"', True)
 H approve create_agent: (200, [('decision', None, None, None), ('rec_result', 'done', {'key': 'echo', 'name': 'Echo', 'role': 'advisor', 'avatar': 'whale'}, None)])
@@ -218,7 +218,7 @@ F cards from juno: [('dispatch', 'juno'), ('github_issue', 'juno')]
 F credit line: Proposed by Juno (via Coen) in Exec Room (Marketing) and approved by the owner
 F approve juno's dispatch: ['decision']
 F review after maker is coen's: coen
-F a focus agent's dismissed proposal is passed on: ['[Room note for Coen, not part of the message: the owner dismissed this proposal since your last turn. It is closed for good: no reply to this is needed, and don\'t propose it again unless the owner asks.\n- Juno\'s proposal "Launch post" (rec-id). Their reason: Not this week. Pass this on to Juno with the message.]\n\nAnd now?']
+F a focus agent's dismissed proposal is passed on: ['[Room note for Coen, not part of the message: the owner dismissed this proposal since your last turn. It is closed for good: no reply to this is needed, and don\'t propose it again unless the owner asks.\n- Juno\'s proposal "Launch post" (rec-id). Reason given: Not this week. Pass this on to Juno with the message.]\n\nAnd now?']
 F focus cleared: None
 F room without focus: (False, False)
 X default room access: {'files': ['~/Dev'], 'webSearch': True, 'sites': ['code.claude.com', 'docs.anthropic.com', 'developers.cloudflare.com'], 'notion': True, 'm365': False}

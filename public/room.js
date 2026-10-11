@@ -1156,7 +1156,7 @@ function openAgentEditor(agent = null) {
   $('agent-name').focus();
 }
 
-// What the build form preselected for a new agent: only an avatar the owner changed is passed on to Coen as their choice.
+// What the build form preselected for a new agent: only an avatar the owner changed is passed on to Coen as a choice already made.
 let preselectedAvatar = null;
 
 function renderAvatarPicker(selected, usedBy = new Map()) {
@@ -2289,7 +2289,7 @@ function decisionRow(d) {
   }
   if (d.error) outcome.append(el('span', 'err-text', d.error));
   row.append(outcome);
-  // What the owner wrote with the decision. For an email draft the server holds it back (they may have quoted the
+  // What the owner wrote with the decision. For an email draft the server holds it back (it may quote the
   // draft) and the row only says so; a decision from before reasons existed has neither.
   const kind = d.decision === 'dismissed' ? 'reason' : d.decision === 'revised' ? 'note' : '';
   const wrote = kind && typeof d[kind] === 'string' && d[kind] ? `${kind === 'reason' ? 'Reason' : 'Note'}: ${d[kind]}`
