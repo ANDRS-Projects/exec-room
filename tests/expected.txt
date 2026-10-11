@@ -88,6 +88,7 @@ D who knows whom: [('chief-operating-officer', ('chief-operating-officer', 'room
 D revise empty: 400
 D revise: (200, ['decision'])
 D dismiss while busy: (200, [('decision', 'dismissed')])
+D a blank reason stores none: False
 D dismiss calls no gh: True
 D approve after dismiss: (409, '{"error":"this proposal is already dismissed"}')
 D dismiss twice: (409, '{"error":"this proposal is already dismissed"}')
@@ -488,21 +489,26 @@ L a bot edits the signatures file: FAIL: This line added to CLA-SIGNATURES.md is
 L signatures file: (0, True, True)
 L signing line in the documents: (['- @your-username, YYYY-MM-DD: I have read the Contributor License Agreement (version 1) and I agree to it.'], {'CLA.md': 1, 'CLA-SIGNATURES.md': 1, 'CONTRIBUTING.md': 1})
 L agreement version and placeholders: ([('1', '7 October 2026')], ['1'], [])
-J old records, folded per proposal: [('rec-mail', 'email_draft', 'approved', 'the owner', 'approved', '10:12'), ('rec-drafts', 'dispatch', 'approved', 'the owner', 'done', '10:08'), ('rec-note', 'dispatch', 'revised', 'the owner', 'revised', '10:05'), ('rec-issue', 'github_issue', 'approved', 'the owner', 'done', '10:02')]
-J old records, owner and total: ('the owner', 4)
+J old records, folded per proposal: [('rec-mail-back', 'email_draft', 'revised', 'the owner', 'revised', '10:20'), ('rec-mail-no', 'email_draft', 'dismissed', 'the owner', 'dismissed', '10:18'), ('rec-plain', 'dispatch', 'dismissed', 'the owner', 'dismissed', '10:16'), ('rec-mail', 'email_draft', 'approved', 'the owner', 'approved', '10:12'), ('rec-drafts', 'dispatch', 'approved', 'the owner', 'done', '10:08'), ('rec-note', 'dispatch', 'revised', 'the owner', 'revised', '10:05'), ('rec-issue', 'github_issue', 'approved', 'the owner', 'done', '10:02')]
+J old records, owner and total: ('the owner', 7)
 J link to the issue: ['https://github.com/Example-Org/demo-app/issues/7']
 J drafts, one no longer there, a patch named too: [('2026-09-02-wren-kept.md', True, True), ('2026-09-02-wren-gone.md', False, True), ('2026-09-02-wren-fix.patch', False, False)]
 J email shows subject and domains only: ('Next steps', ['client.example'], ['action', 'actor', 'at', 'chat', 'decision', 'domains', 'drafts', 'recId', 'state', 'subject', 'summary', 'urls'])
 J proposer and chat per row: [('rec-mail', None, {'id': 'old-chat', 'title': 'Launch plan for …@client.example'}), ('rec-issue', {'key': 'tess', 'name': 'Tess'}, {'id': 'old-chat', 'title': 'Launch plan for …@client.example'})]
-J revision note left out: False
+J a revision's note is on its row: ('PRIVATE NOTE', False)
+J a dismissal from before reasons existed: []
+J email drafts: what the owner wrote is held back: ([('dismissed', None, None, True), ('revised', None, None, True)], False)
 J foreign origin: (403, '{"error":"forbidden origin"}')
 J a new proposal has no actor: (False, [None])
 J decision event names who decided: [('decision', 'the owner'), ('rec_result', None)]
 J actor on the proposal and its log lines: ('the owner', [('pending', None), ('approved', 'the owner'), ('done', 'the owner')])
+J dismiss, a reason that is not text or too long: [(400, '{"error":"The reason must be text."}'), (400, '{"error":"The reason must be text."}'), (400, '{"error":"That reason is too long (4000 characters max)."}')]
+J dismiss with a reason: (200, [('decision', 'dismissed', 'Not now:\nbudget first.')])
+J the reason on the proposal, its log line, its row and the replay: (True, [True], True, [True])
 J new decisions come first: [('dispatch', 'dismissed', 'the owner', 'dismissed', []), ('github_issue', 'approved', 'the owner', 'done', ['https://github.com/Example-Org/demo-app/issues/999'])]
 J replay, owner and decision events: ('the owner', [('approved', 'the owner'), ('dismissed', 'the owner')])
 J new room has none: {'owner': 'the owner', 'total': 0, 'decisions': []}
-J moved chat takes its decisions along: (0, 6)
+J moved chat takes its decisions along: (0, 9)
 J deleted room, its decisions are in no room: (0, (404, '{"error":"no such room"}'))
 R every short id is used, a new room gets a longer one: [True, True]
 R two new rooms, two ids: True

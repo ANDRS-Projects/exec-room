@@ -271,8 +271,9 @@ try:
         out("D revise", (code, [e["type"] for e in json.loads(body)["events"]]))
         # Dismiss skips the busy check: done right after the revise starts Coen's job, before its stream is read.
         dismissed = [r for r in again if r["action"] == "github_issue"][0]
-        code, body, _ = call(f"/api/recs/{dismissed['recId']}/dismiss", {})
+        code, body, _ = call(f"/api/recs/{dismissed['recId']}/dismiss", {"reason": "  \n "})
         out("D dismiss while busy", (code, [(e["type"], e["decision"]) for e in json.loads(body)["events"]]))
+        out("D a blank reason stores none", "reason" in json.loads(body)["events"][0])
         out("D dismiss calls no gh", json.load(open(os.path.join(TMP, "gh.json")))["args"] == gh["args"])
         out("D approve after dismiss", call(f"/api/recs/{dismissed['recId']}/approve", {})[:2])
         out("D dismiss twice", call(f"/api/recs/{dismissed['recId']}/dismiss", {})[:2])
@@ -1476,6 +1477,11 @@ try:
         old("rec-mail", "old-chat", "email_draft", "pending", 11, domains=["client.example"], subject="Next steps"),
         old("rec-mail", "old-chat", "email_draft", "approved", 12, domains=["client.example"], subject="Next steps"),
         old("rec-gone", "gone-chat", "github_issue", "pending", 13), old("rec-gone", "gone-chat", "github_issue", "approved", 14),
+        old("rec-plain", "old-chat", "dispatch", "pending", 15), old("rec-plain", "old-chat", "dispatch", "dismissed", 16),
+        old("rec-mail-no", "old-chat", "email_draft", "pending", 17, domains=["client.example"], subject="Offer"),
+        old("rec-mail-no", "old-chat", "email_draft", "dismissed", 18, domains=["client.example"], subject="Offer", reason="QUOTED: dear ada@client.example"),
+        old("rec-mail-back", "old-chat", "email_draft", "pending", 19, domains=["client.example"], subject="Offer 2"),
+        old("rec-mail-back", "old-chat", "email_draft", "revised", 20, domains=["client.example"], subject="Offer 2", note="QUOTED: drop the price line"),
     ]
     with open(os.path.join(data, "jobs.ndjson"), "w") as f:
         f.write("".join(json.dumps(l) + "\n" for l in old_log) + "{not json\n")
@@ -1492,7 +1498,10 @@ try:
         out("J drafts, one no longer there, a patch named too", [(f["name"], f["exists"], f["opens"]) for f in by_id["rec-drafts"]["drafts"]])
         out("J email shows subject and domains only", (by_id["rec-mail"]["subject"], by_id["rec-mail"]["domains"], sorted(by_id["rec-mail"])))
         out("J proposer and chat per row", [(d["recId"], d.get("proposer"), d["chat"]) for d in got["decisions"] if d["recId"] in ("rec-issue", "rec-mail")])
-        out("J revision note left out", "PRIVATE NOTE" in listed("exec")[1])
+        # What the owner wrote with a decision is on its row, except for an email draft, where they may have quoted the draft.
+        out("J a revision's note is on its row", (by_id["rec-note"].get("note"), "reason" in by_id["rec-note"]))
+        out("J a dismissal from before reasons existed", sorted(k for k in by_id["rec-plain"] if k in ("reason", "note", "noteWithheld")))
+        out("J email drafts: what the owner wrote is held back", ([(by_id[i]["decision"], by_id[i].get("reason"), by_id[i].get("note"), by_id[i].get("noteWithheld")) for i in ("rec-mail-no", "rec-mail-back")], "QUOTED" in listed("exec")[1]))
         out("J foreign origin", listed("exec", headers={"Origin": "https://evil.example"})[:2])
         call("/api/coen", {"text": "propose things"})
         recs = [e["rec"] for e in events(call("/api/stream")[1]) if e["type"] == "recommendation"]
@@ -1503,7 +1512,15 @@ try:
         out("J decision event names who decided", [(e["type"], e.get("actor")) for e in json.loads(body)["events"]])
         saved = json.load(open(os.path.join(data, "recommendations.json")))[issue["recId"]]
         out("J actor on the proposal and its log lines", (saved["actor"], [(l["state"], l.get("actor")) for l in log() if l.get("recId") == issue["recId"]]))
-        call(f"/api/recs/{dispatch['recId']}/dismiss", {})
+        out("J dismiss, a reason that is not text or too long", [call(f"/api/recs/{dispatch['recId']}/dismiss", {"reason": r})[:2] for r in (5, ["x"], "x" * 4001)])
+        code, body, _ = call(f"/api/recs/{dispatch['recId']}/dismiss", {"reason": "  Not now:\nbudget first.  "})
+        out("J dismiss with a reason", (code, [(e["type"], e["decision"], e.get("reason")) for e in json.loads(body)["events"]]))
+        why = "Not now:\nbudget first."
+        out("J the reason on the proposal, its log line, its row and the replay", (
+            json.load(open(os.path.join(data, "recommendations.json")))[dispatch["recId"]].get("reason") == why,
+            [l.get("reason") == why for l in log() if l.get("recId") == dispatch["recId"] and l["state"] == "dismissed"],
+            rows("exec")["decisions"][0].get("reason") == why,
+            [e.get("reason") == why for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "decision" and e["recId"] == dispatch["recId"]]))
         out("J new decisions come first", [(d["action"], d["decision"], d["actor"], d["state"], d["urls"]) for d in rows("exec")["decisions"][:2]])
         room = json.loads(call("/api/room")[1])
         out("J replay, owner and decision events", (room["owner"], [(e["decision"], e.get("actor")) for e in room["events"] if e["type"] == "decision"]))
