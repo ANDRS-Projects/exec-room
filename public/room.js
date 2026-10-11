@@ -102,7 +102,11 @@ function appendToThread(node) {
   return node;
 }
 
-// One collapsed "N tool calls" line per message.
+// The tool lines that name the step their agent is on right now.
+const liveTools = new Set();
+
+// One collapsed "N tool calls" line per message. While the agent is on a step, the line names it (see tool-step.js),
+// so a long step doesn't look idle.
 function addTool(holder, name, detail) {
   if (!holder.tools) {
     const details = el('details', 'tools');
@@ -111,11 +115,23 @@ function addTool(holder, name, detail) {
     holder.tools = { details, count: 0 };
   }
   holder.tools.count += 1;
-  holder.tools.details.querySelector('summary').textContent = `${holder.tools.count} tool call${holder.tools.count === 1 ? '' : 's'}`;
+  holder.tools.details.querySelector('summary').textContent = ToolStep.summary(holder.tools.count, ToolStep.doing(name, detail));
+  liveTools.add(holder.tools);
   holder.tools.details.querySelector('ol').appendChild(el('li', null, name + (detail ? ' · ' + detail : '')));
 }
 
+// The step is over (the agent wrote, moved on or finished): the line goes back to its count.
+function settleTools(tools) {
+  if (!tools || !liveTools.delete(tools)) return;
+  tools.details.querySelector('summary').textContent = ToolStep.summary(tools.count);
+}
+
+function settleAllTools() {
+  for (const tools of [...liveTools]) settleTools(tools);
+}
+
 function addText(holder, text) {
+  settleTools(holder.tools);
   if (!holder.bubble) {
     if (!text.trim()) return;
     holder.bubble = { el: el('div', 'bubble md'), raw: '', stripRecs: Boolean(holder.isCoen || holder.inline), owner: holder.inline ? nameOf(holder.who) : 'Coen' };
@@ -183,6 +199,7 @@ function startTurn(text, auto = false, files = null) {
   const attached = AttachLabel.line(files);
   if (attached) userMsg.appendChild(el('div', 'attached', attached));
   appendToThread(userMsg);
+  settleAllTools();
   if (turn && turn.group) turn.group.open = false;
   turnCount += 1;
   turn = { n: turnCount, text, marker: null, slot: null, group: null, cards: new Map(), ended: false };
@@ -278,6 +295,7 @@ function cardFor(ev) {
 }
 
 function endTurn(ev) {
+  settleAllTools();
   clearProposalHint();
   loadChats();
   if (turn && !turn.ended) {
@@ -311,8 +329,8 @@ function handle(ev) {
   if (ev.type === 'user') {
     startTurn(ev.text, ev.auto || false, ev.files);
   } else if (ev.type === 'break') {
-    if (ev.who === 'coen') coenMsg = null;
-    else { const card = cardFor(ev); if (card) { card.bubble = null; card.tools = null; } }
+    if (ev.who === 'coen') { settleTools(coenMsg && coenMsg.tools); coenMsg = null; }
+    else { const card = cardFor(ev); if (card) { settleTools(card.tools); card.bubble = null; card.tools = null; } }
   } else if (ev.type === 'text') {
     if (ev.who === 'coen') addText(ensureCoenMsg(), ev.text);
     else { const card = cardFor(ev); if (card) addText(card, ev.text); }
@@ -321,6 +339,7 @@ function handle(ev) {
     else { const card = cardFor(ev); if (card) addTool(card, ev.name, ev.detail); }
   } else if (ev.type === 'recommendation') {
     clearProposalHint();
+    settleTools(coenMsg && coenMsg.tools);
     coenMsg = null;
     addRecCard(ev.rec);
   } else if (ev.type === 'decision') {
@@ -337,10 +356,11 @@ function handle(ev) {
     const holder = ev.who === 'coen' ? ensureCoenMsg() : cardFor(ev);
     if (holder) addDraftChip(holder, ev.name);
   } else if (ev.type === 'consult') {
+    settleTools(coenMsg && coenMsg.tools);
     addConsult(ev.who, ev.cid, ev.prompt || '', Boolean(ev.focus));
   } else if (ev.type === 'consult_done') {
     const card = cardFor(ev);
-    if (card) { setCardStatus(card, ev.status || 'replied'); updateMarker(turn); }
+    if (card) { settleTools(card.tools); setCardStatus(card, ev.status || 'replied'); updateMarker(turn); }
   } else if (ev.type === 'notice') {
     appendToThread(el('div', 'notice', ev.text));
   } else if (ev.type === 'error') {
@@ -693,6 +713,7 @@ function addDraftChip(holder, name) {
   chip.type = 'button';
   chip.addEventListener('click', () => openDraft(name));
   holder.el.appendChild(chip);
+  settleTools(holder.tools);
   holder.bubble = null;
   holder.tools = null;
 }
