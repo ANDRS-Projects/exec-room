@@ -62,6 +62,34 @@ const STDERR_CAP = 8 * 1024;
 // Never passed on to a run: an API key or token (pay-as-you-go billing), another endpoint, or another provider
 // (Bedrock, Vertex, Foundry). Each of them takes a run off the owner's Claude plan without anything showing it.
 const AUTH_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY', 'ROOM_ANTHROPIC_API_KEY'];
+// Room agents get what the room gives them (their own description, the room's note and brief, the message) and
+// nothing else. Without these two switches Claude Code also hands every run, and every agent consulted inside it,
+// the CLAUDE.md files of this folder, of the folders above it and of any folder an agent works in (this repo's
+// notes for contributors, the owner's personal file, whatever other tools write into such files), plus the memory
+// index Claude Code keeps for the folder. It works like a .gitignore for the room: the files stay where they are,
+// and the runs the room starts don't load them. An agent can still open such a file itself where it may read. Both
+// names come from the Claude Code program (seen in 2.1.289), not from its documentation, so contextCheck() tries
+// them every time the room starts.
+// The owner can turn this around with `"agentsGetClaudeFiles": true` in room.config.json: then no switch is set,
+// agents are given those files as any Claude Code session would be, and there is nothing to check.
+const OWN_CONTEXT_ONLY = CONFIG.agentsGetClaudeFiles !== true;
+const OWN_CONTEXT_ENV = OWN_CONTEXT_ONLY ? { CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } : {};
+
+// The environment of everything the room starts with `claude`: a job's run, and the start-up check.
+function runEnv() {
+  const env = { ...process.env, ...OWN_CONTEXT_ENV };
+  // Strip any API key so the CLI uses the logged-in Claude plan, never pay-as-you-go credits, and whatever else
+  // would send a run somewhere other than that plan.
+  for (const name of AUTH_ENV) delete env[name];
+  if (KEY_MODE) {
+    // A plan token in the environment would be a plan login too.
+    delete env.CLAUDE_CODE_OAUTH_TOKEN;
+    fs.mkdirSync(KEY_CONFIG_DIR, { recursive: true, mode: 0o700 });
+    env.ANTHROPIC_API_KEY = API_KEY;
+    env.CLAUDE_CONFIG_DIR = KEY_CONFIG_DIR;
+  }
+  return env;
+}
 
 // How runs are paid for: the owner's Claude plan (the default), or an Anthropic API key, which is
 // pay-as-you-go. Chosen when the room starts (ROOM_AUTH=api-key, `npm run room:key`) and fixed until it stops, so
@@ -2072,17 +2100,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
   }
 
   function run(resumeId) {
-    const env = { ...process.env };
-    // Strip any API key so the CLI uses the logged-in Claude plan, never pay-as-you-go credits, and whatever else
-    // would send a run somewhere other than that plan.
-    for (const name of AUTH_ENV) delete env[name];
-    if (KEY_MODE) {
-      // A plan token in the environment would be a plan login too.
-      delete env.CLAUDE_CODE_OAUTH_TOKEN;
-      fs.mkdirSync(KEY_CONFIG_DIR, { recursive: true, mode: 0o700 });
-      env.ANTHROPIC_API_KEY = API_KEY;
-      env.CLAUDE_CONFIG_DIR = KEY_CONFIG_DIR;
-    }
+    const env = runEnv();
     // A resumed session's cost total includes earlier messages; a fresh one (maker or new chat) starts at 0.
     job.costBase = resumeId ? (room.sessionCostUsd || 0) : 0;
     job.sessionTotal = job.costBase;
@@ -2331,6 +2349,8 @@ app.get('/api/room', (req, res) => {
   res.json({ roomId: room.roomId, workspace: { id: space.id, name: space.name }, owner: OWNER_NAME, runningJobId: live,
     // How runs are paid for, for the page's badge; the caps only exist on an API key.
     auth: AUTH, ...(KEY_MODE && { caps: { run: RUN_CAP_USD, day: DAY_CAP_USD } }),
+    // Only when the start-up check found that agents are getting files the room means to keep from them.
+    ...(contextLeak && contextLeak.length && { contextLeak }),
     attachments: { maxFiles: ATTACH_MAX_FILES, maxBytes: ATTACH_MAX_BYTES, extensions: Object.keys(ATTACH_TYPES) }, events: readEvents(room.roomId).filter((ev) => !live || ev.jobId !== live) });
 });
 
@@ -3089,8 +3109,85 @@ function shutDown() {
 process.on('SIGINT', shutDown);
 process.on('SIGTERM', shutDown);
 
+// ---- Start-up check: do the two switches in OWN_CONTEXT_ENV still keep Claude Code's own files from room agents?
+// A Claude Code update could rename or drop them without a word, and the room would be back to handing every agent
+// those files. So each start runs one small `claude` the way a job does, in a throwaway folder that holds a
+// CLAUDE.md with a random code, and asks whether it can see the code: it can't guess it, so a reply with the code
+// means CLAUDE.md files are loaded again. Whether the memory index is on is in what the CLI reports before it calls a
+// model. The small model keeps it cheap; in key mode it is real spend, capped and counted towards the day.
+// `contextLeak`: null while not known (not checked yet, switched off, or the check couldn't be done), else the list
+// of what gets through, empty when nothing does. The page says so when it isn't empty.
+const CHECK_MODEL = 'claude-haiku-4-5-20251001';
+const CHECK_TIMEOUT_MS = 90000;
+const CHECK_CAP_USD = 0.05;
+let contextLeak = null;
+function contextCheck() {
+  if (!OWN_CONTEXT_ONLY) {
+    console.log("Room agents are also given your CLAUDE.md files and the memory Claude Code keeps for this folder (agentsGetClaudeFiles in room.config.json).");
+    return;
+  }
+  if (process.env.ROOM_CONTEXT_CHECK === 'off') return;
+  const skipped = (why) => console.warn(`The start-up check of what room agents are given could not be done (${why}). Runs still get the two switches; whether they work is unknown until the next start.`);
+  const code = `ROOM-CANARY-${crypto.randomBytes(6).toString('hex')}`;
+  let dir;
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'room-context-check-'));
+    fs.writeFileSync(path.join(dir, 'CLAUDE.md'), `# The room's start-up check\nThe word for this check is ${code}.\n`);
+  } catch (err) {
+    skipped(err.message);
+    return;
+  }
+  const args = [
+    '-p', 'If the context you were given holds a word that starts with "ROOM-CANARY-", reply with exactly that whole word. Otherwise reply with exactly NONE.',
+    '--output-format', 'stream-json', '--verbose', '--model', CHECK_MODEL,
+    '--setting-sources', 'project', '--permission-mode', 'default', '--disable-slash-commands',
+    // No tools and no connectors, so the code can only come from what was loaded for the run, and the prompt
+    // stays a few thousand tokens (about a cent on the plan's scale).
+    '--tools', '', '--strict-mcp-config',
+    ...(KEY_MODE ? ['--max-budget-usd', String(CHECK_CAP_USD)] : []),
+  ];
+  const child = spawn('claude', args, { cwd: dir, env: runEnv(), stdio: ['ignore', 'pipe', 'ignore'] });
+  const timer = setTimeout(() => child.kill('SIGTERM'), CHECK_TIMEOUT_MS);
+  let out = '';
+  let failed = '';
+  child.stdout.on('data', (chunk) => { if (out.length < 1024 * 1024) out += chunk; });
+  child.on('error', (err) => { failed = err.message; });
+  child.on('close', () => {
+    clearTimeout(timer);
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* a leftover in the temp folder */ }
+    let memory = false;
+    let reply = null;
+    let cost = 0;
+    for (const text of out.split('\n')) {
+      let ev = null;
+      try { ev = JSON.parse(text); } catch { /* not a line of JSON */ }
+      if (!ev) continue;
+      if (ev.type === 'system' && ev.subtype === 'init') memory = Boolean(ev.memory_paths && ev.memory_paths.auto);
+      if (ev.type === 'result') {
+        if (!ev.is_error && typeof ev.result === 'string') reply = ev.result;
+        cost = Number(ev.total_cost_usd) || 0;
+      }
+    }
+    if (KEY_MODE && cost) {
+      keySpentToday();
+      keySpend.usd += cost;
+    }
+    if (reply == null) {
+      skipped(failed || 'Claude gave no answer');
+      return;
+    }
+    contextLeak = [...(reply.includes(code) ? ['CLAUDE.md files'] : []), ...(memory ? ['the memory index'] : [])];
+    if (contextLeak.length) {
+      console.warn(`WARNING: room agents are being given ${contextLeak.join(' and ')} again. The switches that keep Claude Code's own files from them (${Object.keys(OWN_CONTEXT_ENV).join(', ')}) no longer work, probably since a Claude Code update.`);
+    } else {
+      console.log('Checked: room agents are given no CLAUDE.md files and no memory index.');
+    }
+  });
+}
+
 app.listen(PORT, HOST, () => {
   console.log(`Exec Room (headless Claude Code) at http://localhost:${PORT}/room.html`);
+  contextCheck();
   if (KEY_MODE) console.log(`Runs are paid with an API key (pay-as-you-go), at most $${RUN_CAP_USD.toFixed(2)} a run and $${DAY_CAP_USD.toFixed(2)} a day. Agents have no Notion or Microsoft 365 tools in this mode${NOTION_TOKEN ? '; Notion pages linked in a message are read for them' : ''}.`);
 }).on('error', (err) => {
   if (err.code !== 'EADDRINUSE') throw err;

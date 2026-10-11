@@ -111,7 +111,7 @@ class Server:
         env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", scenario) + os.pathsep + os.environ["PATH"],
                    PORT=str(PORT), ROOM_DATA_DIR=data, ROOM_TEST_TMP=TMP,
                    ROOM_NOTION_TOKEN="fake-token", ROOM_CONFIG_FILE=config or os.path.join(TESTS, "room.config.test.json"),
-                   **(extra or {}))
+                   **{"ROOM_CONTEXT_CHECK": "off", **(extra or {})})
         self.p = subprocess.Popen(["node", "room-server.js"], cwd=opts.root, env=env, stdout=subprocess.DEVNULL,
                                   stderr=subprocess.PIPE, text=True, start_new_session=True)
         for _ in range(100):
@@ -707,6 +707,8 @@ try:
         # A key, a token, another endpoint or another provider in the server's environment reaches no run; a variable
         # the server does pass on (ROOM_TEST_TMP) shows the fake would have listed them.
         out("X nothing that leaves the Claude plan reaches a run", sorted({(c["agent"], *c["auth_env"]) for c in calls}))
+        # The two switches that keep Claude Code's own CLAUDE.md files and the memory index from room agents.
+        out("X every run gets only the room's own context", sorted({(c["agent"], *sorted(c["own_context"].items())) for c in calls}))
         # Secret-looking files anywhere on disk (env files, .dev.vars, keys, registry credentials, git folders) on every run.
         secrets = ["Read(//**/.env)", "Read(//**/.env.*)", "Read(//**/.dev.vars)", "Read(//**/*.pem)", "Read(//**/*.key)", "Read(//**/id_rsa*)",
                    "Read(//**/id_ed25519*)", "Read(//**/.npmrc)", "Read(//**/.netrc)", "Read(//**/.git-credentials)", "Read(//**/.git/**)"]
@@ -1104,7 +1106,7 @@ try:
         folder = os.path.join(tmpd, f"exec-room-attachments-{PORT}")
         make(folder)
         env = dict(os.environ, PORT=str(PORT), TMPDIR=tmpd, ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token",
-                   ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"))
+                   ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"), ROOM_CONTEXT_CHECK="off")
         done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
         out(f"K start-up refuses {what}", (done.returncode, done.stderr.replace(folder, "<attach>").strip().splitlines()))
 
@@ -1775,7 +1777,7 @@ try:
 
     def key_start(what, **extra):
         tmpd = os.path.join(TMP, f"key-start-{what.replace(' ', '-')}")
-        env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "keymode") + os.pathsep + os.environ["PATH"], PORT=str(PORT),
+        env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "keymode") + os.pathsep + os.environ["PATH"], PORT=str(PORT), ROOM_CONTEXT_CHECK="off",
                    ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token", ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"), **extra)
         done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
         out(f"Q start-up refuses {what}", (done.returncode, done.stderr.strip().splitlines()))
@@ -2026,6 +2028,47 @@ try:
         evs = ksay(f"See https://www.notion.so/{PAGE}")
         out("Q on the plan a Notion link is left to the connector", (notices(evs), kcalls()[-1]["notion_block"]))
         out("Q the plan's job line has no mode", (job_log()[-1].get("auth"), index()["old-chat"].get("sessionAuth")))
+    finally:
+        s.stop()
+
+    # S2: the start-up check. Room agents must not be given Claude Code's own CLAUDE.md files or the memory index; two
+    # switches in every run's environment see to that (checked in X), and a Claude Code update could drop them
+    # unannounced. So each start runs one small `claude` in a throwaway folder with a CLAUDE.md that holds a random
+    # code. Every other scenario starts with the check off; here a fake plays it five ways.
+    context_log = os.path.join(TMP, "context-calls.ndjson")
+    for mode in ("ok", "md", "memory", "both", "fail"):
+        if os.path.exists(context_log):
+            os.remove(context_log)
+        s = Server("context", {"ROOM_CONTEXT_CHECK": "on", "ROOM_TEST_CONTEXT": mode}, data_name="data-context")
+        try:
+            for _ in range(100):  # until the fake has run and the server has cleared its folder away
+                done = [json.loads(l) for l in open(context_log)] if os.path.exists(context_log) else []
+                if done and not os.path.exists(done[0]["cwd"]):
+                    break
+                time.sleep(0.05)
+            time.sleep(0.2)
+            if mode == "ok":
+                out("S2 the check runs once, outside the repo, with the code in its folder", (len(done), done[0]["in_the_repo"], done[0]["code_in_folder"], done[0]["asks_for_the_code"]))
+                out("S2 it runs like a job: no tools, no connectors, the small model, both switches", {k: done[0][k] for k in ("tools", "no_connectors", "model", "setting_sources", "switches")})
+                out("S2 its folder is gone afterwards", not os.path.exists(done[0]["cwd"]))
+            out(f"S2 {mode}: what the page is told", json.loads(call("/api/room")[1]).get("contextLeak"))
+        finally:
+            s.stop()
+    # The owner can let agents have those files after all ("agentsGetClaudeFiles": true in room.config.json): then a
+    # run gets neither switch and the check has nothing to do, even when it is not switched off.
+    shared = os.path.join(TMP, "room.config.shared.json")
+    with open(shared, "w") as f:
+        json.dump({**json.load(open(os.path.join(TESTS, "room.config.test.json"))), "agentsGetClaudeFiles": True}, f)
+    access_log = os.path.join(TMP, "access-calls.ndjson")
+    before = len(open(access_log).readlines()) if os.path.exists(access_log) else 0
+    s = Server("access", {"ROOM_CONTEXT_CHECK": "on"}, data_name="data-context-shared", config=shared)
+    try:
+        time.sleep(0.5)
+        call("/api/coen", {"text": "hello"})
+        events(call("/api/stream")[1])
+        got = [json.loads(l) for l in open(access_log)][before:]
+        out("S2 turned around in the config: one run, no check, neither switch", [(c["agent"], c["own_context"]) for c in got])
+        out("S2 and the page is told nothing", json.loads(call("/api/room")[1]).get("contextLeak"))
     finally:
         s.stop()
 finally:

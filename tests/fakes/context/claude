@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+# Test double for `claude` at the room's start-up check (contextCheck in room-server.js). The check runs it in a
+# throwaway folder that holds a CLAUDE.md with a random code and asks whether it can see the code. What this fake
+# answers is set by $ROOM_TEST_CONTEXT: "ok" (sees nothing), "md" (CLAUDE.md files are loaded again: it replies with
+# the code), "memory" (the CLI reports the memory index as on), "both", or "fail" (no answer at all).
+# Logs what it was started with to $ROOM_TEST_TMP/context-calls.ndjson. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+mode = os.environ.get("ROOM_TEST_CONTEXT", "ok")
+code = ""
+try:
+    code = [w.rstrip(".") for w in open("CLAUDE.md").read().split() if w.startswith("ROOM-CANARY-")][0]
+except (OSError, IndexError):
+    pass
+value = lambda name: args[args.index(name) + 1] if name in args else None
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "context-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"cwd": os.getcwd(), "in_the_repo": os.path.exists("room-server.js"), "code_in_folder": bool(code),
+                          "model": value("--model"), "tools": value("--tools"), "no_connectors": "--strict-mcp-config" in args,
+                          "setting_sources": value("--setting-sources"), "asks_for_the_code": "ROOM-CANARY-" in (value("-p") or ""),
+                          "switches": {k: os.environ.get(k) for k in ("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY")}}) + "\n")
+if mode == "fail":
+    sys.exit(1)
+out = lambda o: print(json.dumps(o), flush=True)
+out({"type": "system", "subtype": "init", "session_id": "check", **({"memory_paths": {"auto": "/somewhere/memory/"}} if mode in ("memory", "both") else {})})
+out({"type": "result", "is_error": False, "result": code if mode in ("md", "both") else "NONE", "total_cost_usd": 0.01})

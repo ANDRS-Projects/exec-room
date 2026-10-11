@@ -3,5 +3,6 @@
   "notionDatabases": {},
   "notionChannels": ["X", "LinkedIn", "Substack Note", "Substack Post", "Instagram", "Blog"],
   "hiddenConnectors": [],
-  "ownerName": ""
+  "ownerName": "",
+  "agentsGetClaudeFiles": false
 }

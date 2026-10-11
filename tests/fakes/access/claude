@@ -32,6 +32,7 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "access-calls.ndjson"), "a")
                           # Names only: what would take a run off the Claude plan, if the server passed it on.
                           "auth_env": sorted(k for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK",
                                                          "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "ROOM_TEST_TMP") if k in os.environ),
+                          "own_context": {k: os.environ.get(k) for k in ("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY")},
                           "note": note[start:note.find(" Anything else", start)] if start >= 0 else None,
                           "custom_tools": {k: v.get("tools") for k, v in json.loads(args[args.index("--agents") + 1]).items() if k.startswith("room-")}}) + "\n")
 out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
