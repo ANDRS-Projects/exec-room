@@ -278,6 +278,35 @@ try:
         out("D approve after dismiss", call(f"/api/recs/{dismissed['recId']}/approve", {})[:2])
         out("D dismiss twice", call(f"/api/recs/{dismissed['recId']}/dismiss", {})[:2])
         events(call("/api/stream")[1])
+        # Coen is told about a dismissal once, in a room note in front of the next run he leads in that chat: no run
+        # at dismiss time, with the reason or without one, in the order of the dismissals, and never in a maker's run.
+        runs = lambda: [json.loads(l) for l in open(os.path.join(TMP, "calls.ndjson"))]
+        to_tell = lambda: [c["dismissedToTell"] for c in json.load(open(os.path.join(TMP, "data-proposals", "rooms", "index.json")))["rooms"].values() if "dismissedToTell" in c]
+        note = lambda prompt: prompt.split("]\n\n")[0] + "]" if prompt.startswith("[Room note for Coen") else ""
+
+        def ask(text):
+            call("/api/coen", {"text": text})
+            got = [e["rec"] for e in events(call("/api/stream")[1]) if e["type"] == "recommendation"]
+            return runs()[-1]["prompt"], [r for r in got if r["action"] == "github_issue"][0], [r for r in got if r["action"] == "dispatch"][0]
+
+        out("D no note before any dismissal", note(runs()[0]["prompt"]))
+        out("D the chat remembers which dismissal Coen has not heard of", to_tell() == [[dismissed["recId"]]])
+        prompt, issue2, dispatch2 = ask("what next?")
+        out("D a dismissal without a reason is told", (note(prompt).replace(dismissed["recId"], "rec-id"), prompt.endswith("]\n\nwhat next?"), to_tell()))
+        call(f"/api/recs/{issue2['recId']}/dismiss", {"reason": "Too early.\nAsk again in Q1."})
+        call(f"/api/recs/{dispatch2['recId']}/dismiss", {})
+        prompt, issue3, dispatch3 = ask("and now?")
+        out("D two dismissals, in order, with a reason and without", note(prompt).replace(issue2["recId"], "rec-1").replace(dispatch2["recId"], "rec-2").split("\n"))
+        job_log = [json.loads(l) for l in open(os.path.join(TMP, "data-proposals", "jobs.ndjson")) if l.startswith('{"')]
+        out("D the job log keeps the message as it was written", [l["prompt"] for l in job_log if l.get("kind") == "job"][-1])
+        prompt, issue4, dispatch4 = ask("again?")
+        out("D told once", note(prompt))
+        call(f"/api/recs/{issue4['recId']}/dismiss", {"reason": "Later."})
+        before = len(runs())
+        call(f"/api/recs/{dispatch4['recId']}/approve", {})
+        for _ in range(3):
+            events(call("/api/stream")[1])
+        out("D a maker's run leaves the note for Coen's next one", [(r["agent"], note(r["prompt"]) != "") for r in runs()[before:]])
     finally:
         s.stop()
 
@@ -565,6 +594,12 @@ try:
         events(call("/api/stream")[1])
         events(call("/api/stream")[1])
         out("F review after maker is coen's", [e for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "text"][-1]["who"])
+        # A dismissed proposal of the focus agent: Coen is told like any other, and asked to pass it on.
+        call("/api/coen", {"text": "Again?"})
+        again = [e["rec"] for e in events(call("/api/stream")[1]) if e["type"] == "recommendation" and e["rec"]["action"] == "dispatch"][0]
+        call(f"/api/recs/{again['recId']}/dismiss", {"reason": "Not this week."})
+        call("/api/coen", {"text": "And now?"})
+        out("F a focus agent's dismissed proposal is passed on", [e["prompt"].replace(again["recId"], "rec-id") for e in events(call("/api/stream")[1]) if e["type"] == "consult"])
         call(f"/api/workspaces/{mkt['id']}", {"name": "Marketing", "members": ["wren"], "focus": None})
         out("F focus cleared", json.loads(call("/api/workspaces")[1])["workspaces"][1]["focus"])
         call(f"/api/workspaces/{mkt['id']}", {"name": "Marketing", "members": None, "focus": "juno"})
