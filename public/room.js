@@ -105,8 +105,8 @@ function appendToThread(node) {
 // The tool lines that name the step their agent is on right now.
 const liveTools = new Set();
 
-// One collapsed "N tool calls" line per message. While the agent is on a step, the line names it (see tool-step.js),
-// so a long step doesn't look idle.
+// One collapsed line of tool calls per message, in plain words (see tool-step.js): the step the agent is on while
+// it lasts, so a long step doesn't look idle, and what it did once it is over, so the trail stays readable.
 function addTool(holder, name, detail) {
   if (!holder.tools) {
     const details = el('details', 'tools');
@@ -115,19 +115,51 @@ function addTool(holder, name, detail) {
     holder.tools = { details, count: 0 };
   }
   holder.tools.count += 1;
+  holder.tools.last = { name, detail };
   holder.tools.details.querySelector('summary').textContent = ToolStep.summary(holder.tools.count, ToolStep.doing(name, detail));
   liveTools.add(holder.tools);
   holder.tools.details.querySelector('ol').appendChild(el('li', null, name + (detail ? ' · ' + detail : '')));
 }
 
-// The step is over (the agent wrote, moved on or finished): the line goes back to its count.
+// The step is over (the agent wrote, moved on or finished): the line now says what was done.
 function settleTools(tools) {
   if (!tools || !liveTools.delete(tools)) return;
-  tools.details.querySelector('summary').textContent = ToolStep.summary(tools.count);
+  tools.details.querySelector('summary').textContent = ToolStep.trail(tools.count, ToolStep.done(tools.last.name, tools.last.detail));
 }
 
 function settleAllTools() {
   for (const tools of [...liveTools]) settleTools(tools);
+}
+
+// What an agent has just started on ("Thinking…", "Writing a file…"): one line per agent, there until its words or
+// its step arrive. Never part of the chat: the server sends it only to pages that are watching.
+const activityLines = new Map(); // 'coen', or a card's cid → the line
+
+function showActivity(ev) {
+  const card = ev.who === 'coen' ? null : cardFor(ev);
+  if (ev.who !== 'coen' && !card) return;
+  const key = card ? card.cid : 'coen';
+  // Whatever the agent was on before is over. A consulted agent's step line would otherwise keep saying
+  // "Reading…" until its reply: nothing else tells the page that such a step has come back.
+  settleTools(card ? card.tools : coenMsg && coenMsg.tools);
+  let line = activityLines.get(key);
+  if (!line) {
+    line = el('div', 'doing');
+    activityLines.set(key, line);
+    if (card) card.el.appendChild(line); else appendToThread(line);
+  }
+  line.textContent = ToolStep.activity(ev.name, ev.inferred);
+}
+
+function clearActivity(key) {
+  const line = activityLines.get(key);
+  if (!line) return;
+  line.remove();
+  activityLines.delete(key);
+}
+
+function clearAllActivity() {
+  for (const key of [...activityLines.keys()]) clearActivity(key);
 }
 
 function addText(holder, text) {
@@ -326,6 +358,11 @@ function endTurn(ev) {
 }
 
 function handle(ev) {
+  if (ev.type === 'activity') { showActivity(ev); return; }
+  // Anything else from an agent means that what it had just started on has arrived, or is over.
+  if (ev.type === 'user' || ev.type === 'end') clearAllActivity();
+  else if (ev.who === 'coen' || ev.type === 'consult' || ev.type === 'recommendation') clearActivity('coen');
+  else if (ev.who) { const card = cardFor(ev); if (card) clearActivity(card.cid); }
   if (ev.type === 'user') {
     startTurn(ev.text, ev.auto || false, ev.files);
   } else if (ev.type === 'break') {

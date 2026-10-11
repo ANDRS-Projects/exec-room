@@ -150,10 +150,11 @@ try:
         for path in ["/room.js", "/room.css", "/vendor/marked.umd.js", "/vendor/purify.min.js", "/avatars/coen.svg", "/theme.json", "/mark.svg", "/vendor/inter/inter-latin-wght-normal.woff2", "/.gitignore", "/%2e%2e/package.json"]:
             out(f"A static {path}", call(path)[0])
 
-        def steps(calls):  # the page's tool line for each [count, name, detail], from public/tool-step.js run in node's vm
+        def steps(calls, fn="([n, name, detail]) => ctx.ToolStep.summary(n, ctx.ToolStep.doing(name, detail)) + ' | ' + ctx.ToolStep.trail(n, ctx.ToolStep.done(name, detail))"):
+            # the page's tool line for each [count, name, detail], "while the step lasts | once it is over", from public/tool-step.js run in node's vm
             script = ("const vm = require('vm'), fs = require('fs'); const ctx = vm.createContext({});"
                       "vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);"
-                      "console.log(JSON.stringify(JSON.parse(process.argv[2]).map(([n, name, detail]) => ctx.ToolStep.summary(n, name === false ? '' : ctx.ToolStep.doing(name, detail)))));")
+                      "console.log(JSON.stringify(JSON.parse(process.argv[2]).map(" + fn + ")));")
             done = subprocess.run(["node", "-e", script, os.path.join(opts.root, "public", "tool-step.js"), json.dumps(calls)], capture_output=True, text=True, check=True)
             return json.loads(done.stdout)
 
@@ -166,8 +167,9 @@ try:
             out("A tool step", line)
         out("A tool step, no detail", steps([[1, n, ""] for n in ("Read", "Grep", "Glob", "WebSearch", "WebFetch", "Agent", "Bash")]))
         out("A tool step, old and odd shapes", steps([[1, None, None], [2, "", "x"], [1, 7, {}], [1, "Read", "a\n  b.md"]]))
-        out("A tool step, long detail is cut", [len(s) for s in steps([[1, "WebSearch", "q" * 300], [1, "Bash", "x" * 300], [1, "mcp__s__" + "t" * 300, ""]])])
-        out("A tool step over", steps([[1, False, ""], [4, False, ""]]))
+        out("A tool step, long detail is cut", [[len(part) for part in s.split(" | ")] for s in steps([[1, "WebSearch", "q" * 300], [1, "Bash", "x" * 300], [1, "mcp__s__" + "t" * 300, ""]])])
+        out("A started on", steps([None, "", "Write", "Read", "Agent", "mcp__claude_ai_Notion__notion-search", "Bash"], "(name) => ctx.ToolStep.activity(name)"))
+        out("A started on, a consulted agent", steps([None, "Write"], "(name) => ctx.ToolStep.activity(name, true)"))
         out("A foreign origin", call("/api/coen", {"text": "x"}, {"Origin": "https://evil.example"})[:2])
         out("A foreign host", call("/api/room", headers={"Host": "attacker.example"})[:2])
         out("A form post", call("/api/coen", raw=b"text=hi", headers={"content-type": "text/plain"})[:2])
@@ -839,6 +841,15 @@ try:
         out("I stop while reading", call("/api/coen/stop", {})[0])
         evs = events(call("/api/stream")[1])
         out("I stopped before Claude", ([e["status"] for e in evs if e["type"] == "end"], len(runs()) == before))
+        # What an agent has just started on (thinking, composing a step) goes to the pages watching, never into the chat.
+        call("/api/agents", {"name": "Otto", "role": "advisor", "does": "checks plans", "instructions": "Check the plan.", "tools": ["files"]})
+        call("/api/coen", {"text": "show what you are starting on"})
+        evs = events(call("/api/stream")[1])
+        out("I activity is sent live", [(e["type"], e.get("who"), e.get("name")) for e in evs if e["type"] in ("activity", "tool", "text") and e.get("who") == "coen"])
+        # A consulted agent reports only its steps and its reply: the room says it is at work when the consult starts
+        # and when its last running step is back (two steps at once here, so only after the second).
+        out("I a consulted agent is at work between its steps", [(e["type"], e.get("name"), e.get("inferred")) for e in evs if e.get("who") == "otto" and e["type"] != "break"])
+        out("I activity is not saved", [e["type"] for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "activity"])
     finally:
         s.stop()
     # K: files attached to a message. They are saved in a per-job folder in the temp folder (here a throwaway one),

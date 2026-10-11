@@ -14,24 +14,25 @@ A static /.gitignore: 404
 A static /%2e%2e/package.json: 404
 A static /tool-step.js: 200
 A page loads tool-step.js before room.js: True
-A tool step: Reading plan.md… · 1 tool call
-A tool step: Searching files for startJob… · 2 tool calls
-A tool step: Looking for files named **/*.md… · 1 tool call
-A tool step: Searching the web for exec room… · 3 tool calls
-A tool step: Opening https://docs.example.com/guide… · 1 tool call
-A tool step: Writing 2026-10-11-coen-plan.md… · 1 tool call
-A tool step: Editing a.md… · 2 tool calls
-A tool step: Loading tools… · 1 tool call
-A tool step: Asking another agent: Check the numbers… · 1 tool call
-A tool step: Searching Notion for pricing… · 1 tool call
-A tool step: Reading Notion… · 1 tool call
-A tool step: Searching mail for invoice… · 1 tool call
-A tool step: Using do-thing… · 1 tool call
-A tool step: Bash · ls… · 1 tool call
-A tool step, no detail: ['Reading a file… · 1 tool call', 'Searching files… · 1 tool call', 'Looking for files… · 1 tool call', 'Searching the web… · 1 tool call', 'Opening a web page… · 1 tool call', 'Asking another agent… · 1 tool call', 'Bash… · 1 tool call']
-A tool step, old and odd shapes: ['Working… · 1 tool call', 'Working… · 2 tool calls', 'Working… · 1 tool call', 'Reading a b.md… · 1 tool call']
-A tool step, long detail is cut: [95, 95, 95]
-A tool step over: ['1 tool call', '4 tool calls']
+A tool step: Reading plan.md… · 1 tool call | Read plan.md
+A tool step: Searching files for startJob… · 2 tool calls | Searched files for startJob · 2 tool calls
+A tool step: Looking for files named **/*.md… · 1 tool call | Looked for files named **/*.md
+A tool step: Searching the web for exec room… · 3 tool calls | Searched the web for exec room · 3 tool calls
+A tool step: Opening https://docs.example.com/guide… · 1 tool call | Opened https://docs.example.com/guide
+A tool step: Writing 2026-10-11-coen-plan.md… · 1 tool call | Wrote 2026-10-11-coen-plan.md
+A tool step: Editing a.md… · 2 tool calls | Edited a.md · 2 tool calls
+A tool step: Loading tools… · 1 tool call | Loaded tools
+A tool step: Asking another agent: Check the numbers… · 1 tool call | Asked another agent: Check the numbers
+A tool step: Searching Notion for pricing… · 1 tool call | Searched Notion for pricing
+A tool step: Reading Notion… · 1 tool call | Read Notion
+A tool step: Searching mail for invoice… · 1 tool call | Searched mail for invoice
+A tool step: Using do-thing… · 1 tool call | Used do-thing
+A tool step: Bash · ls… · 1 tool call | Bash · ls
+A tool step, no detail: ['Reading a file… · 1 tool call | Read a file', 'Searching files… · 1 tool call | Searched files', 'Looking for files… · 1 tool call | Looked for files', 'Searching the web… · 1 tool call | Searched the web', 'Opening a web page… · 1 tool call | Opened a web page', 'Asking another agent… · 1 tool call | Asked another agent', 'Bash… · 1 tool call | Bash']
+A tool step, old and odd shapes: ['Working… · 1 tool call | 1 tool call', 'Working… · 2 tool calls | 2 tool calls', 'Working… · 1 tool call | 1 tool call', 'Reading a b.md… · 1 tool call | Read a b.md']
+A tool step, long detail is cut: [[95, 80], [95, 80], [95, 80]]
+A started on: ['Thinking…', 'Thinking…', 'Writing a file…', 'Reading a file…', 'Asking another agent…', 'Searching Notion…', 'Bash…']
+A started on, a consulted agent: ['Working on it…', 'Working on it…']
 A foreign origin: (403, '{"error":"forbidden origin"}')
 A foreign host: (403, '{"error":"forbidden host"}')
 A form post: (415, '{"error":"JSON only"}')
@@ -296,6 +297,9 @@ I pr 75 capped: (True, True, 1)
 I pr failure: ["Couldn't read Example-Org/example-app#404 (pull request): no such pull request. Don't guess what it says; tell the owner."]
 I stop while reading: 200
 I stopped before Claude: (['stopped'], True)
+I activity is sent live: [('activity', 'coen', None), ('activity', 'coen', 'Write'), ('tool', 'coen', 'Write'), ('text', 'coen', None)]
+I a consulted agent is at work between its steps: [('consult', None, None), ('activity', None, True), ('tool', 'Read', None), ('tool', 'Read', None), ('activity', None, True), ('text', None, None), ('consult_done', None, None)]
+I activity is not saved: []
 K chat from before attachments loads as saved: [('user', 'an old question', False), ('text', 'An old answer.', False), ('end', None, False)]
 K attached line, old and odd shapes: ['', '', '', '', 'Attached: a.pdf', 'Attached: a.pdf']
 K attached line: Attached: a.pdf (24 bytes), b.txt (2.9 MB)
