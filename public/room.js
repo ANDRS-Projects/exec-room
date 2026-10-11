@@ -2451,6 +2451,11 @@ $('space-remove').addEventListener('click', async () => {
     }
     setChats(chatsWide.matches && chatsPref());
     for (const ev of room.events) handle(ev);
+    // The room's start-up check found that agents are given files the room means to keep from them (see
+    // contextCheck in room-server.js). Said on the page, as nobody watches the terminal the room runs in.
+    if (Array.isArray(room.contextLeak) && room.contextLeak.length) {
+      appendToThread(el('div', 'notice', `Heads-up: agents in every room are being given ${room.contextLeak.filter((x) => typeof x === 'string').join(' and ')} that were written for Claude Code, not for the room. The switch that keeps them out stopped working, probably after a Claude Code update. Ask Claude Code to look at the room's start-up check.`));
+    }
     // A finished job with no end event was cut off (the server stopped mid-answer).
     if (turn && !turn.ended) endTurn({ type: 'end', status: 'interrupted' });
     thread.scrollTop = thread.scrollHeight;

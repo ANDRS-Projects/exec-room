@@ -255,6 +255,7 @@ X data folder blocked: [('chief-operating-officer', 'Read(/<tmp>/data-access/**)
 X sensitive folders blocked: [('chief-operating-officer', True, True, True, True, True), ('room-wren', True, True, True, True, True)]
 X permission mode: [('chief-operating-officer', 'default'), ('room-wren', 'default')]
 X nothing that leaves the Claude plan reaches a run: [('chief-operating-officer', 'ROOM_TEST_TMP'), ('room-wren', 'ROOM_TEST_TMP')]
+X every run gets only the room's own context: [('chief-operating-officer', ('CLAUDE_CODE_DISABLE_AUTO_MEMORY', '1'), ('CLAUDE_CODE_DISABLE_CLAUDE_MDS', '1')), ('room-wren', ('CLAUDE_CODE_DISABLE_AUTO_MEMORY', '1'), ('CLAUDE_CODE_DISABLE_CLAUDE_MDS', '1'))]
 X secret files blocked: [('chief-operating-officer', True), ('room-wren', True)]
 X docker and kube folders blocked: [('chief-operating-officer', True, True), ('room-wren', True, True)]
 X new secret patterns blocked: [('chief-operating-officer', True), ('room-wren', True)]
@@ -619,3 +620,17 @@ Q the plan's cost is not spend, the chat's earlier spend stays: [{'status': 'ok'
 Q Notion reading is back: (True, 'Notion, read-only; no Microsoft 365; writing only in drafts/.')
 Q on the plan a Notion link is left to the connector: ([], None)
 Q the plan's job line has no mode: (None, None)
+S2 the check runs once, outside the repo, with the code in its folder: (1, False, True, True)
+S2 it runs like a job: no tools, no connectors, the small model, both switches: {'tools': '', 'no_connectors': True, 'model': 'claude-haiku-4-5-20251001', 'setting_sources': 'project', 'switches': {'CLAUDE_CODE_DISABLE_CLAUDE_MDS': '1', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY': '1'}}
+S2 its folder is gone afterwards: True
+S2 ok: what the page is told: None
+S2 md: what the page is told: ['CLAUDE.md files']
+server stderr: WARNING: room agents are being given CLAUDE.md files again. The switches that keep Claude Code's own files from them (CLAUDE_CODE_DISABLE_CLAUDE_MDS, CLAUDE_CODE_DISABLE_AUTO_MEMORY) no longer work, probably since a Claude Code update.
+S2 memory: what the page is told: ['the memory index']
+server stderr: WARNING: room agents are being given the memory index again. The switches that keep Claude Code's own files from them (CLAUDE_CODE_DISABLE_CLAUDE_MDS, CLAUDE_CODE_DISABLE_AUTO_MEMORY) no longer work, probably since a Claude Code update.
+S2 both: what the page is told: ['CLAUDE.md files', 'the memory index']
+server stderr: WARNING: room agents are being given CLAUDE.md files and the memory index again. The switches that keep Claude Code's own files from them (CLAUDE_CODE_DISABLE_CLAUDE_MDS, CLAUDE_CODE_DISABLE_AUTO_MEMORY) no longer work, probably since a Claude Code update.
+S2 fail: what the page is told: None
+server stderr: The start-up check of what room agents are given could not be done (Claude gave no answer). Runs still get the two switches; whether they work is unknown until the next start.
+S2 turned around in the config: one run, no check, neither switch: [('chief-operating-officer', {'CLAUDE_CODE_DISABLE_CLAUDE_MDS': None, 'CLAUDE_CODE_DISABLE_AUTO_MEMORY': None})]
+S2 and the page is told nothing: None
