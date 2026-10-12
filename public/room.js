@@ -413,7 +413,11 @@ function handle(ev) {
         entry.said.textContent = 'Your reason: ' + ev.reason;
         entry.said.hidden = false;
       }
-      if (ev.decision === 'approved' && entry.rec.action === 'email_draft') showEmailLinks(entry);
+      if (ev.decision === 'approved' && entry.rec.action === 'email_draft') {
+        // Until when the room keeps the text; a decision from before texts were kept has none.
+        if (typeof ev.keepUntil === 'string') entry.keepUntil = ev.keepUntil;
+        showEmailLinks(entry);
+      }
     }
   } else if (ev.type === 'rec_result') {
     showRecResult(ev);
@@ -536,16 +540,22 @@ function addRecCard(rec) {
     if (!rec.to && rec.domains) {
       card.append(recField('To', `${rec.domains.join(', ')} · addresses and text removed after your decision`), recField('Subject', rec.subject || ''));
     } else {
-      card.append(
-        recField('Send from', rec.from || 'not set: add the consulting address in the room settings'),
-        recField('To', (rec.to || []).join(', ')),
-      );
-      if (rec.cc && rec.cc.length) card.append(recField('Cc', rec.cc.join(', ')));
+      // What leaves the card when the room gives up the draft (see showEmailLinks): the addresses and the text.
+      const priv = [recField('Send from', rec.from || 'not set: add the consulting address in the room settings'), recField('To', (rec.to || []).join(', '))];
+      if (rec.cc && rec.cc.length) priv.push(recField('Cc', rec.cc.join(', ')));
       const preview = el('details', 'rec-details');
       preview.open = true;
       preview.append(el('summary', null, 'Email text (plain text)'), el('div', 'post-text', rec.body || ''));
-      card.append(recField('Subject', rec.subject || ''), preview,
+      [...priv, preview].forEach((n) => n.classList.add('email-private'));
+      card.append(...priv, recField('Subject', rec.subject || ''), preview,
         el('p', 'rec-note', 'Nothing is sent from the room. Approving only records your decision; then you open the draft in Outlook or your mail app and send it yourself.'));
+      // Said before approving, so it is no surprise after: a long draft can only be copied.
+      let opens = true;
+      try {
+        const d = { to: rec.to || [], cc: rec.cc || [], subject: rec.subject || '', body: rec.body || '' };
+        opens = EmailLinks.outlookFits(EmailLinks.outlookUrl(d)) || EmailLinks.mailtoFits(EmailLinks.mailtoUrl(d));
+      } catch { opens = false; }
+      if (!opens) card.append(el('p', 'rec-note email-long', 'This draft is too long to open in Outlook or a mail app directly: after approving, use Copy and paste it into a new email.'));
     }
   } else if (rec.action === 'notion_page') {
     // Link the parent so the destination can be checked before approving.
@@ -749,14 +759,10 @@ function showRecResult(ev) {
 
 // Approved email draft: buttons to open it in Outlook web or the mail app, and Copy. Nothing is sent from the room.
 // Each link only when its whole URL is short enough to be carried reliably; otherwise it's greyed out and Copy leads.
-function showEmailLinks(entry) {
-  const r = entry.rec;
-  if (!Array.isArray(r.to) || typeof r.body !== 'string') {
-    entry.status.replaceChildren(el('span', null, 'Approved. Nothing was sent from the room. The draft was removed from the room after your decision; to open it again, ask Coen for it again.'));
-    return;
-  }
-  entry.status.replaceChildren(el('span', null, `Approved. Nothing was sent: open the draft and send it yourself${r.from ? ` from ${r.from}` : ''}.`));
-  const draft = { to: r.to, cc: r.cc || [], subject: r.subject, body: r.body };
+// The buttons for an email draft whose text the room still has: Outlook web, the mail app and Copy. Each link only
+// when its whole URL is short enough to be carried reliably; otherwise it's greyed out, with the reason next to it,
+// and Copy is the main button.
+function emailButtons(draft) {
   const copy = el('button', 'ghost', 'Copy');
   copy.type = 'button';
   copy.title = 'Copies the subject and the text';
@@ -764,6 +770,8 @@ function showEmailLinks(entry) {
     try {
       await navigator.clipboard.writeText(EmailLinks.copyText(draft));
       copy.textContent = 'Copied';
+      sayNow = true;
+      say('Copied the subject and the text.');
     } catch {
       copy.textContent = "Couldn't copy: select the text in the preview";
     }
@@ -774,7 +782,6 @@ function showEmailLinks(entry) {
     if (href.startsWith('https:')) { a.target = '_blank'; a.rel = 'noopener noreferrer'; }
     return a;
   };
-  // A link that's too long becomes a greyed-out button, with the reason next to it.
   const tooLong = [];
   const openOr = (label, href, fits, why) => {
     if (fits) return link(label, href);
@@ -793,16 +800,60 @@ function showEmailLinks(entry) {
     mailto = EmailLinks.mailtoUrl(draft);
   } catch {
     // encodeURIComponent throws on broken characters; the server refuses those, and Copy still works.
+    copy.className = 'approve';
     buttons.append(copy);
-    entry.status.append(buttons);
-    return;
+    return buttons;
   }
   const opens = [
     openOr('Open in Outlook web', outlook, EmailLinks.outlookFits(outlook), 'Too long for Outlook web, use Copy'),
     openOr('Open in mail app', mailto, EmailLinks.mailtoFits(mailto), 'Too long for mailto, use Copy'),
   ];
+  // With no link left, Copy is the way to get the text out, and looks it.
+  if (tooLong.length === opens.length) copy.className = 'approve';
   buttons.append(...(tooLong.length ? [copy, ...opens, ...tooLong] : [...opens, copy]));
-  entry.status.append(buttons);
+  return buttons;
+}
+
+// "Sent, remove the text": the room gives up the addresses and the text of an approved draft now, not when its time
+// is up. `after` runs with the recipients' domains once the server has done it.
+function forgetButton(recId, after) {
+  const forget = el('button', 'ghost', 'Sent, remove the text');
+  forget.type = 'button';
+  forget.title = "Removes the addresses and the text from the room now. This can't be undone.";
+  forget.addEventListener('click', async () => {
+    forget.disabled = true;
+    try {
+      const res = await fetch(`/api/recs/${encodeURIComponent(recId)}/forget`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      after(Array.isArray(data.domains) ? data.domains : []);
+    } catch (err) {
+      forget.disabled = false;
+      forget.textContent = `Couldn't remove it: ${err.message}`;
+    }
+  });
+  return forget;
+}
+const keptNote = (until) => `The addresses and the text stay in the room${whenText(until) ? ` until ${whenText(until)}` : ' for a few days'}, so you can come back to them. Agents can't read them there.`;
+
+// Approved email draft: buttons to open it in Outlook web or the mail app, and Copy. Nothing is sent from the room.
+// The text stays for a while after approving (the server says until when), so this also draws on a reload; a draft
+// whose text is gone, or one approved before texts were kept, says so.
+function showEmailLinks(entry) {
+  const r = entry.rec;
+  if (!Array.isArray(r.to) || typeof r.body !== 'string') {
+    entry.status.replaceChildren(el('span', null, 'Approved. Nothing was sent from the room. The addresses and the text have been removed from the room; to get the draft again, ask Coen for it.'));
+    return;
+  }
+  entry.status.replaceChildren(el('span', null, `Approved. Nothing was sent: open the draft and send it yourself${r.from ? ` from ${r.from}` : ''}.`));
+  const after = el('div', 'rec-actions email-kept');
+  after.append(el('span', 'rec-note', keptNote(entry.keepUntil)), forgetButton(r.recId, (domains) => {
+    for (const k of ['to', 'cc', 'body', 'from']) delete r[k];
+    r.domains = domains;
+    entry.el.querySelectorAll('.email-private').forEach((n) => n.remove());
+    showEmailLinks(entry);
+  }));
+  entry.status.append(emailButtons({ to: r.to, cc: r.cc || [], subject: r.subject, body: r.body }), after);
 }
 
 async function decide(entry, kind, body) {
@@ -2340,8 +2391,18 @@ function decisionRow(d) {
     tags.append(chat);
   }
   if (tags.children.length) row.append(tags);
-  // An email draft keeps its subject and the recipients' domains only: addresses and text went when it was decided.
-  if (d.action === 'email_draft') row.append(el('p', 'rec-note', `Subject: ${d.subject || ''} · to ${(d.domains || []).join(', ')} (domains only)`));
+  // An email draft has its subject and the recipients' domains. An approved one whose text the room still keeps can
+  // be opened, copied and removed from here too; any other has no addresses or text left.
+  if (d.action === 'email_draft') {
+    row.append(el('p', 'rec-note', `Subject: ${d.subject || ''} · to ${(d.domains || []).join(', ')} (domains only)`));
+    if (d.draft && Array.isArray(d.draft.to) && typeof d.draft.body === 'string') {
+      const kept = el('div', 'decision-email');
+      const after = el('div', 'rec-actions email-kept');
+      after.append(el('span', 'rec-note', keptNote(d.keepUntil)), forgetButton(d.recId, () => kept.replaceChildren(el('p', 'rec-note', 'The addresses and the text have been removed from the room.'))));
+      kept.append(emailButtons({ to: d.draft.to, cc: d.draft.cc || [], subject: d.draft.subject || '', body: d.draft.body }), after);
+      row.append(kept);
+    }
+  }
   const words = d.decision === 'dismissed' ? 'Closed, nothing was done.'
     : d.decision === 'revised' ? 'Sent back for a revision.'
     : d.action === 'email_draft' ? 'Nothing was sent from the room.'

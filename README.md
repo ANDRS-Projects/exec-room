@@ -25,7 +25,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Chat list** — every chat in a room is kept; go back to one from the Chats panel and give it a name
 - **GitHub** — issues and comments in the repos you allow per room (private repos only, unless you mark one as public)
 - **Notion** — posts saved as drafts in databases you configure, and long-form pages under pages you allow
-- **Email drafts** — to recipients you allow; the room never sends mail, you do
+- **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Claude plan or API key** — runs use your Claude plan by default; start the room with `npm run room:key` to pay with an Anthropic API key instead, with a spend cap per run and per day
 - **Local and locked down** — binds to 127.0.0.1, read-only tools, writes only in `drafts/`, secret files blocked
@@ -160,7 +160,7 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-671 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 671 checks match tests/expected.txt`.
+682 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 682 checks match tests/expected.txt`.
 
 ## Security
 
