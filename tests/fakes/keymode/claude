@@ -36,6 +36,7 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "keymode-calls.ndjson"), "a"
                           "notion_allowed": any("Notion" in t for t in flag("--allowedTools")),
                           "m365_allowed": any("Microsoft_365" in t for t in flag("--allowedTools")),
                           "tool_search": "ToolSearch" in flag("--tools"),
+                          "tools": flag("--tools"), "denied_bash": "Bash" in flag("--disallowedTools"), "denied_proc": "Read(//proc/**)" in flag("--disallowedTools"),
                           "note": note[start:note.find(" Anything else", start)] if start >= 0 else None,
                           # What the server put after the message about linked Notion pages, if anything.
                           "notion_block": prompt[prompt.find("[Added by the room server"):] if "linked Notion pages" in prompt else None}) + "\n")

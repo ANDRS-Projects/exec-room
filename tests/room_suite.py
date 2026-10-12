@@ -677,7 +677,7 @@ try:
         out("X default room note", run["note"])
         base = {"name": "Minimal", "members": None}
         for label, access in [("whole disk", {"files": ["/"]}), ("home folder", {"files": ["~"]}), ("missing folder", {"files": ["~/does-not-exist-xyz"]}),
-                              ("relative folder", {"files": ["Dev"]}), ("a file", {"files": [os.path.join(root, "package.json")]}),
+                              ("relative folder", {"files": ["Dev"]}), ("a file", {"files": [os.path.join(root, "package.json")]}), ("system folder", {"files": ["/dev"]}),
                               ("wildcard site", {"sites": ["*.github.com"]}), ("ip site", {"sites": ["127.0.0.1"]}), ("localhost", {"sites": ["localhost"]}),
                               ("url with path", {"sites": ["example.com/x"]}), ("not a list", {"sites": "example.com"})]:
             out(f"X invalid {label}", clean(call("/api/workspaces", {**base, "access": access})[:2]))
@@ -1573,6 +1573,7 @@ try:
         blocked = lambda p: any(r == f"Read(/{p})" or (r.endswith("/**)") and (p + "/").startswith(r[6:-4] + "/")) for r in ran["denied_read"])
         out("U a run is blocked from each folder with keys", {d: blocked(os.path.realpath(os.path.join(fake_home, d))) for d in off_limits})
         out("U a run can't switch its permission checks off", (ran["permission_mode"], ran["settings"]))
+        out("U no shell: a run's tools, and Bash and the system folders in the block list", (sorted(ran["tools"]), ran["denied_bash"], [d for d in ("/proc", "/sys", "/dev") if f"Read(/{d}/**)" in ran["denied_read"]]))
         for d in off_limits + ["notes"]:
             out(f"U as a room folder, ~/{d}", call("/api/workspaces", {"name": "Keys", "members": None, "access": {"files": [f"~/{d}"]}})[0])
         # Import: the owner's own agents are listed and read on request; a copy is saved like any room-built agent.
@@ -2183,6 +2184,17 @@ try:
         evs = ksay("hello")
         out("Q a plan chat starts fresh on the key, old job lines don't count", (kcalls()[-1]["resume"], kcalls()[-1]["key"], notices(evs), errors(evs), kends(evs)))
         out("Q the next message resumes the key's session", (ksay("again") and kcalls()[-1]["resume"], index()["old-chat"].get("sessionAuth")))
+        # What keeps the key out of an agent's reach: no tool on a run can run a command or read the environment
+        # (a rule in code, see SAFE_TOOLS), Bash and the system folders are in the block list as well, and the key
+        # is not in the environment of anything else the server starts. This server got its key as a variable.
+        run = kcalls()[-1]
+        safe = {"Read", "Grep", "Glob", "WebSearch", "WebFetch", "Agent", "ToolSearch", "Write", "Edit"}
+        out("Q a run's tools on a key", (sorted(run["tools"]), set(run["tools"]) <= safe, run["denied_bash"], run["denied_proc"]))
+        space = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+        call(f"/api/workspaces/{space['id']}", {"name": space["name"], "members": None, "targets": {**space["targets"], "repos": ["Example-Org/key-test"]}})
+        ksay("see https://github.com/Example-Org/key-test/issues/1")
+        gh_log = os.path.join(TMP, "keymode-gh.ndjson")
+        out("Q gh is started without the key", [json.loads(l) for l in open(gh_log)] if os.path.exists(gh_log) else "gh was not called")
     finally:
         s.stop()
     # Back on the plan (the default): no key, no cap, no folder of its own; the chat starts fresh once more.
