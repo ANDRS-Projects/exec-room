@@ -296,9 +296,12 @@ T invalid place without name: (400, '{"error":"each place needs a name (up to 80
 T invalid place is an output db: (400, '{"error":"x is an Output DB, not a page: pick it under \\"databases for posts\\""}')
 T invalid bad place: (400, '{"error":"\\"https://example.com/page\\" isn\'t a Notion page URL or id"}')
 T new room proposes nothing: {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''}
-T empty room note: {'issues': False, 'demo_app': False, 'private_app': False, 'drafts': False, 'log1': False, 'log2': False, 'gone_db': False, 'pages': False, 'exec_meetings': False, 'product_notes': False, 'public_rule': False, 'reads_issues': False, 'comments': False}
+T empty room note: {'issues': False, 'demo_app': False, 'private_app': False, 'drafts': False, 'log1': False, 'log2': False, 'gone_db': False, 'pages': False, 'exec_meetings': False, 'product_notes': False, 'public_rule': False, 'reads_issues': False, 'comments': False, 'told_settings': False, 'told_private_app': False, 'told_starts': ''}
 T set targets: (200, {'repos': ['Example-Org/private-app', 'Example-Org/public-site', 'other-org/tool'], 'publicRepos': [], 'notionDbs': ['output-log-2'], 'notionPlaces': [{'id': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'name': 'Product notes', 'for': 'specs'}], 'allowedRecipients': [], 'sendFrom': ''})
-T room note offers only its targets: {'issues': True, 'demo_app': False, 'private_app': True, 'drafts': True, 'log1': False, 'log2': True, 'gone_db': False, 'pages': True, 'exec_meetings': False, 'product_notes': True, 'public_rule': False, 'reads_issues': True, 'comments': True}
+T room note offers only its targets: {'issues': True, 'demo_app': False, 'private_app': True, 'drafts': True, 'log1': False, 'log2': True, 'gone_db': False, 'pages': True, 'exec_meetings': False, 'product_notes': True, 'public_rule': False, 'reads_issues': True, 'comments': True, 'told_settings': True, 'told_private_app': True, 'told_starts': "[Room note for Coen, not part of the owner's message: this r"}
+T settings told once, and not shown: ({'told_settings': False, 'told_private_app': False}, ['and once more'])
+T the chat remembers which settings Coen has: True
+T a change that isn't to the settings tells nothing: ({'told_settings': False, 'told_private_app': False}, True)
 T outside the room's targets: ['Coen\'s proposal couldn\'t be used (repo "demo-app" isn\'t one of this room\'s repos). Ask him to p', "Coen's proposal couldn't be used (this room can't save posts to Output log 1). Ask him to propo"]
 T issue repos: {'Private': 'Example-Org/private-app', 'Public': 'Example-Org/public-site', 'Other org': 'other-org/tool'}
 T private repo: (200, [('decision', None), ('rec_result', 'https://github.com/Example-Org/private-app/issues/999')], ['repo', 'view', 'Example-Org/private-app', '--json=visibility', '--jq=.visibility'])
@@ -498,6 +501,8 @@ S hidden connectors blocked: ['mcp__claude_ai_Claude_Docs', 'mcp__claude_ai_Gmai
 server stderr: room.config.json: skipped "hiddenConnectors" entry "Notion": the Notion and Microsoft 365 connectors are switched per room, not hidden here.
 S hidden connectors warnings: ['room.config.json: skipped "hiddenConnectors" entry "Notion": the Notion and Microsoft 365 connectors are switched per room, not hidden here.', 'room.config.json: skipped "hiddenConnectors" entry "not a name!": not a connector name (letters, digits, _ and - only).']
 S owner name from the config: Sam Lee
+T2 an old chat is told nothing and gets a stamp: (False, True)
+T2 a change after that is told: (True, "[Room note for Coen, not part of the owner's message: this r")
 U room list: ['<tmp>/c2/x', '~/y', '~/.ssh']
 U run note: What this room lets agents use: reading files in <tmp>/c2/x, ~/y, ~/.ssh, drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.
 U start-up check: [['~/.ssh']]

@@ -23,6 +23,7 @@ def rec(obj):
 
 
 prompt = args[args.index("-p") + 1]
+prompt = prompt.split("(End of the room note on settings.)]\n\n", 1)[-1]  # the room's own note on changed settings is not the message
 resumed = "--resume" in args
 files = []
 for path in re.findall(r"^- (/.+) \([^()]+\)$", prompt, re.M):

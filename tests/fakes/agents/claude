@@ -43,7 +43,7 @@ if agent == "room-scout":
     out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "S1", "name": "Write", "input": {"file_path": path, "content": "x"}}]}})
     out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "S1", "content": "ok"}]}})
     say("Saved the scan.")
-elif agent == "chief-operating-officer" and "finished" in args[args.index("-p") + 1]:
+elif agent == "chief-operating-officer" and "finished" in args[args.index("-p") + 1].split("(End of the room note on settings.)]\n\n", 1)[-1]:
     say("Noted.")
 else:
     out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "N1", "name": "Agent", "input": {"subagent_type": "room-nova", "prompt": "Your view?"}}]}})

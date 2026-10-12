@@ -813,6 +813,22 @@ try:
         call("/api/coen", {"text": "hello again"})
         events(call("/api/stream")[1])
         out("T room note offers only its targets", offered())
+        # The chat began before the targets were set, and a resumed chat keeps the room note it began with: Coen is told
+        # the room's settings once, in front of the next message (above: told_settings), not shown in the chat and not
+        # again while nothing changes. The chat's record remembers which settings he has.
+        call("/api/coen", {"text": "and once more"})
+        evs = events(call("/api/stream")[1])
+        told = lambda: {k: offered()[k] for k in ("told_settings", "told_private_app")}
+        out("T settings told once, and not shown", (told(), [e["text"] for e in evs if e["type"] == "user"]))
+        chat_id = json.loads(call("/api/room")[1])["roomId"]
+        seen = lambda: json.load(open(os.path.join(TMP, "data-targets", "rooms", "index.json")))["rooms"][chat_id].get("settingsSeen", "")
+        first = seen()
+        out("T the chat remembers which settings Coen has", bool(re.fullmatch(r"[0-9a-f]{12}", first)))
+        call(f"/api/workspaces/{room}", {"name": "Product, renamed", "members": None, "targets": targets})
+        call("/api/coen", {"text": "same settings, new name"})
+        events(call("/api/stream")[1])
+        out("T a change that isn't to the settings tells nothing", (told(), seen() == first))
+        call(f"/api/workspaces/{room}", {"name": "Product", "members": None, "targets": targets})
         call("/api/coen", {"text": "wrong ones"})
         evs = events(call("/api/stream")[1])
         out("T outside the room's targets", [e["text"][:95] for e in evs if e["type"] == "notice"])
@@ -1484,6 +1500,29 @@ try:
     s = Server("access", data_name="data-named", config=named_config)
     try:
         out("S owner name from the config", json.loads(call("/api/room")[1])["owner"])
+    finally:
+        s.stop()
+    # T2: a chat saved before chats remembered their settings (a session, no `settingsSeen`). Its first message tells
+    # Coen nothing, as there is no telling whether anything changed, and gives it a stamp; a change after that is told.
+    data = os.path.join(TMP, "data-settings-old")
+    os.makedirs(os.path.join(data, "rooms"))
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": "session-from-before", "title": None,
+                   "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}}}, f)
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump(default_rooms(), f)
+    s = Server("targets", data_name="data-settings-old")
+    try:
+        offered = lambda: [json.loads(l) for l in open(os.path.join(TMP, "targets-calls.ndjson"))][-1]
+        seen = lambda: json.load(open(os.path.join(data, "rooms", "index.json")))["rooms"]["old-chat"].get("settingsSeen", "")
+        call("/api/coen", {"text": "hello from an old chat"})
+        events(call("/api/stream")[1])
+        out("T2 an old chat is told nothing and gets a stamp", (offered()["told_settings"], bool(seen())))
+        space = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+        call(f"/api/workspaces/{space['id']}", {"name": space["name"], "members": None, "access": {**space["access"], "webSearch": not space["access"]["webSearch"]}})
+        call("/api/coen", {"text": "and after a change"})
+        events(call("/api/stream")[1])
+        out("T2 a change after that is told", (offered()["told_settings"], offered()["told_starts"]))
     finally:
         s.stop()
     # U: paths are shown with ~ only for the home folder and what's inside it: with HOME=<tmp>/c, <tmp>/c2/x stays as it
