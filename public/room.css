@@ -43,7 +43,8 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .space-menu-label { margin: 4px 10px 2px; font-size: 11px; color: var(--muted); }
 .space-menu hr { border: none; border-top: 1px solid var(--border); margin: 6px 2px; }
 .space-item { text-align: left; border: none; background: none; border-radius: 6px; padding: 7px 10px; font-size: 13px; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 8px; }
-.space-item:hover, .space-item:focus-visible { background: var(--bg); outline: none; }
+.space-item:hover { background: var(--bg); }
+.space-item:focus-visible { background: var(--bg); outline: 2px solid var(--coen); outline-offset: -2px; }
 .space-item.current { font-weight: 600; }
 /* A room's description under its name in the menu, and as the first line of an empty chat. */
 .space-item-text { display: flex; flex-direction: column; min-width: 0; }
@@ -97,8 +98,10 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .room-summary { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); font-size: 12.5px; line-height: 1.5; }
 .room-summary b { font-weight: 600; }
 .room-summary .out { background: #FAEEDA; color: #633806; border-bottom: 1px solid #EFC98B; border-radius: 3px; padding: 0 3px; }
-.space-tabs { display: flex; gap: 2px; }
-.space-tab { display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px; padding: 9px 12px 8px; border: none; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; background: none; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
+/* On a narrow dialog the row scrolls sideways. The row, not each tab, sits over the line under it: a scrolling box
+   cuts off what sticks out of it, and that was the selected tab's underline. */
+.space-tabs { display: flex; gap: 2px; overflow-x: auto; overflow-y: hidden; margin-bottom: -1px; }
+.space-tab { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 9px 12px 8px; border: none; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; background: none; font: inherit; font-size: 13px; color: var(--muted); cursor: pointer; }
 .space-tab:hover { color: var(--text); }
 .space-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
 .space-tab:focus-visible { outline: 2px solid var(--coen); outline-offset: -2px; }
@@ -119,7 +122,7 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 /* Background tags on a row: the proposer in that agent's colour (as on their cards), and the chat with a dot in one
    of the 8 tones, the same for every row from that chat. */
 .decision-tags { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.decision-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.decision-tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .decision-tag.by { --accent: var(--coen); --fill: var(--coen-fill); background: var(--fill); color: var(--accent); }
 .decision-tag.by.custom { --accent: var(--tone, var(--custom)); --fill: var(--tone-fill, var(--custom-fill)); }
 .decision-tag.chat { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); color: var(--muted); }
@@ -135,8 +138,8 @@ button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: 
 .sec { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .sec-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); border-radius: 7px 7px 0 0; font-size: 13px; }
 .sec-title { margin: 0; flex: none; font-size: 13px; font-weight: 600; }
-.sec .count, .space-tab .count, .field-label .count { flex: none; font-size: 11px; font-weight: 400; line-height: 18px; padding: 0 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); font-variant-numeric: tabular-nums; }
-.space-tab .count { font-size: 10.5px; line-height: 16px; padding: 0 6px; }
+.sec .count, .space-tab .count, .field-label .count { flex: none; font-size: 12px; font-weight: 400; line-height: 18px; padding: 0 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); font-variant-numeric: tabular-nums; }
+.space-tab .count { font-size: 11px; line-height: 16px; padding: 0 6px; }
 .field-label .count { margin-left: 4px; }
 .sec .count.on, .space-tab .count.on, .field-label .count.on { color: var(--text); }
 .sec .hint { min-width: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -145,7 +148,7 @@ button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: 
 .sec-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
 .sec-note.key-off { margin-top: 6px; color: #633806; }
 /* Shown only while runs are paid with an API key (pay-as-you-go), next to the room's name. */
-.auth-badge { flex: none; font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: #FAEEDA; color: #633806; white-space: nowrap; cursor: help; }
+.auth-badge { flex: none; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: #FAEEDA; color: #633806; white-space: nowrap; cursor: help; }
 .sec-sub { margin: 4px 0 0; font-size: 13px; font-weight: 600; }
 .sec-sub small { font-weight: 400; color: var(--muted); margin-left: 4px; }
 .sec.outside { border-color: #EFC98B; }
@@ -180,7 +183,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .chat-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; border: none; background: none; padding: 7px 8px; font: inherit; color: var(--text); text-align: left; cursor: pointer; border-radius: 8px; }
 .chat-title { font-size: 13px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 .chat-row.current .chat-title { font-weight: 600; }
-.chat-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 11px; color: var(--muted); }
+.chat-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 12px; color: var(--muted); }
 .chat-flag { border-radius: 999px; padding: 0 6px; background: var(--bg); border: 1px solid var(--border); white-space: nowrap; }
 .chat-row.current .chat-flag { background: var(--surface); }
 .chat-flag.waiting { color: var(--coen); border-color: var(--coen); }
@@ -279,11 +282,15 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .rail { display: flex; flex-direction: column; min-height: 0; gap: 10px; }
 .chips { display: flex; flex-direction: column; gap: 6px; }
 .layout.rail-open .chips { flex-direction: row; flex-wrap: wrap; }
-.chips-label { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.chips-label { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .layout.rail-open .chips-label { flex-basis: 100%; margin-top: 2px; }
 .chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 3px 10px 3px 3px; font-size: 12px; cursor: pointer; color: var(--text); }
-.chip img { border-radius: 50%; }
-.chips-slot { display: contents; }
+.chip img { border-radius: 50%; flex: none; }
+/* A long name ends in an ellipsis instead of wrapping inside the pill; the whole name is in the chip's title. */
+.chip { min-width: 0; max-width: 100%; }
+.chip > span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The two halves of the rail are groups for a screen reader only: their chips lay out as the rail's own. */
+.chips-slot, .chips-group { display: contents; }
 /* Room-built agents have no SVG avatar: their initial in a circle, in their role's colours. */
 .initial { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; background: var(--tone-fill, var(--custom-fill)); color: var(--tone, var(--custom)); }
 .initial.maker { background: var(--tone-fill, var(--maker-fill)); color: var(--tone, var(--maker)); }
@@ -303,7 +310,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .card-head { display: flex; align-items: center; gap: 8px; }
 .card-head img { width: 28px; height: 28px; border-radius: 50%; }
 .card-head .name { font-weight: 600; font-size: 13px; }
-.pill { margin-left: auto; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); }
+.pill { margin-left: auto; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--bg); color: var(--muted); }
 .pill.working { background: var(--fill); color: var(--accent); }
 .pill.replied { background: var(--fill); color: var(--accent); }
 .pill.failed, .pill.stopped, .pill.interrupted { background: #FCEBEB; color: #791F1F; }
@@ -317,7 +324,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .focus-head { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .focus-head img, .focus-head .initial { width: 28px; height: 28px; border-radius: 50%; }
 .focus-head .name { font-weight: 600; }
-.focus-head .via { font-size: 11px; color: var(--muted); }
+.focus-head .via { font-size: 12px; color: var(--muted); }
 .focus-head .pill { margin-left: 4px; }
 
 .rec { align-self: stretch; border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }

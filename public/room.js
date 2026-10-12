@@ -85,6 +85,24 @@ function clearProposalHint() {
   coenStatus.textContent = 'thinking…';
 }
 
+// ---- Spoken updates. A screen reader hears nothing of a turn by itself: the thread redraws as text streams, so
+// it is no live region. Instead one hidden line (#sr-announce) gets a short sentence at the few moments that
+// matter; the sentences are built in announce.js. Only for what happens now: a saved chat drawn on load, and what
+// a running job had already done when the page joined it, stay silent.
+const srAnnounce = $('sr-announce');
+let sayNow = false;  // true from the owner's first message or decision on this page, or once a joined job has caught up
+let sayQueue = [];
+function say(text) {
+  if (!sayNow || !text) return;
+  // What arrives together (two proposals and the end of the turn) is spoken as one update, and the line is emptied
+  // first so that the same sentence twice in a row is spoken twice.
+  if (!sayQueue.length) {
+    srAnnounce.textContent = '';
+    setTimeout(() => { srAnnounce.textContent = sayQueue.join(' '); sayQueue = []; }, 150);
+  }
+  sayQueue.push(text);
+}
+
 // ---- DOM helpers
 
 function el(tag, cls, text) {
@@ -285,6 +303,7 @@ function addConsult(who, cid, prompt, focus = false) {
     head.append(avatarFor(who), el('span', 'name', nameOf(who)), el('span', 'via', 'via Coen'), msg.pill);
     msg.el.appendChild(head);
     t.cards.set(cid, msg);
+    say(Announce.handOff(nameOf(who)));
     return;
   }
   if (!t.marker) {
@@ -338,6 +357,9 @@ function endTurn(ev) {
       else setCardStatus(card, ev.status === 'error' ? 'failed' : ev.status);
     }
     if (turn.marker) updateMarker(turn);
+    const cards = [...turn.cards.values()];
+    const answered = cards.filter((c) => c.inline && c.status === 'replied').pop();
+    say(Announce.turnEnd(ev.status, cards.filter((c) => !c.inline).map((c) => ({ name: nameOf(c.who), maker: MAKERS.has(c.who), replied: c.status === 'replied' })), answered ? nameOf(answered.who) : ''));
   }
   const parts = [];
   if (ev.turns) parts.push(`${ev.turns} turn${ev.turns === 1 ? '' : 's'}`);
@@ -605,6 +627,7 @@ function addRecCard(rec) {
   const entry = { rec, el: card, pill, actions, form, dismissForm, status, said, more };
   recCards.set(rec.recId, entry);
   setRecState(entry, rec.state || 'pending');
+  if ((rec.state || 'pending') === 'pending') say(Announce.proposal(rec.by ? nameOf(rec.by) : 'Coen', title.replace(/^Proposal · /, '').replace(/ → /g, ' then '), rec.summary));
 
   approve.addEventListener('click', () => decide(entry, 'approve', {}));
   // One form at a time: opening one closes the other.
@@ -714,6 +737,11 @@ function showRecResult(ev) {
     entry.status.append(el('span', null, ev.drafts.length ? 'Saved: ' : 'Finished without saving a draft.'));
     for (const name of ev.drafts) addDraftChip({ el: entry.status }, name);
   }
+  // Spoken once the action is over (not while a maker is still at it): the pill's word and the line under it,
+  // without the links' own labels.
+  if (['done', 'failed', 'stopped'].includes(ev.state)) {
+    say(Announce.result(REC_STATES[ev.state], [...entry.status.querySelectorAll('span')].map((s) => s.textContent.trim()).join(' ')));
+  }
 }
 
 // Approved email draft: buttons to open it in Outlook web or the mail app, and Copy. Nothing is sent from the room.
@@ -776,6 +804,7 @@ function showEmailLinks(entry) {
 
 async function decide(entry, kind, body) {
   entry.actions.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+  sayNow = true;
   try {
     const res = await fetch(`/api/recs/${encodeURIComponent(entry.rec.recId)}/${kind}`, {
       method: 'POST',
@@ -785,6 +814,7 @@ async function decide(entry, kind, body) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       entry.status.replaceChildren(el('span', 'err-text', data.error || `HTTP ${res.status}`));
+      say(entry.status.textContent);
       return;
     }
     for (const ev of data.events) handle(ev);
@@ -830,6 +860,8 @@ $('draft-close').addEventListener('click', () => viewer.close());
 // ---- Composer: textarea grows to ~10 lines, Enter sends, Shift+Enter is a new line.
 
 function setBusy(busy) {
+  // A button that gets disabled drops the keyboard focus to the page: hand it to the message box first.
+  if (busy && document.activeElement === sendBtn) input.focus();
   sendBtn.disabled = busy;
   attachBtn.disabled = busy;
   stopBtn.hidden = !busy;
@@ -937,6 +969,8 @@ async function send() {
   picked = [];
   attachProblem('');
   drawPicked();
+  sayNow = true;
+  say('Sent.');
   await attach();
 }
 
@@ -952,8 +986,12 @@ async function attach() {
     const decoder = new TextDecoder();
     let buf = '';
     for (;;) {
+      const asked = performance.now();
       const { value, done } = await reader.read();
       if (done) break;
+      // A page that joins a running job (a reload, another room) is first sent, at once, what the job did so far,
+      // and only then what happens now: the first read that had to wait is the first one worth speaking.
+      if (performance.now() - asked > 250) sayNow = true;
       buf += decoder.decode(value, { stream: true });
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
@@ -962,7 +1000,8 @@ async function attach() {
         if (!line.trim()) continue;
         let ev;
         try { ev = JSON.parse(line); } catch { continue; }
-        if (ev.type === 'end') ended = true;
+        // A job that has ended is not followed at all, so its end always happens now.
+        if (ev.type === 'end') { ended = true; sayNow = true; }
         if (ev.type === 'followup') followup = true;
         handle(ev);
       }
@@ -1083,7 +1122,10 @@ function renderCustomChips() {
     chip.type = 'button';
     chip.dataset.key = a.key;
     chip.title = `${a.name} · ${a.does} (added in the room; click to edit)`;
-    chip.append(avatarFor(a.key), el('span', null, a.name));
+    // What the agent does is in the hover text; a screen reader gets it as part of the name.
+    const name = el('span', null, a.name);
+    if (a.does) name.appendChild(el('span', 'sr-only', `, ${a.does}`));
+    chip.append(avatarFor(a.key), name);
     chip.addEventListener('click', () => openAgentEditor(a));
     slots[a.role].appendChild(chip);
   }
@@ -1495,7 +1537,6 @@ function applyMembership() {
 function menuItem(label, onClick, cls = '') {
   const b = el('button', `space-item${cls}`, label);
   b.type = 'button';
-  b.setAttribute('role', 'menuitem');
   b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
   spaceMenu.appendChild(b);
   return b;
