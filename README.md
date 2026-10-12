@@ -162,7 +162,7 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-712 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 712 checks match tests/expected.txt`.
+717 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 717 checks match tests/expected.txt`.
 
 ## Security
 

@@ -48,6 +48,29 @@ out({"type": "system", "subtype": "init", "session_id": ("key-session" if key el
 if coen and "leak on stderr" in prompt:
     sys.stderr.write(f"request failed: x-api-key {key} was refused\n")
     sys.exit(1)
+if coen and "pad stderr" in prompt:
+    # 8 KB of error output with the key lying across the room's cut: its first half would be left, and no longer match.
+    sys.stderr.write("x" * (8 * 1024 - 6) + str(key) + " tail\n")
+    sys.exit(1)
+if coen and "leak everywhere" in prompt:
+    # The key in a reply (cut over two pieces of text), in a tool's details, in a draft and in a proposal.
+    half = len(key) // 2
+    tool = lambda i, name, inp: (out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": i, "name": name, "input": inp}]}}),
+                                 out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": i, "content": "ok"}]}}))
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "The key is " + key[:half]}}})
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": key[half:] + ", and so on."}}})
+    tool("L1", "WebFetch", {"url": f"https://example.com/?k={key}", "prompt": "x"})
+    for name in ("2026-10-13-coen-key-leak.md", "2026-10-13-coen-clean.md"):
+        path = os.path.join(os.getcwd(), "drafts", name)
+        with open(path, "w") as f:
+            f.write(f"notes\n{key}\n" if "leak" in name else "notes\n")
+        tool("W" + name[11:15], "Write", {"file_path": path, "content": "x"})
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+    out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Proposal.\n```recommendation\n" + json.dumps(
+        {"action": "github_issue", "repo": "Example-Org/key-test", "summary": f"Post with {key}", "title": "A title", "body": f"Use {key} in it."}) + "\n```\n"}}})
+    out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})
+    sys.exit(0)
 if coen and "leak in the result" in prompt:
     out({"type": "result", "is_error": True, "num_turns": 1, "total_cost_usd": 0, "result": f"Invalid API key {key} · Fix external API key", "session_id": "x"})
     sys.exit(1)
