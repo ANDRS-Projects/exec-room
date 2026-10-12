@@ -199,6 +199,9 @@ try:
         out("A page, chip groups", re.findall(r'<div class="chips-group" role="group" (aria-label(?:ledby)?="[^"]+")>', page))
         out("A page, makers' group label exists", 'id="chips-label-makers"' in page)
         out("A page, no menu roles", ("role=\"menu" in page, "aria-haspopup" in page, "'menuitem'" in str(call("/room.js")[1])))
+        # A field's edge is the only thing that shows where it is, so it has its own colour, 3:1 against white (#9090a8).
+        css = str(call("/room.css")[1])
+        out("A page, fields have their own edge colour", (re.findall(r'--border-control: (#\w+);', css), len(re.findall(r'border: 1px solid var\(--border-control\)', css))))
         out("A foreign origin", call("/api/coen", {"text": "x"}, {"Origin": "https://evil.example"})[:2])
         out("A foreign host", call("/api/room", headers={"Host": "attacker.example"})[:2])
         out("A form post", call("/api/coen", raw=b"text=hi", headers={"content-type": "text/plain"})[:2])

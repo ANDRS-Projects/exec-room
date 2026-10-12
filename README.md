@@ -29,6 +29,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Claude plan or API key** — runs use your Claude plan by default; start the room with `npm run room:key` to pay with an Anthropic API key instead, with a spend cap per run and per day
 - **Local and locked down** — binds to 127.0.0.1, read-only tools, writes only in `drafts/`, secret files blocked
+- **Keyboard and screen reader** — everything is reachable with the keyboard, and a screen reader is told when a turn ends and when a proposal is waiting (see [Accessibility](#accessibility))
 
 
 ## Screenshots
@@ -141,13 +142,25 @@ Environment variables are listed in `.env.example`. The server reads them from y
 
 **Readable in every room.** Runs start in the folder you cloned the room into, so every agent in every room can read that folder, whatever folders the room has: the room's own code and docs, `room.config.json` (your Notion database ids and the 1Password reference to the token, not the token itself), and `drafts/`, including drafts written in other rooms. Only `data/`, secret-looking files (`.env`, keys and the like) and `.git` are excluded. Every agent can also read `~/.claude/agents`, `~/.claude/skills` and `~/.claude/knowledge` (and what those folders link to). Keep nothing in any of these places that an agent in another room shouldn't see.
 
+## Accessibility
+
+The room is built to be usable with a keyboard and a screen reader. It has not been audited, and it makes no claim of conformance to WCAG.
+
+**Keyboard.** The controls are buttons, links and fields in the page's own order, so Tab reaches them and each shows a focus ring. Enter sends a message and Shift+Enter starts a new line. The tabs in Room settings move with the arrow keys; Escape closes the room switcher, the chat list on a narrow window, the dialogs and the Dismiss form on a proposal card. When a turn starts, focus stays in the message box.
+
+**Screen reader.** While a turn runs, a screen reader is told only what matters, in a short sentence each time: that your message went out, that a focus agent took over, how the turn ended ("Coen replied.", or who was consulted and how many replied), that a proposal is waiting for your decision, and how an approved action ended. The text of a reply is not read out as it streams in: read it in the chat when the turn is over. Opening a saved chat announces nothing. The agents in the rail are two groups, advisors and makers, and each agent's name includes what it does.
+
+**Reading.** The state of a proposal, a consulted agent or a chat is written out in a label ("waiting for you", "done", "failed"), not shown by colour alone. Those labels are 12px or larger, the fields you type in have an edge at 3:1 against white, and the pulsing "working" dots stand still when your system asks for reduced motion.
+
+**Known gaps.** The spoken updates were checked by reading what the page hands to a screen reader, not yet in a full session with VoiceOver or NVDA. The outlines of cards, buttons and agent chips are lighter than 3:1; buttons and chips carry a text label, so the outline is not the only cue. Some secondary text is 11px. A room that is working elsewhere shows a dot in the room switcher, with "Working now" only as hover text. There is no dark mode and no high-contrast theme. If something doesn't work with your setup, please open an issue.
+
 ## Tests
 
 ```bash
 npm test
 ```
 
-583 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 583 checks match tests/expected.txt`.
+665 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 665 checks match tests/expected.txt`.
 
 ## Security
 
