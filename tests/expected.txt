@@ -498,7 +498,7 @@ V room without settings, default room: [('exec', {'files': [], 'webSearch': Fals
 V room without settings, its run: (['Read', 'Grep', 'Glob', 'Agent', 'Write', 'Edit'], ['Read(/<root>/drafts/**)', 'Agent', 'Write(drafts/**)', 'Edit(drafts/**)'], "What this room lets agents use: reading files in drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.")
 S example config starts the room: (200, [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})], [])
 S hidden connectors, room starts: 200
-S hidden connectors blocked: ['mcp__claude_ai_Claude_Docs', 'mcp__claude_ai_Gmail', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Google_Drive', 'mcp__claude_ai_Google_Calendar', 'mcp__claude_ai_My_Connector', 'mcp__claude_ai_Microsoft_365']
+S hidden connectors blocked: ['mcp__claude_ai_Claude_Docs', 'mcp__claude_ai_Gmail', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Google_Drive', 'mcp__claude_ai_Google_Calendar', 'mcp__claude_ai_My_Connector', 'mcp__claude_ai_Notion', 'mcp__claude_ai_Microsoft_365']
 server stderr: room.config.json: skipped "hiddenConnectors" entry "Notion": the Notion and Microsoft 365 connectors are switched per room, not hidden here.
 S hidden connectors warnings: ['room.config.json: skipped "hiddenConnectors" entry "Notion": the Notion and Microsoft 365 connectors are switched per room, not hidden here.', 'room.config.json: skipped "hiddenConnectors" entry "not a name!": not a connector name (letters, digits, _ and - only).']
 S owner name from the config: Sam Lee
@@ -510,6 +510,12 @@ U start-up check: [['~/.ssh']]
 U a run is blocked from each folder with keys: {'.ssh': True, '.aws': True, '.gnupg': True, '.config': True, 'Library/Mail': True, '.docker': True, '.kube': True, '.azure': True}
 U a run can't switch its permission checks off: ('default', '{"disableAllHooks":true,"permissions":{"disableBypassPermissionsMode":"disable"}}')
 U a run is not given the room's own variables: []
+U tools learned in an earlier run are blocked: ['mcp__claude_ai_Notion__notion-learned-before']
+U new connector tools are said in the chat: ["A connector has 2 tools the room didn't know: notion-brand-new, outlook_brand_new. Agents couldn't use them (only the read tools a room allows work), and from the next message on they are hidden from agents too."]
+U and kept: ['mcp__claude_ai_Notion__notion-learned-before', 'mcp__claude_ai_Notion__notion-brand-new', 'mcp__claude_ai_Microsoft_365__outlook_brand_new']
+U and logged: [['mcp__claude_ai_Notion__notion-brand-new', 'mcp__claude_ai_Microsoft_365__outlook_brand_new']]
+U the next run has them blocked, and nothing is said twice: (['mcp__claude_ai_Microsoft_365__outlook_brand_new', 'mcp__claude_ai_Notion__notion-brand-new', 'mcp__claude_ai_Notion__notion-learned-before'], [])
+U a tool a run tried and was refused is learned too: (["A connector has a tool the room didn't know: notion-brand-late"], 'mcp__claude_ai_Notion__notion-brand-late')
 U no shell: a run's tools, and Bash and the system folders in the block list: (['Agent', 'Edit', 'Glob', 'Grep', 'Read', 'Write'], True, ['/proc', '/sys', '/dev'])
 U as a room folder, ~/.ssh: 400
 U as a room folder, ~/.aws: 400
@@ -682,12 +688,14 @@ Q the next message resumes the key's session: ('key-session', 'api-key')
 Q a run's tools on a key: (['Agent', 'Edit', 'Glob', 'Grep', 'Read', 'WebFetch', 'WebSearch', 'Write'], True, True, True)
 Q gh is started without the key: [{'args': ['issue', 'view'], 'given': ['GH_HOST', 'SUITE_EXTRA', 'PATH', 'HOME']}]
 Q a run on a key: nothing of the room's or of other tools, and no MCP servers: (['SUITE_EXTRA'], True, "the room's key", False)
-Q on the plan the page gets no caps: ('subscription', None)
+Q on the plan the page gets no caps: ('subscription', None, None)
 Q a key chat starts fresh on the plan: (None, None, False, None, None, ["This chat was last used with an API key, and Coen's memory of it doesn't carry over to the Claude plan. The history above is still here, but he starts fresh from this message."])
 Q the plan's cost is not spend, the chat's earlier spend stays: [{'status': 'ok', 'costUsd': 0.01, 'totalCostUsd': 50.02, 'keyCostUsd': 0.01}]
 Q Notion reading is back: (True, 'Notion, read-only; no Microsoft 365; writing only in drafts/.')
 Q on the plan a Notion link is left to the connector: ([], None)
 Q the plan's job line has no mode: (None, None)
+Q2 started without its Notion token: True
+server stderr: Notion token not available from 1Password: the Notion draft action is disabled.
 S2 the check runs once, outside the repo, with the code in its folder: (1, False, True, True)
 S2 it runs like a job: no tools, no connectors, the small model, both switches: {'tools': '', 'no_connectors': True, 'model': 'claude-haiku-4-5-20251001', 'setting_sources': 'project', 'switches': {'CLAUDE_CODE_DISABLE_CLAUDE_MDS': '1', 'CLAUDE_CODE_DISABLE_AUTO_MEMORY': '1'}}
 S2 its folder is gone afterwards: True

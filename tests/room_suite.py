@@ -110,8 +110,8 @@ class Server:
                 json.dump(TEST_AGENTS, f)
         env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", scenario) + os.pathsep + os.environ["PATH"],
                    PORT=str(PORT), ROOM_DATA_DIR=data, ROOM_TEST_TMP=TMP,
-                   ROOM_NOTION_TOKEN="fake-token", ROOM_CONFIG_FILE=config or os.path.join(TESTS, "room.config.test.json"),
-                   **{"ROOM_CONTEXT_CHECK": "off", **(extra or {})})
+                   ROOM_CONFIG_FILE=config or os.path.join(TESTS, "room.config.test.json"),
+                   **{"ROOM_NOTION_TOKEN": "fake-token", "ROOM_CONTEXT_CHECK": "off", **(extra or {})})
         self.p = subprocess.Popen(["node", "room-server.js"], cwd=opts.root, env=env, stdout=subprocess.DEVNULL,
                                   stderr=subprocess.PIPE, text=True, start_new_session=True)
         for _ in range(100):
@@ -1557,6 +1557,9 @@ try:
     off_limits = [".ssh", ".aws", ".gnupg", ".config", "Library/Mail", ".docker", ".kube", ".azure"]
     for d in off_limits + ["y", "notes"]:
         os.makedirs(os.path.join(fake_home, d), exist_ok=True)
+    # Connector tools the room learned in an earlier run, in a file that also holds things that are no tool names.
+    with open(os.path.join(data, "connector-tools.json"), "w") as f:
+        json.dump({"tools": ["mcp__claude_ai_Notion__notion-learned-before", 5, "Bash", "mcp__other__learned", "mcp__claude_ai_Notion__notion-learned-before"]}, f)
     path_before = os.environ["PATH"]
     os.environ["PATH"] = real_bin + os.pathsep + path_before  # Server() can't take PATH in extra (dict() would get it twice)
     try:
@@ -1574,6 +1577,24 @@ try:
         out("U a run is blocked from each folder with keys", {d: blocked(os.path.realpath(os.path.join(fake_home, d))) for d in off_limits})
         out("U a run can't switch its permission checks off", (ran["permission_mode"], ran["settings"]))
         out("U a run is not given the room's own variables", ran["leftover_env"])
+        # A connector gains tools without telling anyone. A run reports the tools it starts with; a Notion or Microsoft
+        # 365 tool that is neither allowed nor blocked yet is said in the chat once, kept in data/connector-tools.json
+        # and blocked from the next run on. Tools the room already knew, other servers' tools and odd names are left.
+        out("U tools learned in an earlier run are blocked", ran["denied_learned"])
+        job = json.loads(call("/api/coen", {"text": "connector tools"})[1])["jobId"]
+        call("/api/stream")
+        mine = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+        out("U new connector tools are said in the chat", [e["text"] for e in mine if e["type"] == "notice"])
+        out("U and kept", json.load(open(os.path.join(data, "connector-tools.json")))["tools"])
+        out("U and logged", [w["tools"] for w in map(json.loads, open(os.path.join(data, "jobs.ndjson"))) if w.get("check") == "connector tools the room did not know"])
+        job = json.loads(call("/api/coen", {"text": "connector tools again"})[1])["jobId"]
+        call("/api/stream")
+        mine = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+        out("U the next run has them blocked, and nothing is said twice", ([json.loads(l) for l in open(os.path.join(TMP, "access-calls.ndjson"))][-1]["denied_learned"], [e["text"] for e in mine if e["type"] == "notice"]))
+        job = json.loads(call("/api/coen", {"text": "refused tool"})[1])["jobId"]
+        call("/api/stream")
+        mine = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+        out("U a tool a run tried and was refused is learned too", ([e["text"][:62] for e in mine if e["type"] == "notice"], json.load(open(os.path.join(data, "connector-tools.json")))["tools"][-1]))
         out("U no shell: a run's tools, and Bash and the system folders in the block list", (sorted(ran["tools"]), ran["denied_bash"], [d for d in ("/proc", "/sys", "/dev") if f"Read(/{d}/**)" in ran["denied_read"]]))
         for d in off_limits + ["notes"]:
             out(f"U as a room folder, ~/{d}", call("/api/workspaces", {"name": "Keys", "members": None, "access": {"files": [f"~/{d}"]}})[0])
@@ -2206,7 +2227,7 @@ try:
     # Back on the plan (the default): no key, no cap, no folder of its own; the chat starts fresh once more.
     s = Server("keymode", {"ANTHROPIC_API_KEY": "sk-some-other-key", "ROOM_ANTHROPIC_API_KEY": KEY}, data_name="data-keymode-old")
     try:
-        out("Q on the plan the page gets no caps", (kroom()["auth"], kroom().get("caps")))
+        out("Q on the plan the page gets no caps", (kroom()["auth"], kroom().get("caps"), kroom().get("notionTokenMissing")))
         evs = ksay("hello")
         run = kcalls()[-1]
         out("Q a key chat starts fresh on the plan", (run["resume"], run["key"], run["room_key_var"], run["config_dir"], run["budget"], notices(evs)))
@@ -2216,6 +2237,13 @@ try:
         evs = ksay(f"See https://www.notion.so/{PAGE}")
         out("Q on the plan a Notion link is left to the connector", (notices(evs), kcalls()[-1]["notion_block"]))
         out("Q the plan's job line has no mode", (job_log()[-1].get("auth"), index()["old-chat"].get("sessionAuth")))
+    finally:
+        s.stop()
+    # A Notion token that was set up and can't be read at start-up (1Password locked): the room starts without it,
+    # and the page is told, as the terminal's line about it goes unread. A room with its token is told nothing.
+    s = Server("keymode", {"ROOM_NOTION_TOKEN": "", "ROOM_NOTION_TOKEN_REF": "op://Test/notion/credential"}, data_name="data-notion-token")
+    try:
+        out("Q2 started without its Notion token", kroom().get("notionTokenMissing"))
     finally:
         s.stop()
 
