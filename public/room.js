@@ -2596,6 +2596,11 @@ $('space-remove').addEventListener('click', async () => {
     if (Array.isArray(room.contextLeak) && room.contextLeak.length) {
       appendToThread(el('div', 'notice', `Heads-up: agents in every room are being given ${room.contextLeak.filter((x) => typeof x === 'string').join(' and ')} that were written for Claude Code, not for the room. The switch that keeps them out stopped working, probably after a Claude Code update. Ask Claude Code to look at the room's start-up check.`));
     }
+    // The room was set up with a Notion token and could not read it when it started (1Password asks for approval
+    // when it is locked, and the room waits a minute). Notion drafts and pages can't be saved until a restart.
+    if (room.notionTokenMissing === true) {
+      appendToThread(el('div', 'notice', "Heads-up: the room started without its Notion token, because 1Password didn't hand it over in time. Notion drafts and pages can't be saved until the room is restarted and the 1Password prompt is approved. Everything else works."));
+    }
     // A finished job with no end event was cut off (the server stopped mid-answer).
     if (turn && !turn.ended) endTurn({ type: 'end', status: 'interrupted' });
     thread.scrollTop = thread.scrollHeight;

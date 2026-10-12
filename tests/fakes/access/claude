@@ -26,6 +26,7 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "access-calls.ndjson"), "a")
     log.write(json.dumps({"agent": agent, "tools": flag("--tools"), "allowed": flag("--allowedTools"),
                           "denied_notion": [t for t in flag("--disallowedTools") if "notion-search" in t],
                           "denied_m365": [t for t in flag("--disallowedTools") if "Microsoft_365" in t],
+                          "denied_learned": sorted(t for t in flag("--disallowedTools") if "brand" in t or "learned" in t),
                           "denied_connectors": [t for t in flag("--disallowedTools") if t.startswith("mcp__claude_ai_") and "__" not in t[len("mcp__claude_ai_"):]],
                           "denied_read": [t for t in flag("--disallowedTools") if t.startswith("Read(")],
                           "denied_write": [t for t in flag("--disallowedTools") if t.startswith(("Edit(", "Write("))],
@@ -39,11 +40,18 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "access-calls.ndjson"), "a")
                           "own_context": {k: os.environ.get(k) for k in ("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY")},
                           "note": note[start:note.find(" Anything else", start)] if start >= 0 else None,
                           "custom_tools": {k: v.get("tools") for k, v in json.loads(args[args.index("--agents") + 1]).items() if k.startswith("room-")}}) + "\n")
-out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session"})
+# "connector tools": the run starts with tools a connector gained since the room's lists were written, next to ones
+# the room allows, blocks, and names that are not a Notion or Microsoft 365 tool at all.
+GIVEN = ["Read", "mcp__claude_ai_Notion__notion-search", "mcp__claude_ai_Notion__notion-create-pages", "mcp__claude_ai_Notion__notion-brand-new",
+         "mcp__claude_ai_Microsoft_365__outlook_brand_new", "mcp__claude_ai_Notion__notion-brand-new", "mcp__other_server__tool", "mcp__claude_ai_Notion__bad name", 7]
+out({"type": "system", "subtype": "init", "session_id": "coen-session" if agent == "chief-operating-officer" else "maker-session",
+     **({"tools": GIVEN} if "connector tools" in prompt else {})})
 if agent == "chief-operating-officer" and "dispatch" in prompt:
     text = "Sending.\n```recommendation\n" + json.dumps({"action": "dispatch", "agent": "wren", "summary": "Post", "brief": "Write it."}) + "\n```\n"
 else:
     text = "Done."
 out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
 out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
-out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})
+# "refused tool": the run tried a connector tool that was not in its start event, and was refused.
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x",
+     **({"permission_denials": [{"tool_name": "mcp__claude_ai_Notion__notion-brand-late"}, {"tool_name": "Bash"}, None]} if "refused tool" in prompt else {})})

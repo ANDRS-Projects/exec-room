@@ -272,8 +272,38 @@ const HIDDEN = [
     'query-sessions', 'read-session-event', 'search-agents', 'search-sessions', 'search-skills',
     'send-message-to-session', 'show-advanced-analysis-next-steps', 'spawn-session', 'stop-session',
     'update-data-source', 'update-folder', 'update-page', 'update-view', 'upload-skill', 'wait-session',
+    // Added by Notion since this list was written; seen in a run's tool list on 2026-10-13.
+    'get-enabled-skills', 'get-file-download-urls', 'get-self', 'memory-search', 'restore-pages', 'update-enabled-skills',
   ].map((t) => NOTION + 'notion-' + t),
 ];
+// The lists above name tools, and a connector gains tools without telling anyone. A tool the room doesn't know can't
+// be called (only the read tools a room allows can; a run has nobody to ask), but agents see it and try it. So the
+// room learns: every run reports the tools it was given when it starts, and a Notion or Microsoft 365 tool that is
+// neither allowed nor blocked yet is written to data/connector-tools.json and blocked from the next run on.
+const NOTION_SERVER = 'mcp__claude_ai_Notion';
+const CONNECTOR_TOOL = /^mcp__claude_ai_(Notion|Microsoft_365)__[A-Za-z0-9_-]{1,80}$/;
+const CONNECTOR_TOOLS_FILE = path.join(DATA_DIR, 'connector-tools.json');
+const CONNECTOR_TOOLS_MAX = 300;
+let learnedTools = [];
+try {
+  const saved = JSON.parse(fs.readFileSync(CONNECTOR_TOOLS_FILE, 'utf8')).tools;
+  if (Array.isArray(saved)) learnedTools = [...new Set(saved.filter((t) => typeof t === 'string' && CONNECTOR_TOOL.test(t)))].slice(-CONNECTOR_TOOLS_MAX);
+} catch { /* no file yet, or one that can't be read: nothing learned */ }
+// `given`: the tool names of a run's start event. Returns the ones that are new to the room.
+function learnConnectorTools(given) {
+  if (!Array.isArray(given)) return [];
+  const known = new Set([...NOTION_READ, ...M365_READ, ...M365_BLOCKED, ...HIDDEN, ...learnedTools]);
+  const fresh = [...new Set(given.filter((t) => typeof t === 'string' && CONNECTOR_TOOL.test(t) && !known.has(t)))];
+  if (!fresh.length) return [];
+  learnedTools = [...learnedTools, ...fresh].slice(-CONNECTOR_TOOLS_MAX);
+  try {
+    const tmp = `${CONNECTOR_TOOLS_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify({ tools: learnedTools }, null, 1));
+    fs.renameSync(tmp, CONNECTOR_TOOLS_FILE);
+    fs.appendFileSync(JOBS_FILE, JSON.stringify({ kind: 'warning', check: 'connector tools the room did not know', tools: fresh, at: new Date().toISOString() }) + '\n');
+  } catch { /* still blocked for as long as the room runs */ }
+  return fresh;
+}
 // The room ships with Coen alone. Advisors and makers are built in the room (Add agent) and kept in data/agents.json.
 // These stay as the hooks for built-in agents: subagent type → room panel, advisor names and makers.
 const PEERS = {};
@@ -1973,7 +2003,8 @@ function permissionsFor(access, { lead = false, groups = null } = {}) {
   // The room's own data folder and the sensitive folders (and what they link to) are blocked for every run,
   // whatever folders the room may read: a block beats an allow rule, so a readable folder never exposes what's blocked inside it.
   // Bash is named in the block list too: no run is given it, and a block beats whatever might allow it.
-  return { tools, allowed, denied: ['Bash', ...(notion ? [] : NOTION_READ), ...(m365 ? M365_BLOCKED : [...M365_READ, M365_SERVER]), ...dataDenied(), ...sensitiveDenied(), ...secretDenied(), ...writeDenied()] };
+  // With Notion off the whole connector is blocked, like mail: nothing of it is seen, whatever tools it has.
+  return { tools, allowed, denied: ['Bash', ...learnedTools, ...(notion ? [] : [...NOTION_READ, NOTION_SERVER]), ...(m365 ? M365_BLOCKED : [...M365_READ, M365_SERVER]), ...dataDenied(), ...sensitiveDenied(), ...secretDenied(), ...writeDenied()] };
 }
 
 // The room's own data (every room's transcripts, workspaces.json, the job log, agents.json) is never readable by
@@ -2248,6 +2279,12 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       }
     }
 
+    // Connector tools the room had not heard of (see learnConnectorTools): said in the chat once, as nobody reads
+    // the job log for it.
+    const learned = (names) => {
+      const fresh = learnConnectorTools(names);
+      if (fresh.length) send({ type: 'notice', text: `A connector has ${fresh.length === 1 ? 'a tool' : `${fresh.length} tools`} the room didn't know: ${fresh.map((t) => t.split('__').pop()).join(', ')}. Agents couldn't use ${fresh.length === 1 ? 'it' : 'them'} (only the read tools a room allows work), and from the next message on ${fresh.length === 1 ? 'it is' : 'they are'} hidden from agents too.` });
+    };
     function handle(ev) {
       const parent = ev.parent_tool_use_id ?? null;
       if (ev.type === 'system' && ev.subtype === 'init') {
@@ -2257,6 +2294,9 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
           if (KEY_MODE) room.sessionAuth = AUTH; else delete room.sessionAuth;
           saveIndex();
         }
+        // A connector tool the room had not heard of: agents could not call it, and from the next run on they
+        // don't see it either. Said in the chat once, as nobody reads the job log for it.
+        learned(ev.tools);
       } else if (ev.type === 'system' && ev.subtype === 'task_notification' && consults.has(ev.tool_use_id)) {
         // A background consult finished: its tool_result was only the launch notice.
         const cid = ev.tool_use_id;
@@ -2336,6 +2376,9 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
           send({ type: 'consult_done', who, cid, status: 'replied' });
         }
       } else if (ev.type === 'result') {
+        // A connector that was still connecting when the run started is not in its start event: a tool of it that
+        // an agent tried and was refused is learned here.
+        learned((Array.isArray(ev.permission_denials) ? ev.permission_denials : []).map((d) => d && d.tool_name));
         if (ev.is_error && (ev.errors || []).some((e) => /No conversation found/i.test(e))) resumeMissing = true;
         if (ev.subtype === 'error_max_budget_usd') capHit = true;
         // A usage limit or an expired login ends the run with its reason here, not on stderr: keep it for the error card.
@@ -2469,6 +2512,9 @@ app.get('/api/room', (req, res) => {
     auth: AUTH, ...(KEY_MODE && { caps: { run: RUN_CAP_USD, day: DAY_CAP_USD } }),
     // Only when the start-up check found that agents are getting files the room means to keep from them.
     ...(contextLeak && contextLeak.length && { contextLeak }),
+    // A token was set up (a 1Password reference) and could not be read at start-up: the page says so, as the
+    // terminal's line about it goes unread.
+    ...(NOTION_TOKEN_REF && !NOTION_TOKEN && { notionTokenMissing: true }),
     attachments: { maxFiles: ATTACH_MAX_FILES, maxBytes: ATTACH_MAX_BYTES, extensions: Object.keys(ATTACH_TYPES) }, events: readEvents(room.roomId).filter((ev) => !live || ev.jobId !== live) });
 });
 
