@@ -282,6 +282,9 @@ const MAX_RECIPIENTS = 50;
 const EMAIL_MAX_ADDRESSES = 10;
 const EMAIL_SUBJECT_MAX = 200;
 const EMAIL_BODY_MAX = 8000;
+// About how much text still opens from the card's links (public/email-links.js has the real limits, on the whole
+// link: a character of text takes about 1.5 in a link). Only said to the agents, never enforced.
+const EMAIL_OPENS_ABOUT = 1200;
 const EMAIL_UNSAFE = /[,?&\r\n]/;
 const EMAIL_DOMAIN_PART = '(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}';
 const EMAIL_DOMAIN = new RegExp(`^${EMAIL_DOMAIN_PART}$`);
@@ -328,7 +331,7 @@ ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {
 - Comment on an existing issue in one of this room's repos (e.g. your review of it, or an update): {"action": "github_comment", "repo": one of the repos above, "issue": its number, "summary": "one line", "body": "markdown"}.${targets.publicRepos.length ? ' Comments on the public repos are visible to everyone too; write them the same way.' : ''}
 ` : ''}${NOTION_TOKEN && targets.notionDbs.length ? `- Save social posts as Notion drafts, one row per post (Status is always draft; scheduling stays with the owner): {"action": "notion_draft", "database": one of ${targets.notionDbs.map((k) => [k, NOTION_DBS[k]]).map(([k, db]) => `"${k}" (${db.name}, accounts: ${db.accounts.join(' / ')})`).join(', ')}, "summary": "one line", "posts": [up to 5 of {"channel": one of ${NOTION_CHANNELS.map((c) => `"${c}"`).join(', ')}, "title": "…", "content": "the post text, copied verbatim from the maker's draft (keep X thread 'Tweet N:' markers)", optional "account"}], optional "account" for all posts, "image_prompt", "source_insight"}. Put a whole package (e.g. LinkedIn + X + Notes, with an image maker's prompt as image_prompt) in one proposal. Output DBs are only for posts meant for delivery.
 ` : ''}${NOTION_TOKEN && targets.notionPlaces.length ? `- Save anything else as a new Notion page (a long article, research, a strategy doc, a review, meeting notes, a digest): {"action": "notion_page", "parent": the Notion URL or id of the page to put it under, "summary": "one line", "title": "…", "content": "markdown (headings, lists, quotes, code, links), up to ${NOTION_PAGE_MAX} characters"}. You choose the place, one of this room's: ${targets.notionPlaces.map((p) => `${p.name} (${p.id})${p.for ? ` for ${p.for}` : ''}`).join('; ')}. You may also pick a more fitting sub-page inside one of these places that you find with Notion search (it's checked when the owner approves); it only works where the owner has shared the page with the room.
-` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send by hand (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. This is allowed because the room never sends it: approving only records the owner's decision, then the owner opens the draft in a mail app and sends it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
+` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send by hand (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. Only a short draft opens straight in a mail app (up to about ${EMAIL_OPENS_ABOUT} characters of text); the owner copies and pastes a longer one by hand, so keep an email short where that fits the message, and don't split one email in two to get under it. This is allowed because the room never sends it: approving only records the owner's decision, then the owner opens the draft in a mail app and sends it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
 ` : `- Email drafts are off in this room because it has no email recipients. If the owner asks for an email, say that these can be turned on by adding the recipient (an address, or a domain) under Room settings → "Email recipients for drafts", and then ask again in a new chat. Don't write the email as a file instead.
 `}Nothing that publishes, schedules, posts or sends messages can be proposed${targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer the note and propose again.${targets.repos.length ? `
 
@@ -1005,11 +1008,30 @@ function recipientAllowed(address, allowed) {
 const notAllowed = (rec, allowed) => [...rec.to, ...rec.cc].filter((a) => !recipientAllowed(a, allowed));
 const emailDomains = (rec) => rec.domains || [...new Set([...(rec.to || []), ...(rec.cc || [])].map(addressDomain))];
 
-// Once the owner has decided (approved or sent back for a revision), a draft keeps only its summary, the recipients'
-// domains and its subject: no addresses, no body. The card's links come from the proposal in the chat transcript.
+// A draft the owner dismissed or sent back for a revision keeps only its summary, the recipients' domains and its
+// subject from that moment: no addresses, no body. An approved one keeps them a while longer (see emailKept), as
+// the text is still to be sent by hand; then it is cut down the same way.
 function redactEmail(rec) {
   rec.domains = emailDomains(rec);
   for (const k of ['to', 'cc', 'body', 'from']) delete rec[k];
+}
+
+// An approved draft is still to be opened or copied, and that used to be possible only in the page that approved it:
+// a reload lost the text. It now stays, in the stored proposal and in the chat transcript, until
+// the owner says it has been sent (POST /api/recs/:id/forget) or EMAIL_KEEP_DAYS have passed, whichever comes first.
+// Both places are in data/, which no agent can read. A draft approved before this has no text left and stays so.
+const EMAIL_KEEP_DAYS = 7;
+const emailKept = (rec) => rec.action === 'email_draft' && rec.state === 'approved' && typeof rec.body === 'string' && Array.isArray(rec.to);
+function forgetEmail(rec) {
+  redactEmail(rec);
+  delete rec.keepUntil;
+  scrubEmailFromTranscript(rec);
+}
+// A kept draft without a readable date counts as past it: when in doubt the text goes.
+function expireEmails() {
+  const due = Object.values(recs).filter((rec) => emailKept(rec) && !(Date.parse(rec.keepUntil) > Date.now()));
+  due.forEach(forgetEmail);
+  if (due.length) saveRecs();
 }
 
 // The chat transcript is the last place the room keeps a decided draft: the card's own event, and the proposal
@@ -1741,8 +1763,11 @@ function chainBrief(rec) {
 // which replays the job's events so far, so a reload, a closed tab or switching rooms doesn't stop it.
 
 backfillCosts();
-// Drafts decided before transcripts were cleaned up (a no-op for ones already clean).
-for (const rec of Object.values(recs)) if (rec.action === 'email_draft' && rec.state !== 'pending') scrubEmailFromTranscript(rec);
+// Drafts decided before transcripts were cleaned up (a no-op for ones already clean); an approved draft whose text
+// is still kept is left alone until its time is up, which is checked now and then every hour.
+for (const rec of Object.values(recs)) if (rec.action === 'email_draft' && rec.state !== 'pending' && !emailKept(rec)) scrubEmailFromTranscript(rec);
+expireEmails();
+setInterval(expireEmails, 60 * 60 * 1000).unref();
 // Room folders are checked when a room is saved, not again later: a room saved before a folder counted as sensitive
 // (or before the check existed, or whose folder became a symlink to one) keeps it. Re-check them at start-up and log
 // what's found, in the terminal and the job log. Nothing is changed: the blocks on every run keep such a folder
@@ -2354,6 +2379,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // History of finished jobs; a running job's events come from /api/stream instead.
 app.get('/api/room', (req, res) => {
+  expireEmails();
   const room = currentRoom();
   const live = jobs.has(room.roomId) ? jobs.get(room.roomId).jobId : null;
   const space = spaceOf(room.roomId);
@@ -2436,12 +2462,12 @@ function recordDecision(rec, decision, extra = {}) {
   rec.actor = OWNER_NAME;
   Object.assign(rec, extra);
   if (rec.action === 'email_draft') {
-    redactEmail(rec);
-    scrubEmailFromTranscript(rec);
+    if (decision === 'approved') rec.keepUntil = new Date(Date.now() + EMAIL_KEEP_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    else forgetEmail(rec);
   }
   saveRecs();
   logDecision(rec, extra);
-  const ev = { type: 'decision', recId: rec.recId, decision, actor: rec.actor, ...extra, ts: Date.now() };
+  const ev = { type: 'decision', recId: rec.recId, decision, actor: rec.actor, ...extra, ...(rec.keepUntil && { keepUntil: rec.keepUntil }), ts: Date.now() };
   appendEvent(rec.roomId, ev);
   return ev;
 }
@@ -2571,6 +2597,18 @@ app.post('/api/recs/:id/dismiss', (req, res) => {
     saveIndex();
   }
   res.json({ events: [decision] });
+});
+
+// "Sent, remove the text": an approved email draft gives up its addresses and text now instead of when its time is up.
+// Final, like the removal after a decision used to be; a draft that has none left answers the same way.
+app.post('/api/recs/:id/forget', (req, res) => {
+  const rec = Object.hasOwn(recs, req.params.id) ? recs[req.params.id] : null;
+  if (!rec || rec.action !== 'email_draft' || rec.state !== 'approved') return res.status(404).json({ error: 'no approved email draft with that id' });
+  if (emailKept(rec)) {
+    forgetEmail(rec);
+    saveRecs();
+  }
+  res.json({ ok: true, domains: rec.domains || [] });
 });
 
 // What Coen is told about proposals the owner dismissed since his last run in a chat: one line each, in the order
@@ -3042,6 +3080,8 @@ function decisionsOf(space) {
         ...(rec && { proposer: { key: by, name: by === 'coen' ? 'Coen' : agentName(by) } }),
         chat: { id: r.chatId, ...chatLabel(index.rooms[r.chatId]) },
         ...(r.action === 'email_draft' && { subject: String(r.subject || ''), domains: strings(r.domains) }),
+        // An approved draft whose text is still kept: the tab can copy it and remove it, like the card.
+        ...(rec && emailKept(rec) && { draft: { to: rec.to, cc: rec.cc || [], subject: rec.subject, body: rec.body, from: rec.from || null }, keepUntil: rec.keepUntil }),
         ...(r.action === 'email_draft'
           ? (r.reason || r.note) && { noteWithheld: true }
           : { ...(r.decision === 'dismissed' && r.reason && { reason: r.reason }), ...(r.decision === 'revised' && r.note && { note: r.note }) }),
@@ -3058,6 +3098,7 @@ function decisionsOf(space) {
 app.get('/api/workspaces/:id/decisions', (req, res) => {
   const space = knownSpace(req, res);
   if (!space) return;
+  expireEmails();
   const all = decisionsOf(space);
   res.json({ owner: OWNER_NAME, total: all.length, decisions: all.slice(0, DECISIONS_MAX) });
 });

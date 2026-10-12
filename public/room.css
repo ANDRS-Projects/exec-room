@@ -78,6 +78,11 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .rec-warning { margin: 0; padding: 8px 10px; border-radius: 8px; background: #FAEEDA; color: #633806; border: 1px solid #EFC98B; font-size: 13px; }
 .rec-note { margin: 0; font-size: 12px; color: var(--muted); }
 .email-links a.ghost { display: inline-flex; align-items: center; text-decoration: none; color: var(--text); }
+/* Under an approved draft's buttons: until when the room keeps the text, and the button that removes it now. */
+.email-kept { align-items: center; margin-top: 8px; }
+.email-kept .rec-note { flex: 1 1 260px; }
+.email-links .approve { height: 34px; }
+.decision-email { margin-top: 6px; }
 .sec .form-error { overflow-wrap: anywhere; }
 .place-add input { flex: 1 1 140px; }
 /* Notion places: a row drags by its grip (arrow keys on the grip move it too) and opens into boxes to edit. */

@@ -1140,7 +1140,11 @@ try:
         n = len(runs())
         out("K revise", call(f"/api/recs/{proposed['Revise me']}/revise", {"note": "shorter"})[0])
         settle()
-        # Both drafts are decided now, so their text is cleaned out of that turn; its file names stay.
+        # Both drafts are decided now. The revised one's text is cleaned out of that turn at once; the approved one's
+        # stays until it is removed, which is done here. The turn's file names stay through both.
+        mine = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+        out("K an approved draft's text is still in the turn", "the private body" in json.dumps(mine))
+        out("K remove the approved draft's text", call(f"/api/recs/{proposed['Approve me']}/forget", {})[0])
         mine = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
         out("K the transcript clean-up keeps the file names", ([e.get("files") for e in mine if e["type"] == "user"], "the private body" in json.dumps(mine)))
         out("K approve the dispatch", call(f"/api/recs/{proposed['Scan']}/approve", {})[0])
@@ -1256,10 +1260,24 @@ try:
         out("M proposals", [(k, r["to"], r["cc"], r["subject"], r["from"]) for k, r in good.items()])
         code, body, _ = call(f"/api/recs/{good['Good']['recId']}/approve", {})
         out("M approve sends nothing", (code, [e["type"] for e in json.loads(body)["events"]]))
-        kept = stored()[good["Good"]["recId"]]
-        out("M approved keeps", (kept["state"], kept["summary"], kept["domains"], kept["subject"], [k for k in ("to", "cc", "body", "from") if k in kept]))
+        # An approved draft is still to be sent by hand, so its addresses and text stay for a week: in the
+        # stored proposal, in the transcript's card (a reload draws its buttons again) and on the Decisions tab. The
+        # job log never has them. "Sent, remove the text" takes them out at once; it is final and can be repeated.
+        gid = good["Good"]["recId"]
+        days = lambda t: round((time.mktime(time.strptime(t[:19], "%Y-%m-%dT%H:%M:%S")) - time.mktime(time.gmtime())) / 86400, 1)
+        kept = stored()[gid]
+        out("M approved keeps", (kept["state"], kept["summary"], kept["subject"], [k for k in ("to", "cc", "body", "from", "domains") if k in kept], days(kept["keepUntil"])))
+        out("M the decision says until when", days(json.loads(body)["events"][0]["keepUntil"]))
+        card = lambda: [e["rec"] for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "recommendation" and e["rec"]["recId"] == gid][0]
+        out("M a reload still has the draft", (card()["to"], len(card()["body"])))
+        row = lambda: [d for d in json.loads(call(f"/api/workspaces/{json.loads(call('/api/room')[1])['workspace']['id']}/decisions")[1])["decisions"] if d["recId"] == gid][0]
+        out("M decisions row has the draft", (sorted(row()["draft"]), row()["draft"]["to"], days(row()["keepUntil"]), row()["domains"]))
         log = [json.loads(l) for l in open(os.path.join(data, "jobs.ndjson"))]
-        out("M job log", [(l["state"], l.get("domains"), l.get("subject"), "body" in l, "to" in l) for l in log if l.get("recId") == good["Good"]["recId"]])
+        out("M job log", [(l["state"], l.get("domains"), l.get("subject"), "body" in l, "to" in l) for l in log if l.get("recId") == gid])
+        out("M remove the text", [call(f"/api/recs/{gid}/forget", {})[:2] for _ in range(2)])
+        kept = stored()[gid]
+        out("M after removing", (kept["state"], kept["domains"], kept["subject"], [k for k in ("to", "cc", "body", "from", "keepUntil") if k in kept], "to" in card(), "draft" in row()))
+        out("M nothing to remove", [call(f"/api/recs/{r}/forget", {})[:2] for r in (good["Two"]["recId"], "rec-nope", "__proto__")])
         code = call(f"/api/recs/{good['Two']['recId']}/revise", {"note": "shorter"})[0]
         events(call("/api/stream")[1])
         kept = stored()[good["Two"]["recId"]]
@@ -1298,8 +1316,41 @@ try:
         out("M copy text", made["copy"] == draft["subject"] + "\n\n" + draft["body"])
         short = lambda n: links({"to": ["anna@client.example"], "cc": [], "subject": "Hi", "body": "x" * n})
         out("M mailto limit", (made["max"], [(len(l["mailto"]), l["fits"]) for l in map(short, (1756, 1757, 8000))]))
-        out("M outlook limit", (made["outlookMax"], [(len(l["outlook"]), l["outlookFits"]) for l in map(short, (7905, 7906, 7907, 8000))]))
+        out("M outlook limit", (made["outlookMax"], [(len(l["outlook"]), l["outlookFits"]) for l in map(short, (1905, 1906, 1907, 8000))]))
         out("M static email-links.js", call("/email-links.js")[0])
+    finally:
+        s.stop()
+    # M2: approved email drafts in a data folder from before the server started. One approved before texts were kept
+    # (domains only, no keepUntil) stays as it is; one whose week is up, and one with text but no date, lose their
+    # addresses and text at start-up, in the stored proposal and in the chat; one with days left keeps them.
+    data = os.path.join(TMP, "data-email-kept")
+    os.makedirs(os.path.join(data, "rooms"))
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": None, "title": None,
+                   "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}}}, f)
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump(default_rooms(), f)
+    draft = lambda rid, **more: {"recId": rid, "roomId": "old-chat", "action": "email_draft", "summary": rid, "subject": "Hello", "state": "approved",
+                                 "decidedAt": "2026-10-01T10:00:00.000Z", "to": ["anna@client.example"], "cc": [], "body": f"text of {rid}", "from": None, **more}
+    old_shape = {"recId": "rec-before", "roomId": "old-chat", "action": "email_draft", "summary": "rec-before", "subject": "Hello", "state": "approved",
+                 "decidedAt": "2026-09-20T10:00:00.000Z", "domains": ["client.example"]}
+    in_time = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() + 3 * 86400))
+    saved = {"rec-before": old_shape, "rec-due": draft("rec-due", keepUntil="2026-10-08T10:00:00.000Z"), "rec-undated": draft("rec-undated"),
+             "rec-kept": draft("rec-kept", keepUntil=in_time)}
+    with open(os.path.join(data, "recommendations.json"), "w") as f:
+        json.dump(saved, f)
+    with open(os.path.join(data, "rooms", "old-chat.ndjson"), "w") as f:
+        f.write(json.dumps({"type": "user", "text": "draft them"}) + "\n")
+        for r in saved.values():
+            f.write(json.dumps({"type": "recommendation", "rec": {k: v for k, v in r.items() if k not in ("state", "decidedAt", "keepUntil")}}) + "\n")
+            f.write(json.dumps({"type": "decision", "recId": r["recId"], "decision": "approved", **({"keepUntil": r["keepUntil"]} if "keepUntil" in r else {})}) + "\n")
+    s = Server("email", data_name="data-email-kept")
+    try:
+        now = json.load(open(os.path.join(data, "recommendations.json")))
+        out("M2 stored after start-up", {k: sorted(x for x in ("to", "body", "domains", "keepUntil") if x in r) for k, r in now.items()})
+        cards = {e["rec"]["recId"]: e["rec"] for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "recommendation"}
+        out("M2 chat after start-up", {k: ("to" in r, "body" in r, r.get("domains")) for k, r in cards.items()})
+        out("M2 remove from the old shape", call("/api/recs/rec-before/forget", {})[:2])
     finally:
         s.stop()
     # Fresh install: no rooms file and no chats yet, so the default room starts empty like any new room.

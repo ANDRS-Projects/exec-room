@@ -399,6 +399,8 @@ K a run in another chat gets no rule for these files: (1, False, False)
 K proposals from a turn with files: ['Approve me', 'Revise me', 'Scan']
 K approve the email draft: 200
 K revise: 200
+K an approved draft's text is still in the turn: True
+K remove the approved draft's text: 200
 K the transcript clean-up keeps the file names: ([[{'name': 'Offer_final.pdf', 'size': 24}]], False)
 K approve the dispatch: 200
 K later turns get no rule and no file block: [(True, False, False), (False, False, False), (True, False, False)]
@@ -426,8 +428,14 @@ M set recipients: (200, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notio
 M room note: {'email': True, 'never_sends': True, 'nothing_sends': True, 'listed': True, 'needs_recipients': False}
 M proposals: [('Good', ['anna@client.example'], ['bob@partner.test'], 'Next steps after our call', 'Owner@consulting.example'), ('Two', ['Anna@client.example', 'ceo@client.example'], [], 'Two', 'Owner@consulting.example'), ('Bob', ['bob@partner.test'], [], 'For Bob', 'Owner@consulting.example')]
 M approve sends nothing: (200, ['decision'])
-M approved keeps: ('approved', 'Good', ['client.example', 'partner.test'], 'Next steps after our call', [])
+M approved keeps: ('approved', 'Good', 'Next steps after our call', ['to', 'cc', 'body', 'from'], 7.0)
+M the decision says until when: 7.0
+M a reload still has the draft: (['anna@client.example'], 32)
+M decisions row has the draft: (['body', 'cc', 'from', 'subject', 'to'], ['anna@client.example'], 7.0, ['client.example', 'partner.test'])
 M job log: [('pending', ['client.example', 'partner.test'], 'Next steps after our call', False, False), ('approved', ['client.example', 'partner.test'], 'Next steps after our call', False, False)]
+M remove the text: [(200, '{"ok":true,"domains":["client.example","partner.test"]}'), (200, '{"ok":true,"domains":["client.example","partner.test"]}')]
+M after removing: ('approved', ['client.example', 'partner.test'], 'Next steps after our call', [], False, False)
+M nothing to remove: [(404, '{"error":"no approved email draft with that id"}'), (404, '{"error":"no approved email draft with that id"}'), (404, '{"error":"no approved email draft with that id"}')]
 M revised keeps: (200, 'revised', ['client.example'], [])
 M body not in recommendations.json or jobs.ndjson: [False, False]
 M transcript after decisions: ([False, False, False], True, {'Good': (None, ['client.example', 'partner.test'], False), 'Two': (None, ['client.example'], False), 'Bob': (['bob@partner.test'], None, True)})
@@ -460,8 +468,11 @@ M mailto link: mailto:anna@client.example?cc=bo%2Bops@client.example&subject=Q3%
 M no + for spaces, CRLF breaks: (True, 4, False)
 M copy text: True
 M mailto limit: (1800, [(1799, True), (1800, False), (8043, False)])
-M outlook limit: (8000, [(7999, True), (8000, True), (8001, False), (8094, False)])
+M outlook limit: (2000, [(1999, True), (2000, True), (2001, False), (8094, False)])
 M static email-links.js: 200
+M2 stored after start-up: {'rec-before': ['domains'], 'rec-due': ['domains'], 'rec-undated': ['domains'], 'rec-kept': ['body', 'keepUntil', 'to']}
+M2 chat after start-up: {'rec-before': (False, False, ['client.example']), 'rec-due': (False, False, ['client.example']), 'rec-undated': (False, False, ['client.example']), 'rec-kept': (True, True, None)}
+M2 remove from the old shape: (200, '{"ok":true,"domains":["client.example"]}')
 Z fresh install default room: ('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})
 Y start-up folder check: [('risky', 'Risky', ['~/.claude'])]
 Y settings unchanged: [1, 2, 0]

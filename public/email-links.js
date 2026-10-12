@@ -7,9 +7,11 @@ globalThis.EmailLinks = (() => {
   const OUTLOOK_COMPOSE = 'https://outlook.office.com/mail/deeplink/compose';
   // Longer mailto links get cut off or refused by some browsers and mail apps; from this length on, Copy leads.
   const MAILTO_MAX = 1800;
-  // Outlook web documents no limit for the compose deeplink. 8000 characters for the whole URL is a conservative
-  // guess (a common request-line limit); a longer link is greyed out and Copy leads.
-  const OUTLOOK_MAX = 8000;
+  // Outlook web documents no limit for the compose deeplink, but a link opened without a fresh Outlook session goes
+  // through Microsoft's sign-in, which carries the whole link along and refuses a long one ("AADSTS90015: Requested
+  // query string is too long"). Measured on 2026-10-12: a link of 2,493 characters got through, one of 2,744 did
+  // not. 2000 for the whole URL leaves room for what sign-in adds; a longer link is greyed out and Copy leads.
+  const OUTLOOK_MAX = 2000;
   const crlf = (text) => String(text).replace(/\r\n|\r|\n/g, '\r\n');
   const enc = (text) => encodeURIComponent(crlf(text));
   // The server only lets plain addresses through (letters, digits, . _ + - and one @), so the @ can stay readable
