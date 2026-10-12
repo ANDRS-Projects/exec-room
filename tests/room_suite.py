@@ -1513,6 +1513,11 @@ try:
         json.dump({"current": "exec", "workspaces": {
             "exec": {"id": "exec", "name": "Ops room", "members": None, "chat": None, "createdAt": "2026-09-01T00:00:00.000Z",
                      "access": {"files": [os.path.join(TMP, "c2", "x"), os.path.join(fake_home, "y"), os.path.join(fake_home, ".ssh")], **minimal}}}}, f)
+    # Folders that hold keys or logins, made in the throwaway home so that the checks below don't depend on what
+    # this machine has: none may become a room folder, and every run is blocked from each.
+    off_limits = [".ssh", ".aws", ".gnupg", ".config", "Library/Mail", ".docker", ".kube", ".azure"]
+    for d in off_limits + ["y", "notes"]:
+        os.makedirs(os.path.join(fake_home, d), exist_ok=True)
     path_before = os.environ["PATH"]
     os.environ["PATH"] = real_bin + os.pathsep + path_before  # Server() can't take PATH in extra (dict() would get it twice)
     try:
@@ -1525,6 +1530,12 @@ try:
         events(call("/api/stream")[1])
         out("U run note", untmp([json.loads(l) for l in open(os.path.join(TMP, "access-calls.ndjson"))][-1]["note"]))
         out("U start-up check", [w["folders"] for w in map(json.loads, open(os.path.join(data, "jobs.ndjson"))) if w.get("check") == "sensitive room folders"])
+        ran = [json.loads(l) for l in open(os.path.join(TMP, "access-calls.ndjson"))][-1]
+        blocked = lambda p: any(r == f"Read(/{p})" or (r.endswith("/**)") and (p + "/").startswith(r[6:-4] + "/")) for r in ran["denied_read"])
+        out("U a run is blocked from each folder with keys", {d: blocked(os.path.realpath(os.path.join(fake_home, d))) for d in off_limits})
+        out("U a run can't switch its permission checks off", (ran["permission_mode"], ran["settings"]))
+        for d in off_limits + ["notes"]:
+            out(f"U as a room folder, ~/{d}", call("/api/workspaces", {"name": "Keys", "members": None, "access": {"files": [f"~/{d}"]}})[0])
         # Import: the owner's own agents are listed and read on request; a copy is saved like any room-built agent.
         out("U importable agents", [(a["id"], a["name"], a["description"]) for a in json.loads(call("/api/agents/importable")[1])["agents"]])
         code, body, _ = call("/api/agents/importable/writer")

@@ -263,10 +263,10 @@ X invalid ip site: [400, '{"error":"\\"127.0.0.1\\" isn\'t a site name: give the
 X invalid localhost: [400, '{"error":"\\"localhost\\" isn\'t a site name: give the exact host, e.g. docs.example.com (no https://, paths, wildcards, IP addresses or localhost)"}']
 X invalid url with path: [400, '{"error":"\\"example.com/x\\" isn\'t a site name: give the exact host, e.g. docs.example.com (no https://, paths, wildcards, IP addresses or localhost)"}']
 X invalid not a list: [400, '{"error":"\\"sites\\" must be a list"}']
-X sensitive claude settings: [400, '{"error":"\\"~/.claude\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
-X sensitive claude transcripts: [400, '{"error":"\\"~/.claude/projects\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
-X sensitive symlink to claude settings: [400, '{"error":"\\"<tmp>/claude-link\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
-X sensitive library: [400, '{"error":"\\"~/Library\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
+X sensitive claude settings: [400, '{"error":"\\"~/.claude\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.azure, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
+X sensitive claude transcripts: [400, '{"error":"\\"~/.claude/projects\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.azure, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
+X sensitive symlink to claude settings: [400, '{"error":"\\"<tmp>/claude-link\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.azure, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
+X sensitive library: [400, '{"error":"\\"~/Library\\" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.azure, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder"}']
 X new room starts minimal: (200, {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False})
 X minimal run: (['Read', 'Grep', 'Glob', 'Agent', 'Write', 'Edit'], ['Read(/<root>/drafts/**)', 'Agent', 'Write(drafts/**)', 'Edit(drafts/**)'], ['mcp__claude_ai_Notion__notion-search-agents', 'mcp__claude_ai_Notion__notion-search-sessions', 'mcp__claude_ai_Notion__notion-search-skills', 'mcp__claude_ai_Notion__notion-search'], "What this room lets agents use: reading files in drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.")
 X set access: (200, {'files': ['<root>'], 'webSearch': True, 'sites': ['docs.example.com', 'example.com'], 'notion': False, 'm365': False})
@@ -501,6 +501,17 @@ S owner name from the config: Sam Lee
 U room list: ['<tmp>/c2/x', '~/y', '~/.ssh']
 U run note: What this room lets agents use: reading files in <tmp>/c2/x, ~/y, ~/.ssh, drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.
 U start-up check: [['~/.ssh']]
+U a run is blocked from each folder with keys: {'.ssh': True, '.aws': True, '.gnupg': True, '.config': True, 'Library/Mail': True, '.docker': True, '.kube': True, '.azure': True}
+U a run can't switch its permission checks off: ('default', '{"permissions":{"disableBypassPermissionsMode":"disable"}}')
+U as a room folder, ~/.ssh: 400
+U as a room folder, ~/.aws: 400
+U as a room folder, ~/.gnupg: 400
+U as a room folder, ~/.config: 400
+U as a room folder, ~/Library/Mail: 400
+U as a room folder, ~/.docker: 400
+U as a room folder, ~/.kube: 400
+U as a room folder, ~/.azure: 400
+U as a room folder, ~/notes: 200
 U importable agents: [('planner', 'Planner', 'Plans releases: scope, order and risks.'), ('writer', 'writer', 'Writes short posts.')]
 U import reads one: (200, ['description', 'id', 'instructions', 'model', 'name'], 'claude-haiku-4-5-20251001', 'You write short posts.\n\n---\nKeep the rule above.')
 U import folder form: {'id': 'planner', 'name': 'Planner', 'description': 'Plans releases: scope, order and risks.', 'model': '', 'instructions': 'You plan releases.'}

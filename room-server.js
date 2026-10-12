@@ -762,7 +762,11 @@ function validateTargets(o) {
 // nor anything under them, and never readable by any run. The same goes for ~/.claude (credentials, every prompt in
 // history.jsonl, session transcripts in projects/, settings), except the instruction folders agents may read: their
 // definitions, skills and knowledge.
-const SENSITIVE_DIRS = ['.ssh', '.aws', '.gnupg', '.config', 'Library', '.docker', '.kube'];
+const SENSITIVE_DIRS = ['.ssh', '.aws', '.gnupg', '.config', 'Library', '.docker', '.kube', '.azure'];
+// A second lock on every run: Claude Code refuses to work with its permission checks switched off, whatever asks for
+// it (a flag, a settings file in a folder a run starts in). Tried on 2026-10-12 with Claude Code 2.1.289: a run asked
+// to start in bypassPermissions mode started in that mode without this setting, and in default mode with it.
+const GUARD_SETTINGS = JSON.stringify({ permissions: { disableBypassPermissionsMode: 'disable' } });
 const CLAUDE_DIR = '.claude';
 const INSTRUCTION_DIRS = ['agents', 'skills', 'knowledge'];
 const realOr = (p) => { try { return fs.realpathSync(p); } catch { return null; } };
@@ -1943,7 +1947,7 @@ function buildArgs(text, resumeId, maker, space, attachRead = []) {
     // Project settings only: skips user plugins/hooks and the user's pre-approved write rules.
     '--setting-sources', 'project',
     // Set explicitly, so no run (nor a peer it consults) can end up in a bypass mode from settings or its environment.
-    '--permission-mode', 'default',
+    '--permission-mode', 'default', '--settings', GUARD_SETTINGS,
     '--disable-slash-commands',
     '--tools', ...perms.tools,
     // Files attached to this message: readable by this run only (and whoever it consults), on top of the room's access.
@@ -3216,7 +3220,7 @@ function contextCheck() {
   const args = [
     '-p', 'If the context you were given holds a word that starts with "ROOM-CANARY-", reply with exactly that whole word. Otherwise reply with exactly NONE.',
     '--output-format', 'stream-json', '--verbose', '--model', CHECK_MODEL,
-    '--setting-sources', 'project', '--permission-mode', 'default', '--disable-slash-commands',
+    '--setting-sources', 'project', '--permission-mode', 'default', '--settings', GUARD_SETTINGS, '--disable-slash-commands',
     // No tools and no connectors, so the code can only come from what was loaded for the run, and the prompt
     // stays a few thousand tokens (about a cent on the plan's scale).
     '--tools', '', '--strict-mcp-config',
