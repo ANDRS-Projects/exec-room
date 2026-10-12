@@ -15,8 +15,8 @@
     <h1 id="brand-name">Exec Room</h1>
     <span class="byline" id="brand-byline"></span>
     <div class="space-switch">
-      <button type="button" class="workspace" id="brand-workspace" aria-haspopup="menu" aria-expanded="false" title="Switch room">Ops room</button>
-      <div class="space-menu" id="space-menu" role="menu" hidden></div>
+      <button type="button" class="workspace" id="brand-workspace" aria-controls="space-menu" aria-expanded="false" title="Switch room">Ops room</button>
+      <div class="space-menu" id="space-menu" hidden></div>
     </div>
     <span class="auth-badge" id="auth-badge" hidden>API key</span>
   </div>
@@ -44,6 +44,7 @@
       <div><p class="title" id="head-title">Coen · COO</p><p class="sub">intake & triage · remembers this chat</p></div>
       <span class="status" id="coen-status" hidden>thinking…</span>
     </div>
+    <div id="sr-announce" class="sr-only" role="status" aria-live="polite"></div>
     <div class="thread" id="thread">
       <div class="empty" id="empty">Message Coen. Add agents to the room to give him advisors and makers.</div>
     </div>
@@ -65,9 +66,13 @@
 
   <aside class="rail" id="rail" aria-label="Consulted execs">
     <div class="chips">
+      <div class="chips-group" role="group" aria-label="Advisors Coen can consult">
       <span class="chips-slot" id="custom-advisors"></span>
-      <span class="chips-label">Makers · work only after your approval</span>
+      </div>
+      <span class="chips-label" id="chips-label-makers">Makers · work only after your approval</span>
+      <div class="chips-group" role="group" aria-labelledby="chips-label-makers">
       <span class="chips-slot" id="custom-makers"></span>
+      </div>
       <button type="button" class="chip add-agent" id="add-agent" title="Add an agent you built to this room, or build a new one"><span class="initial">+</span><span>Add agent</span></button>
     </div>
     <div class="groups" id="groups"></div>
@@ -330,6 +335,7 @@
 <script src="vendor/purify.min.js"></script>
 <script src="email-links.js"></script>
 <script src="attach-label.js"></script>
+<script src="announce.js"></script>
 <script src="tool-step.js"></script>
 <script src="room.js"></script>
 </body>

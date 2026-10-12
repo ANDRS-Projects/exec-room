@@ -170,6 +170,35 @@ try:
         out("A tool step, long detail is cut", [[len(part) for part in s.split(" | ")] for s in steps([[1, "WebSearch", "q" * 300], [1, "Bash", "x" * 300], [1, "mcp__s__" + "t" * 300, ""]])])
         out("A started on", steps([None, "", "Write", "Read", "Agent", "mcp__claude_ai_Notion__notion-search", "Bash"], "(name) => ctx.ToolStep.activity(name)"))
         out("A started on, a consulted agent", steps([None, "Write"], "(name) => ctx.ToolStep.activity(name, true)"))
+
+        # What a screen reader is told during a turn: the sentences come from public/announce.js, run in node's vm
+        # like the tool lines; room.js puts them in the page's one live region.
+        def spoken(calls, fn):
+            script = ("const vm = require('vm'), fs = require('fs'); const ctx = vm.createContext({});"
+                      "vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);"
+                      "console.log(JSON.stringify(JSON.parse(process.argv[2]).map(" + fn + ")));")
+            done = subprocess.run(["node", "-e", script, os.path.join(opts.root, "public", "announce.js"), json.dumps(calls)], capture_output=True, text=True, check=True)
+            return json.loads(done.stdout)
+
+        page = str(call("/room.html")[1])
+        out("A static /announce.js", call("/announce.js")[0])
+        out("A page loads announce.js before room.js", re.search(r'<script src="announce\.js"></script>[\s\S]*<script src="room\.js">', page) is not None)
+        out("A page has one live region, always there", (len(re.findall(r'aria-live=', page)), re.search(r'<div id="sr-announce" class="sr-only" role="status" aria-live="polite"></div>', page) is not None))
+        ada, ben, mak = ({"name": n, "maker": m, "replied": r} for n, m, r in (("Ada", False, True), ("Ben", False, False), ("Mak", True, True)))
+        for line in spoken([["ok", [], ""], ["ok", [], "Fay"], ["ok", [ada], ""], ["ok", [ada, ben], ""], ["ok", [ada, ben, {**ada, "name": "Cas"}], ""], ["ok", [mak], ""], ["ok", [ada, mak], ""],
+                            ["stopped", [ada], ""], ["interrupted", [], ""], ["error", [mak], "Fay"]], "([status, cards, focus]) => ctx.Announce.turnEnd(status, cards, focus)"):
+            out("A spoken, turn end", line)
+        out("A spoken, turn end without cards given", spoken([["ok"], [None]], "([status]) => ctx.Announce.turnEnd(status)"))
+        out("A spoken, hand-off", spoken(["Fay"], "(name) => ctx.Announce.handOff(name)"))
+        out("A spoken, proposal", spoken([["Coen", "send to Mak then Pat", "Post about dark mode"], ["Mak", "GitHub issue", "Track it."], ["Coen", "Notion page", ""], ["Coen", "email draft", None]],
+                                         "([owner, what, summary]) => ctx.Announce.proposal(owner, what, summary)"))
+        out("A spoken, result", spoken([["done", "Issue created."], ["done", "Saved:"], ["failed", "Couldn't carry this out: gh said no"], ["stopped", ""], ["done", None]], "([state, text]) => ctx.Announce.result(state, text)"))
+        # The rail and the room switcher as a screen reader meets them: roles in the names, two labelled groups,
+        # and no menu role on what is a list of buttons.
+        out("A page, chips name their role", re.findall(r'data-who="(\w+)"[^>]*>(?:<img [^>]*>)<span>\w+<span class="sr-only">, ([^<]+)</span></span>', page))
+        out("A page, chip groups", re.findall(r'<div class="chips-group" role="group" (aria-label(?:ledby)?="[^"]+")>', page))
+        out("A page, makers' group label exists", 'id="chips-label-makers"' in page)
+        out("A page, no menu roles", ("role=\"menu" in page, "aria-haspopup" in page, "'menuitem'" in str(call("/room.js")[1])))
         out("A foreign origin", call("/api/coen", {"text": "x"}, {"Origin": "https://evil.example"})[:2])
         out("A foreign host", call("/api/room", headers={"Host": "attacker.example"})[:2])
         out("A form post", call("/api/coen", raw=b"text=hi", headers={"content-type": "text/plain"})[:2])

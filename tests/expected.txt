@@ -33,6 +33,27 @@ A tool step, old and odd shapes: ['Working… · 1 tool call | 1 tool call', 'Wo
 A tool step, long detail is cut: [[95, 80], [95, 80], [95, 80]]
 A started on: ['Thinking…', 'Thinking…', 'Writing a file…', 'Reading a file…', 'Asking another agent…', 'Searching Notion…', 'Bash…']
 A started on, a consulted agent: ['Working on it…', 'Working on it…']
+A static /announce.js: 200
+A page loads announce.js before room.js: True
+A page has one live region, always there: (1, True)
+A spoken, turn end: Coen replied.
+A spoken, turn end: Fay replied.
+A spoken, turn end: Consulted Ada, 1 of 1 replied.
+A spoken, turn end: Consulted Ada and Ben, 1 of 2 replied.
+A spoken, turn end: Consulted Ada, Ben and Cas, 2 of 3 replied.
+A spoken, turn end: Sent to Mak, 1 of 1 done.
+A spoken, turn end: Consulted Ada and Mak, 2 of 2 replied.
+A spoken, turn end: Stopped.
+A spoken, turn end: Interrupted: the room server stopped.
+A spoken, turn end: Ended with an error.
+A spoken, turn end without cards given: ['Coen replied.', 'Coen replied.']
+A spoken, hand-off: ['Coen handed this to Fay.']
+A spoken, proposal: ['New proposal from Coen, send to Mak then Pat: Post about dark mode. Waiting for your decision.', 'New proposal from Mak, GitHub issue: Track it. Waiting for your decision.', 'New proposal from Coen, Notion page. Waiting for your decision.', 'New proposal from Coen, email draft. Waiting for your decision.']
+A spoken, result: ['Proposal done: Issue created.', 'Proposal done: Saved.', "Proposal failed: Couldn't carry this out: gh said no.", 'Proposal stopped.', 'Proposal done.']
+A page, chips name their role: []
+A page, chip groups: ['aria-label="Advisors Coen can consult"', 'aria-labelledby="chips-label-makers"']
+A page, makers' group label exists: True
+A page, no menu roles: (False, False, False)
 A foreign origin: (403, '{"error":"forbidden origin"}')
 A foreign host: (403, '{"error":"forbidden host"}')
 A form post: (415, '{"error":"JSON only"}')
