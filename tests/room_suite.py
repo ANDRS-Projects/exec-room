@@ -195,7 +195,7 @@ try:
         out("A spoken, result", spoken([["done", "Issue created."], ["done", "Saved:"], ["failed", "Couldn't carry this out: gh said no"], ["stopped", ""], ["done", None]], "([state, text]) => ctx.Announce.result(state, text)"))
         # The rail and the room switcher as a screen reader meets them: roles in the names, two labelled groups,
         # and no menu role on what is a list of buttons.
-        out("A page, chips name their role", re.findall(r'data-who="(\w+)"[^>]*>(?:<img [^>]*>)<span>\w+<span class="sr-only">, ([^<]+)</span></span>', page))
+        out("A page, chips name their role", re.findall(r'data-who="(\w+)"[^>]* aria-label="(\w+, [^"]+)">', page))
         out("A page, chip groups", re.findall(r'<div class="chips-group" role="group" (aria-label(?:ledby)?="[^"]+")>', page))
         out("A page, makers' group label exists", 'id="chips-label-makers"' in page)
         out("A page, no menu roles", ("role=\"menu" in page, "aria-haspopup" in page, "'menuitem'" in str(call("/room.js")[1])))

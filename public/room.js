@@ -427,7 +427,9 @@ function handle(ev) {
     if (card) { settleTools(card.tools); setCardStatus(card, ev.status || 'replied'); updateMarker(turn); }
   } else if (ev.type === 'notice') {
     appendToThread(el('div', 'notice', ev.text));
+    say(ev.text);
   } else if (ev.type === 'error') {
+    say(`Error: ${ev.error}`);
     const card = ev.who !== 'coen' && cardFor(ev);
     if (card) card.el.appendChild(el('div', 'bubble err', ev.error));
     else appendToThread(el('div', 'bubble err', ev.error));
@@ -956,12 +958,16 @@ async function send() {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       appendToThread(el('div', 'bubble err', data.error || `HTTP ${res.status}`));
+      sayNow = true;
+      say(`Not sent: ${data.error || `HTTP ${res.status}`}`);
       input.value = text;
       setBusy(false);
       return;
     }
   } catch (err) {
     appendToThread(el('div', 'bubble err', err.message));
+    sayNow = true;
+    say(`Not sent: ${err.message}`);
     input.value = text;
     setBusy(false);
     return;
@@ -1009,7 +1015,11 @@ async function attach() {
   } catch (err) {
     appendToThread(el('div', 'bubble err', err.message));
   } finally {
-    if (!ended) appendToThread(el('div', 'notice', 'Lost the connection to the room while Coen was working. Reload to catch up.'));
+    if (!ended) {
+      appendToThread(el('div', 'notice', 'Lost the connection to the room while Coen was working. Reload to catch up.'));
+      sayNow = true;
+      say('Lost the connection to the room while Coen was working. Reload to catch up.');
+    }
     setBusy(false);
     input.focus();
   }
@@ -1122,10 +1132,10 @@ function renderCustomChips() {
     chip.type = 'button';
     chip.dataset.key = a.key;
     chip.title = `${a.name} · ${a.does} (added in the room; click to edit)`;
-    // What the agent does is in the hover text; a screen reader gets it as part of the name.
-    const name = el('span', null, a.name);
-    if (a.does) name.appendChild(el('span', 'sr-only', `, ${a.does}`));
-    chip.append(avatarFor(a.key), name);
+    // What the agent does is in the hover text; a screen reader gets it in the button's label (hidden text inside
+    // the name was left out by VoiceOver in Safari).
+    if (a.does) chip.setAttribute('aria-label', `${a.name}, ${a.does}`);
+    chip.append(avatarFor(a.key), el('span', null, a.name));
     chip.addEventListener('click', () => openAgentEditor(a));
     slots[a.role].appendChild(chip);
   }
