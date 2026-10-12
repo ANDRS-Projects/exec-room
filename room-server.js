@@ -116,6 +116,10 @@ function readApiKey() {
 }
 const API_KEY = KEY_MODE ? readApiKey() : '';
 if (KEY_MODE && !API_KEY) stopStart('ROOM_AUTH is "api-key" but no key was found. Set ROOM_ANTHROPIC_API_KEY, or ROOM_ANTHROPIC_API_KEY_REF to its 1Password reference (op://…), or start the room on the Claude plan with `npm run room`.');
+// From here on the key, and everything else that decides how a run is paid, is out of the server's own environment:
+// what the server starts besides `claude` (gh, and op for the Notion token) inherits that environment and has no
+// use for any of it. runEnv() puts the key into the environment of a `claude` run and nowhere else.
+for (const name of AUTH_ENV) delete process.env[name];
 const scrub = (text) => (API_KEY ? String(text).split(API_KEY).join('[API key removed]') : text);
 
 // With a Claude plan login around, the CLI uses that login and not the key (checked on 2026-10-10: an invalid key
@@ -173,6 +177,20 @@ const MAX_SITES = 30;
 // Execs may write, but only drafts: file-writing tools are available, approved solely under drafts/.
 const DRAFT_TOOLS = ['Write', 'Edit'];
 const DRAFT_RULES = ['Write(drafts/**)', 'Edit(drafts/**)'];
+// Every tool a run or an agent inside it may be given. None of them can run a command or read a program's
+// environment, and that is what keeps the API key, and any other secret a run is started with, out of an agent's
+// reach. It used to follow from how permissionsFor happens to be written; onlySafeTools makes it a rule: a run whose
+// tool list holds anything else is not started.
+const SAFE_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch', 'Agent', 'ToolSearch', ...DRAFT_TOOLS]);
+function onlySafeTools(tools, whose) {
+  const off = tools.filter((t) => !SAFE_TOOLS.has(t));
+  if (off.length) throw new Error(`The room refused to start ${whose}: its tool list holds ${off.join(', ')}, which no room agent may have.`);
+  return tools;
+}
+// Folders of the system itself, never a room folder and never readable by a run. On Linux /proc shows the
+// environment of running programs (the run's own included, with the API key in key mode); macOS has no /proc, so
+// there this only refuses /dev.
+const SYSTEM_DIRS = ['/proc', '/sys', '/dev'];
 // Notion is read-only for agents: a write to a database can set off whatever automation the owner has on it (publishing, for example).
 const NOTION = 'mcp__claude_ai_Notion__';
 const NOTION_READ = ['notion-search', 'notion-fetch', 'notion-query-data-sources'].map((t) => NOTION + t);
@@ -845,7 +863,7 @@ function instructionReads(home = process.env.HOME) {
 // and .git holds remote URLs that may carry tokens, and every old commit).
 const SECRET_FILES = ['.env', '.env.*', '.dev.vars', '.dev.vars.*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', 'id_ecdsa*',
   '.npmrc', '.netrc', '.pypirc', '.git-credentials', '*.p12', '*.pfx', '.envrc', '*.tfvars', '*.tfvars.json', '*.tfstate*', 'credentials.json'];
-const secretDenied = () => [...SECRET_FILES.map((f) => `Read(//**/${f})`), 'Read(//**/.git/**)'];
+const secretDenied = () => [...SECRET_FILES.map((f) => `Read(//**/${f})`), 'Read(//**/.git/**)', ...SYSTEM_DIRS.map((d) => `Read(/${d}/**)`)];
 // Writing is drafts/ only, but that rests on allow rules, and Claude Code lets a run edit `.claude/launch.json` in the
 // folder it starts in without one (checked live on 2026-10-01: that Edit went through while every other file outside
 // drafts/ was refused). That file tells the Claude desktop app which command to start for a preview, so an agent
@@ -886,6 +904,7 @@ function validateAccess(o) {
     try { real = fs.realpathSync(expanded); } catch { throw new Error(`"${f}" doesn't exist`); }
     if (!fs.statSync(real).isDirectory()) throw new Error(`"${f}" isn't a folder`);
     if (real === '/' || home === real || home.startsWith(real + '/')) throw new Error(`"${f}" is too broad: pick a folder inside your home folder, not the home folder itself`);
+    if (SYSTEM_DIRS.some((d) => real === d || real.startsWith(d + '/'))) throw new Error(`"${f}" is a folder of the system itself (${SYSTEM_DIRS.join(', ')}), not one for agents to read`);
     if (isSensitive([path.resolve(expanded), real], home)) throw new Error(`"${f}" holds keys or settings agents must never read (${[...SENSITIVE_DIRS, CLAUDE_DIR].map((d) => `~/${d}`).join(', ')}, and what they link to; in ~/.claude only ${INSTRUCTION_DIRS.join(', ')} are allowed): pick another folder`);
     // A room folder that is, holds or sits inside the attachments folder would let every run in that room read
     // files attached in another room.
@@ -1927,7 +1946,8 @@ function permissionsFor(access, { lead = false, groups = null } = {}) {
   // A block beats any allow rule: with mail off the whole connector is blocked, with it on only M365_BLOCKED.
   // The room's own data folder and the sensitive folders (and what they link to) are blocked for every run,
   // whatever folders the room may read: a block beats an allow rule, so a readable folder never exposes what's blocked inside it.
-  return { tools, allowed, denied: [...(notion ? [] : NOTION_READ), ...(m365 ? M365_BLOCKED : [...M365_READ, M365_SERVER]), ...dataDenied(), ...sensitiveDenied(), ...secretDenied(), ...writeDenied()] };
+  // Bash is named in the block list too: no run is given it, and a block beats whatever might allow it.
+  return { tools, allowed, denied: ['Bash', ...(notion ? [] : NOTION_READ), ...(m365 ? M365_BLOCKED : [...M365_READ, M365_SERVER]), ...dataDenied(), ...sensitiveDenied(), ...secretDenied(), ...writeDenied()] };
 }
 
 // The room's own data (every room's transcripts, workspaces.json, the job log, agents.json) is never readable by
@@ -1950,9 +1970,12 @@ function buildArgs(text, resumeId, maker, space, attachRead = []) {
   const m = maker ? makerInfo(maker) : null;
   const access = runAccess(space);
   const perms = permissionsFor(access, { lead: !maker, groups: m && m.tools });
+  const agents = m ? makerAgents(maker) : execAgents(space);
+  onlySafeTools(perms.tools, m ? m.name : 'Coen');
+  for (const [name, a] of Object.entries(agents)) if (Array.isArray(a.tools)) onlySafeTools(a.tools, `the agent "${name}"`);
   const args = [
     '-p', text,
-    '--agents', JSON.stringify(m ? makerAgents(maker) : execAgents(space)),
+    '--agents', JSON.stringify(agents),
     '--agent', m ? m.agent : AGENT,
     '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
     // Project settings only: skips user plugins/hooks and the user's pre-approved write rules.
@@ -2166,7 +2189,10 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     // A resumed session's cost total includes earlier messages; a fresh one (maker or new chat) starts at 0.
     job.costBase = resumeId ? (room.sessionCostUsd || 0) : 0;
     job.sessionTotal = job.costBase;
-    const child = spawn('claude', buildArgs(prompt, resumeId, agentKey, space, job.attachRead), { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // buildArgs refuses a tool list outside SAFE_TOOLS: the run then ends as a failed one, with the reason on the page.
+    let args;
+    try { args = buildArgs(prompt, resumeId, agentKey, space, job.attachRead); } catch (err) { fail(err.message); return; }
+    const child = spawn('claude', args, { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'] });
     job.child = child;
 
     let resumeMissing = false;        // --resume pointed at a session that no longer exists

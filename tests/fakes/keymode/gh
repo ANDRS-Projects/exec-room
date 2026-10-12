@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+# Test double for `gh` in key mode: records which of the variables that decide how a run is paid it was started with
+# (names only, never a value) in $ROOM_TEST_TMP/keymode-gh.ndjson, then answers that the issue doesn't exist.
+import json, os, sys
+
+NAMES = ("ANTHROPIC_API_KEY", "ROOM_ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "keymode-gh.ndjson"), "a") as log:
+    log.write(json.dumps({"args": sys.argv[1:3], "given": [n for n in NAMES if n in os.environ]}) + "\n")
+sys.exit(print("GraphQL: Could not resolve to an issue or pull request with the number of 1. (repository.issue)", file=sys.stderr) or 1)
