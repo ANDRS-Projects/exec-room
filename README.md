@@ -132,6 +132,8 @@ Most settings live in the room itself (Room settings), per room: folders agents 
 
 Share the databases and pages with your Notion integration. Posts are always saved with Status `draft`; publishing stays with you.
 
+Agent runs and `gh` are started with a short, fixed set of environment variables (what a program needs to run and reach the network, and their own login settings), not with everything your shell has. If your setup needs another variable passed on, for example one a version manager uses to find `node`, start the room with its name in `ROOM_PASS_ENV` (names separated by commas).
+
 Environment variables are listed in `.env.example`. The server reads them from your shell; it does not load a `.env` file.
 
 ## Your own agents
@@ -160,7 +162,7 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-702 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 702 checks match tests/expected.txt`.
+704 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 704 checks match tests/expected.txt`.
 
 ## Security
 

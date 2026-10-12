@@ -1573,6 +1573,7 @@ try:
         blocked = lambda p: any(r == f"Read(/{p})" or (r.endswith("/**)") and (p + "/").startswith(r[6:-4] + "/")) for r in ran["denied_read"])
         out("U a run is blocked from each folder with keys", {d: blocked(os.path.realpath(os.path.join(fake_home, d))) for d in off_limits})
         out("U a run can't switch its permission checks off", (ran["permission_mode"], ran["settings"]))
+        out("U a run is not given the room's own variables", ran["leftover_env"])
         out("U no shell: a run's tools, and Bash and the system folders in the block list", (sorted(ran["tools"]), ran["denied_bash"], [d for d in ("/proc", "/sys", "/dev") if f"Read(/{d}/**)" in ran["denied_read"]]))
         for d in off_limits + ["notes"]:
             out(f"U as a room folder, ~/{d}", call("/api/workspaces", {"name": "Keys", "members": None, "access": {"files": [f"~/{d}"]}})[0])
@@ -2178,7 +2179,10 @@ try:
     with open(os.path.join(data, "jobs.ndjson"), "w") as f:
         f.write(json.dumps({"kind": "job", "agent": "chief-operating-officer", "jobId": "j0", "roomId": "old-chat", "claudeSessionId": "plan-session", "startedAt": now,
                             "endedAt": now, "status": "ok", "prompt": "old", "turns": 1, "costUsd": 50, "sessionCostUsd": 50}) + "\n")
-    s = Server("keymode", {"ROOM_AUTH": "api-key", "ROOM_ANTHROPIC_API_KEY": KEY}, data_name="data-keymode-old")
+    # This server's own environment also holds a secret of another tool, a setting for gh, and one variable the
+    # owner asked to have passed on (ROOM_PASS_ENV): a run and gh get a short fixed list, not what the server has.
+    s = Server("keymode", {"ROOM_AUTH": "api-key", "ROOM_ANTHROPIC_API_KEY": KEY, "SUITE_SECRET": "x", "GH_HOST": "github.example",
+                           "SUITE_EXTRA": "y", "ROOM_PASS_ENV": "SUITE_EXTRA, ANTHROPIC_BASE_URL, not a name"}, data_name="data-keymode-old")
     try:
         out("Q default caps", kroom().get("caps"))
         evs = ksay("hello")
@@ -2195,6 +2199,8 @@ try:
         ksay("see https://github.com/Example-Org/key-test/issues/1")
         gh_log = os.path.join(TMP, "keymode-gh.ndjson")
         out("Q gh is started without the key", [json.loads(l) for l in open(gh_log)] if os.path.exists(gh_log) else "gh was not called")
+        run = kcalls()[-1]
+        out("Q a run on a key: nothing of the room's or of other tools, and no MCP servers", (run["leftover_env"], run["strict_mcp"], run["key"], run["room_key_var"]))
     finally:
         s.stop()
     # Back on the plan (the default): no key, no cap, no folder of its own; the chat starts fresh once more.

@@ -25,7 +25,8 @@ def flag(name):
 
 key = os.environ.get("ANTHROPIC_API_KEY")
 config = os.environ.get("CLAUDE_CONFIG_DIR")
-data = os.environ["ROOM_DATA_DIR"]
+# The room's data folder is not among the variables a run is given: the key's config folder sits directly in it.
+data = os.path.dirname(config) if config else None
 start = note.find("What this room lets agents use:")
 with open(os.path.join(os.environ["ROOM_TEST_TMP"], "keymode-calls.ndjson"), "a") as log:
     log.write(json.dumps({"agent": agent, "resume": one("--resume"), "budget": one("--max-budget-usd"),
@@ -36,6 +37,7 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "keymode-calls.ndjson"), "a"
                           "notion_allowed": any("Notion" in t for t in flag("--allowedTools")),
                           "m365_allowed": any("Microsoft_365" in t for t in flag("--allowedTools")),
                           "tool_search": "ToolSearch" in flag("--tools"),
+                          "strict_mcp": "--strict-mcp-config" in args, "leftover_env": sorted(k for k in os.environ if k.startswith(("ROOM_", "GH_", "SUITE_")) and not k.startswith("ROOM_TEST_")),
                           "tools": flag("--tools"), "denied_bash": "Bash" in flag("--disallowedTools"), "denied_proc": "Read(//proc/**)" in flag("--disallowedTools"),
                           "note": note[start:note.find(" Anything else", start)] if start >= 0 else None,
                           # What the server put after the message about linked Notion pages, if anything.

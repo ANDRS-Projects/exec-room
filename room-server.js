@@ -75,15 +75,37 @@ const AUTH_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_U
 const OWN_CONTEXT_ONLY = CONFIG.agentsGetClaudeFiles !== true;
 const OWN_CONTEXT_ENV = OWN_CONTEXT_ONLY ? { CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } : {};
 
+// What the room starts gets a short, fixed environment, not the server's own: a program inherits every variable of
+// the one that starts it, and the server's environment holds whatever the shell it was started from had (tokens of
+// other tools included). Tried on 2026-10-13 with Claude Code 2.1.289 and gh on macOS: both find their login with
+// these alone. BASE_ENV is what any program needs to run and reach the network.
+const BASE_ENV = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TERM', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'no_proxy', 'all_proxy',
+  'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'SSL_CERT_DIR',
+  // Linux: where programs keep their settings and reach the login keyring.
+  'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'];
+// A plan login kept somewhere other than the default: a token, or a config folder of its own. Never on a key.
+const PLAN_ENV = ['CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR'];
+const GH_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GH_HOST', 'GH_CONFIG_DIR'];
+// For a setup that needs more (a version manager's own variables, say): names in ROOM_PASS_ENV, separated by commas,
+// are passed on as well. Never one of AUTH_ENV. ROOM_TEST_* is the test suite's own and goes to its stand-ins.
+const PASS_ENV = (process.env.ROOM_PASS_ENV || '').split(',').map((n) => n.trim()).filter((n) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n) && !AUTH_ENV.includes(n));
+function passedOn(names) {
+  const env = {};
+  for (const name of [...names, ...PASS_ENV, ...Object.keys(process.env).filter((n) => n.startsWith('ROOM_TEST_'))]) {
+    if (process.env[name] !== undefined) env[name] = process.env[name];
+  }
+  return env;
+}
+
 // The environment of everything the room starts with `claude`: a job's run, and the start-up check.
 function runEnv() {
-  const env = { ...process.env, ...OWN_CONTEXT_ENV };
-  // Strip any API key so the CLI uses the logged-in Claude plan, never pay-as-you-go credits, and whatever else
-  // would send a run somewhere other than that plan.
+  const env = { ...passedOn(KEY_MODE ? BASE_ENV : [...BASE_ENV, ...PLAN_ENV]), ...OWN_CONTEXT_ENV };
+  // No API key, other endpoint or other provider reaches a run from the server's environment (none of them is on
+  // the list above, and they are removed from the server's own environment at start): the CLI uses the logged-in
+  // Claude plan, never pay-as-you-go credits, unless the room was started on a key.
   for (const name of AUTH_ENV) delete env[name];
   if (KEY_MODE) {
-    // A plan token in the environment would be a plan login too.
-    delete env.CLAUDE_CODE_OAUTH_TOKEN;
     fs.mkdirSync(KEY_CONFIG_DIR, { recursive: true, mode: 0o700 });
     env.ANTHROPIC_API_KEY = API_KEY;
     env.CLAUDE_CONFIG_DIR = KEY_CONFIG_DIR;
@@ -795,7 +817,11 @@ const SENSITIVE_DIRS = ['.ssh', '.aws', '.gnupg', '.config', 'Library', '.docker
 // A second lock on every run: Claude Code refuses to work with its permission checks switched off, whatever asks for
 // it (a flag, a settings file in a folder a run starts in). Tried on 2026-10-12 with Claude Code 2.1.289: a run asked
 // to start in bypassPermissions mode started in that mode without this setting, and in default mode with it.
-const GUARD_SETTINGS = JSON.stringify({ permissions: { disableBypassPermissionsMode: 'disable' } });
+// The same settings switch hooks off. Runs load the project settings of the folder they start in, and a hook there
+// is a shell command Claude Code runs by itself at set moments, with the run's environment. Tried on 2026-10-13: a
+// SessionStart and a UserPromptSubmit hook in a folder's .claude/settings.json both ran in a `claude -p` started
+// there with --setting-sources project, and neither ran with this setting.
+const GUARD_SETTINGS = JSON.stringify({ disableAllHooks: true, permissions: { disableBypassPermissionsMode: 'disable' } });
 const CLAUDE_DIR = '.claude';
 const INSTRUCTION_DIRS = ['agents', 'skills', 'knowledge'];
 const realOr = (p) => { try { return fs.realpathSync(p); } catch { return null; } };
@@ -1343,7 +1369,7 @@ function extractRecs(text, space) {
 // Runs gh with fixed arguments (flags as --x=value), optional stdin, and a timeout; resolves with stdout.
 function ghRun(args, stdin = '', timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const child = spawn('gh', args, { stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs });
+    const child = spawn('gh', args, { env: passedOn([...BASE_ENV, ...GH_ENV]), stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs });
     let out = '';
     let err = '';
     child.stdout.on('data', (c) => { out += c; });
@@ -1990,6 +2016,9 @@ function buildArgs(text, resumeId, maker, space, attachRead = []) {
     '--append-system-prompt', maker ? `${MAKER_NOTE}\n\n${accessLine(access)}${briefNote(space) ? `\n\n${briefNote(space)}` : ''}` : roomNote(space),
   ];
   if (resumeId) args.push('--resume', resumeId);
+  // On a key there are no connectors to load (they belong to the plan login), so no MCP server is started at all:
+  // each is a program of its own that would get the run's environment. On the plan the room needs the connectors.
+  if (KEY_MODE) args.push('--strict-mcp-config');
   // Counts this run's own spend, not what a resumed chat cost before it (checked live on 2026-10-10).
   if (KEY_MODE) args.push('--max-budget-usd', String(RUN_CAP_USD));
   return args;

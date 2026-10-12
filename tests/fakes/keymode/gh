@@ -3,7 +3,7 @@
 # (names only, never a value) in $ROOM_TEST_TMP/keymode-gh.ndjson, then answers that the issue doesn't exist.
 import json, os, sys
 
-NAMES = ("ANTHROPIC_API_KEY", "ROOM_ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
+NAMES = ("ANTHROPIC_API_KEY", "ROOM_ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ROOM_NOTION_TOKEN", "ROOM_DATA_DIR", "SUITE_SECRET", "GH_HOST", "SUITE_EXTRA", "PATH", "HOME")
 with open(os.path.join(os.environ["ROOM_TEST_TMP"], "keymode-gh.ndjson"), "a") as log:
     log.write(json.dumps({"args": sys.argv[1:3], "given": [n for n in NAMES if n in os.environ]}) + "\n")
 sys.exit(print("GraphQL: Could not resolve to an issue or pull request with the number of 1. (repository.issue)", file=sys.stderr) or 1)
