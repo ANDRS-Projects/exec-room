@@ -54,6 +54,7 @@ A page, chips name their role: []
 A page, chip groups: ['aria-label="Advisors Coen can consult"', 'aria-labelledby="chips-label-makers"']
 A page, makers' group label exists: True
 A page, no menu roles: (False, False, False)
+A page, fields have their own edge colour: (['#9090a8'], 6)
 A foreign origin: (403, '{"error":"forbidden origin"}')
 A foreign host: (403, '{"error":"forbidden host"}')
 A form post: (415, '{"error":"JSON only"}')
