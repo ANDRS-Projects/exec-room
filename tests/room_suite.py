@@ -202,6 +202,15 @@ try:
         # A field's edge is the only thing that shows where it is, so it has its own colour, 3:1 against white (#9090a8).
         css = str(call("/room.css")[1])
         out("A page, fields have their own edge colour", (re.findall(r'--border-control: (#\w+);', css), len(re.findall(r'border: 1px solid var\(--border-control\)', css))))
+        # A built-in agent as the room runs it, for the page's read-only view. Nothing can be saved there: no route writes to the agents' folder.
+        def built_in(key):
+            code, body = call("/api/agents/built-in/" + key)[:2]
+            a = json.loads(body).get("agent")
+            return (code, a and (a["name"], a["role"], a["file"], a["model"], bool(a["does"]), bool(a["instructions"]), sorted(a)))
+        for key in ("coen", "nobody", "__proto__", "constructor"):
+            out(f"A built-in agent, {key}", built_in(key))
+        out("A built-in agent can't be saved", [call("/api/agents/built-in/coen", {"instructions": "x"})[0], call("/api/agents/coen", {"name": "Coen", "instructions": "x"})[:2]])
+        out("A page, chips and Coen's avatar open the view", ("openAgentView(chip.dataset.who)" in str(call("/room.js")[1]), 'id="coen-open"' in page, 'id="agent-view"' in page))
         out("A foreign origin", call("/api/coen", {"text": "x"}, {"Origin": "https://evil.example"})[:2])
         out("A foreign host", call("/api/room", headers={"Host": "attacker.example"})[:2])
         out("A form post", call("/api/coen", raw=b"text=hi", headers={"content-type": "text/plain"})[:2])

@@ -2643,6 +2643,30 @@ app.get('/api/agents/importable/:id', (req, res) => {
   res.json({ agent });
 });
 
+// A built-in agent as the room runs it, for the page's read-only view: what its AGENT.md said when the room started.
+// Nothing is read here and nothing can be saved: the room never writes to that folder, and a change to the file
+// reaches the room at its next start. AGENTS_SHOWN is the folder as the page names it.
+const AGENTS_SHOWN = 'agents';
+const BUILT_IN_TYPES = { coen: 'chief-operating-officer', ...Object.fromEntries(Object.entries(PEERS).map(([type, key]) => [key, type])) };
+function builtInAgent(key) {
+  const shown = (a, more) => ({ key, does: a.description, model: a.model || '', instructions: a.prompt, ...more });
+  if (Object.hasOwn(BUILT_IN_TYPES, key)) {
+    const type = BUILT_IN_TYPES[key];
+    return shown(EXEC_AGENTS[type], { name: key === 'coen' ? 'Coen' : EXEC_NAMES[key], role: key === 'coen' ? 'lead' : 'advisor', file: `${AGENTS_SHOWN}/${EXEC_DIRS[type]}/AGENT.md` });
+  }
+  if (Object.hasOwn(MAKERS, key)) {
+    const m = MAKERS[key];
+    return shown(MAKER_AGENTS[key][m.agent], { name: m.name, role: 'maker', file: `${AGENTS_SHOWN}/${m.dir}/AGENT.md` });
+  }
+  return null;
+}
+
+app.get('/api/agents/built-in/:key', (req, res) => {
+  const agent = builtInAgent(req.params.key);
+  if (!agent) return res.status(404).json({ error: 'no such built-in agent' });
+  res.json({ agent });
+});
+
 app.get('/api/agents', (req, res) => {
   res.json({
     agents: Object.values(custom).map(publicAgent),

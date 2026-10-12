@@ -39,7 +39,7 @@
   <main class="main">
     <div class="coen-head">
       <div class="head-avatars" id="head-avatars">
-        <img class="avatar" src="avatars/coen.svg" alt="" width="40" height="40">
+        <button type="button" class="avatar-open" id="coen-open" title="Coen · what he does and his instructions" aria-label="Coen, room lead: what he does and his instructions"><img class="avatar" src="avatars/coen.svg" alt="" width="40" height="40"></button>
       </div>
       <div><p class="title" id="head-title">Coen · COO</p><p class="sub">intake & triage · remembers this chat</p></div>
       <span class="status" id="coen-status" hidden>thinking…</span>
@@ -86,6 +86,20 @@
     <button type="button" class="ghost" id="draft-close">Close</button>
   </div>
   <div class="viewer-body md" id="draft-body"></div>
+</dialog>
+
+<dialog class="viewer agent-view" id="agent-view" aria-labelledby="agent-view-title">
+  <div class="viewer-head">
+    <h2 id="agent-view-title"></h2>
+    <span class="viewer-note">built-in agent · read-only</span>
+    <button type="button" class="ghost" id="agent-view-close">Close</button>
+  </div>
+  <div class="viewer-body">
+    <div class="agent-view-facts" id="agent-view-facts"></div>
+    <p class="panel-note" id="agent-view-note"></p>
+    <h3 class="agent-view-label">Instructions</h3>
+    <div class="md" id="agent-view-instructions"></div>
+  </div>
 </dialog>
 
 <dialog class="viewer agent-editor" id="agent-editor" aria-labelledby="agent-editor-title">

@@ -55,6 +55,12 @@ A page, chip groups: ['aria-label="Advisors Coen can consult"', 'aria-labelledby
 A page, makers' group label exists: True
 A page, no menu roles: (False, False, False)
 A page, fields have their own edge colour: (['#9090a8'], 6)
+A built-in agent, coen: (200, ('Coen', 'lead', 'agents/coo/AGENT.md', '', True, True, ['does', 'file', 'instructions', 'key', 'model', 'name', 'role']))
+A built-in agent, nobody: (404, None)
+A built-in agent, __proto__: (404, None)
+A built-in agent, constructor: (404, None)
+A built-in agent can't be saved: [404, (404, '{"error":"no such agent (only agents added in the room can be changed here)"}')]
+A page, chips and Coen's avatar open the view: (True, True, True)
 A foreign origin: (403, '{"error":"forbidden origin"}')
 A foreign host: (403, '{"error":"forbidden host"}')
 A form post: (415, '{"error":"JSON only"}')
