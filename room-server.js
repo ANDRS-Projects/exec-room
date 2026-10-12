@@ -700,7 +700,11 @@ const accessOf = (space) => (space && space.access) || minimalAccess();
 const runAccess = (space) => (KEY_MODE ? { ...accessOf(space), notion: false, m365: false, notionLinks: accessOf(space).notion && Boolean(NOTION_TOKEN) } : accessOf(space));
 const targetsOf = (space) => {
   const t = (space && space.targets) || minimalTargets();
-  return { ...t, publicRepos: t.publicRepos || [], allowedRecipients: t.allowedRecipients || [], sendFrom: t.sendFrom || '' };
+  // A database room.config.json no longer has is left out here, not taken off the room: nothing downstream may meet
+  // a key without its entry (the proposal rules list each database's name and accounts), and it counts again once
+  // the config has it back. The start-up says which rooms list one.
+  const notionDbs = (Array.isArray(t.notionDbs) ? t.notionDbs : []).filter((k) => Object.hasOwn(NOTION_DBS, k));
+  return { ...t, notionDbs, publicRepos: t.publicRepos || [], allowedRecipients: t.allowedRecipients || [], sendFrom: t.sendFrom || '' };
 };
 const isPublicRepo = (space, repo) => targetsOf(space).publicRepos.includes(repo);
 
@@ -1750,6 +1754,13 @@ for (const rec of Object.values(recs)) if (rec.action === 'email_draft' && rec.s
     try {
       // A room saved before attachments existed (or edited by hand) may list a folder that holds them. It is left out
       // of that room's runs (see permissionsFor) and reported here.
+      // A room can list a Notion database the config no longer has (taken out of room.config.json after the room was
+      // set up). It is left out of that room's runs (see targetsOf) and reported here; the room's file keeps it.
+      const goneDbs = ((space.targets && Array.isArray(space.targets.notionDbs) && space.targets.notionDbs) || []).filter((k) => !Object.hasOwn(NOTION_DBS, k));
+      if (goneDbs.length) {
+        console.warn(`Room "${space.name}" lists Notion databases that room.config.json doesn't have: ${goneDbs.map((k) => JSON.stringify(k)).join(', ')}. They are left out of that room until the config has them again.`);
+        fs.appendFileSync(JOBS_FILE, JSON.stringify({ kind: 'warning', check: 'room lists a Notion database the config lacks', room: space.id, name: space.name, databases: goneDbs, at: new Date().toISOString() }) + '\n');
+      }
       const attached = ((space.access && space.access.files) || []).filter((f) => typeof f === 'string' && overlapsAttachments(realOr(f) || f));
       if (attached.length) {
         console.warn(`Room "${space.name}" lists folders that hold files attached to messages: ${attached.map(tilde).join(', ')}. Agents in that room don't get them; remove them in the room's settings.`);
@@ -2460,7 +2471,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
   const targets = targetsOf(spaceOf(rec.roomId));
   const offEmail = rec.action === 'email_draft' ? notAllowed(rec, targets.allowedRecipients) : [];
   const offList = (rec.action === 'github_issue' || rec.action === 'github_comment') && !roomRepo(spaceOf(rec.roomId), rec.repo) ? `${rec.repo} is no longer one of this room's repos`
-    : rec.action === 'notion_draft' && !targets.notionDbs.includes(rec.database) ? `this room can no longer save posts to ${NOTION_DBS[rec.database].name}`
+    : rec.action === 'notion_draft' && !targets.notionDbs.includes(rec.database) ? `this room can no longer save posts to ${Object.hasOwn(NOTION_DBS, rec.database) ? NOTION_DBS[rec.database].name : `"${rec.database}" (room.config.json doesn't list that database)`}`
       : offEmail.length ? `${offEmail.join(' and ')} ${offEmail.length > 1 ? 'are' : 'is'} no longer on this room's recipient list`
         : null;
   if (offList) return res.status(409).json({ error: `${offList}. Ask Coen to propose it again, or change the room's settings.` });

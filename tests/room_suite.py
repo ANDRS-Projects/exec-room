@@ -822,6 +822,34 @@ try:
         s.stop()
         fake.shutdown()
         fake.server_close()  # frees the port for the next fake Notion
+    # T: a room that lists a Notion database room.config.json doesn't have (it was taken out of the config after the
+    # room was set up). The database is left out for that room: its messages are answered, the proposal rules don't
+    # offer it, a waiting draft for it can't be approved, and the start-up says which room lists it. The room's file
+    # is not rewritten, so the database counts again once the config has it back.
+    data = os.path.join(TMP, "data-gone-db")
+    os.makedirs(os.path.join(data, "rooms"))
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": None, "title": "Old", "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}}}, f)
+    rooms_file = default_rooms()
+    rooms_file["workspaces"]["exec"]["targets"]["notionDbs"] = ["output-log-1", "gone-db"]
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump(rooms_file, f)
+    with open(os.path.join(data, "recommendations.json"), "w") as f:
+        json.dump({"rec-gone-db": {"recId": "rec-gone-db", "roomId": "old-chat", "action": "notion_draft", "summary": "Waiting draft", "database": "gone-db",
+                                   "posts": [{"channel": "X", "title": "t", "content": "c"}], "state": "pending"}}, f)
+    s = Server("targets", data_name="data-gone-db")
+    try:
+        call("/api/coen", {"text": "hello"})
+        evs = events(call("/api/stream")[1])
+        offered_now = [json.loads(l) for l in open(os.path.join(TMP, "targets-calls.ndjson"))][-1]
+        out("T a database the config lacks: the message is answered", [e["status"] for e in evs if e["type"] == "end"])
+        out("T it is not offered, the room's other database is", (offered_now["log1"], offered_now["gone_db"]))
+        out("T the page gets only databases that exist", json.loads(call("/api/workspaces")[1])["workspaces"][0]["targets"]["notionDbs"])
+        out("T a waiting draft for it can't be approved", call("/api/recs/rec-gone-db/approve", {})[:2])
+        out("T the room's file still lists it", json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]["exec"]["targets"]["notionDbs"])
+    finally:
+        s.stop()
+    out("T the start-up names the room and the database", [l for l in s.stderr.splitlines() if "Notion databases" in l])
     # I: linked issues. the owner's message links issues; the server reads the ones in the room's repos with gh
     # (fixed arguments) and adds them to Coen's prompt as marked data. Other repos, failures and links over the
     # limit are reported, never guessed at, and the run's tools don't change.
