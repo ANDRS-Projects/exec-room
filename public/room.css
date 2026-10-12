@@ -289,6 +289,12 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .layout.rail-open .chips-label { flex-basis: 100%; margin-top: 2px; }
 .chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 3px 10px 3px 3px; font-size: 12px; cursor: pointer; color: var(--text); }
 .chip img { border-radius: 50%; flex: none; }
+/* Coen's avatar in the header is a button (it opens the read-only view of him): no button look around the picture. */
+.avatar-open { border: none; background: none; padding: 0; border-radius: 50%; cursor: pointer; display: inline-flex; }
+.avatar-open:focus-visible { outline: 2px solid var(--coen); outline-offset: 2px; }
+.agent-view-facts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.agent-view-label { font-size: 13px; margin: 16px 0 6px; }
+.agent-view .md { border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
 /* A long name ends in an ellipsis instead of wrapping inside the pill; the whole name is in the chip's title. */
 .chip { min-width: 0; max-width: 100%; }
 .chip > span:last-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -387,7 +393,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .viewer-body { padding: 16px; line-height: 1.55; }
 
 .agent-editor form { display: flex; flex-direction: column; }
-.agent-editor .viewer-head h2, .picker .viewer-head h2 { font-family: inherit; }
+.agent-editor .viewer-head h2, .agent-view .viewer-head h2, .picker .viewer-head h2 { font-family: inherit; }
 .agent-fields { display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; border: none; margin: 0; padding: 0; min-width: 0; }
 .field-label { font-weight: 600; font-size: 13px; padding: 0; }

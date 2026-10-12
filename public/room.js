@@ -311,7 +311,8 @@ function addConsult(who, cid, prompt, focus = false) {
     coenMsg = null;
     t.marker = appendToThread(el('button', 'marker'));
     t.marker.type = 'button';
-    t.marker.addEventListener('click', () => focusGroup(t));
+    // The marker opens the panel on this turn's replies, and closes the panel when it is already showing them.
+    t.marker.addEventListener('click', () => (layout.classList.contains('rail-open') && t.group.open ? setRail(false) : focusGroup(t)));
     t.slot = appendToThread(el('div', 'inline-slot'));
     t.group = el('details', 'group');
     t.group.open = true;
@@ -1045,9 +1046,36 @@ stopBtn.addEventListener('click', async () => {
   }
 });
 
+// A built-in agent comes from a folder of agent files, which the room reads at start and never writes: its
+// chip (and Coen's avatar) opens a read-only view of what the room runs it with, and says where it is changed.
+const agentView = $('agent-view');
+async function openAgentView(key) {
+  $('agent-view-title').textContent = nameOf(key);
+  const facts = $('agent-view-facts');
+  const body = $('agent-view-instructions');
+  facts.replaceChildren();
+  $('agent-view-note').textContent = '';
+  body.textContent = 'Loading…';
+  agentView.showModal();
+  try {
+    const res = await fetch('/api/agents/built-in/' + encodeURIComponent(key));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    const a = data.agent;
+    const role = { lead: 'Room lead · every message goes to him first', advisor: 'Advisor · Coen can consult it', maker: 'Maker · works only after you approve a dispatch' }[a.role] || a.role;
+    facts.append(recField('Role', role), recField('What it does', a.does),
+      recField('Model', a.model ? (models.find((m) => m.id === a.model) || {}).label || a.model : 'Account default'), recField('File', a.file));
+    $('agent-view-note').textContent = `To change ${a.name}, edit that file. The room reads it when it starts, so a change shows here and reaches ${a.name} after the room's next restart. The room itself never writes to that folder.`;
+    body.innerHTML = renderMd(a.instructions || '');
+  } catch (err) {
+    body.textContent = `Couldn't load ${nameOf(key)}: ${err.message}`;
+  }
+}
+$('agent-view-close').addEventListener('click', () => agentView.close());
 document.querySelectorAll('.chip[data-who]').forEach((chip) => {
-  chip.addEventListener('click', () => setRail(!layout.classList.contains('rail-open')));
+  chip.addEventListener('click', () => openAgentView(chip.dataset.who));
 });
+$('coen-open').addEventListener('click', () => openAgentView('coen'));
 
 async function newChat() {
   const res = await fetch('/api/coen/reset', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
