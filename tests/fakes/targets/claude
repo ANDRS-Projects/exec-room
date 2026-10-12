@@ -7,13 +7,18 @@ import json, os, sys
 
 args = sys.argv[1:]
 prompt = args[args.index("-p") + 1]
+# Whether the room told Coen that its settings changed, and with which repo (see settingsChangeNote in room-server.js).
+settings_note = prompt.split("(End of the room note on settings.)]", 1)[0] if "(End of the room note on settings.)]" in prompt else ""
+prompt = prompt.split("(End of the room note on settings.)]\n\n", 1)[-1]  # the room's own note on changed settings is not the message
 note = args[args.index("--append-system-prompt") + 1]
 out = lambda o: print(json.dumps(o), flush=True)
 with open(os.path.join(os.environ["ROOM_TEST_TMP"], "targets-calls.ndjson"), "a") as log:
     log.write(json.dumps({"issues": '"github_issue"' in note, "demo_app": "demo-app" in note, "private_app": "Example-Org/private-app" in note,
                           "drafts": '"notion_draft"' in note, "log1": '"output-log-1"' in note, "log2": '"output-log-2"' in note, "gone_db": '"gone-db"' in note,
                           "pages": '"notion_page"' in note, "exec_meetings": "Exec Team Meetings" in note, "product_notes": "Product notes" in note,
-                          "public_rule": "visible to everyone" in note, "reads_issues": "the server reads it and adds it after the message" in note, "comments": '"github_comment"' in note}) + "\n")
+                          "public_rule": "visible to everyone" in note, "reads_issues": "the server reads it and adds it after the message" in note, "comments": '"github_comment"' in note,
+                          "told_settings": bool(settings_note), "told_private_app": "Example-Org/private-app" in settings_note,
+                          "told_starts": settings_note[:60]}) + "\n")
 
 
 def rec(obj):

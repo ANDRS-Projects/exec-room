@@ -6,6 +6,7 @@ import json, os, sys
 
 args = sys.argv[1:]
 prompt = args[args.index("-p") + 1]
+prompt = prompt.split("(End of the room note on settings.)]\n\n", 1)[-1]  # the room's own note on changed settings is not the message
 note = args[args.index("--append-system-prompt") + 1]
 out = lambda o: print(json.dumps(o), flush=True)
 with open(os.path.join(os.environ["ROOM_TEST_TMP"], "email-calls.ndjson"), "a") as log:

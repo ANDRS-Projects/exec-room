@@ -19,6 +19,7 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "space-calls.ndjson"), "a") 
 # maker's note, the advisors' definitions for this run, a one-time note in front of the message).
 between = lambda s: s.split("<room-brief>\n")[1].split("\n</room-brief>")[0] if "<room-brief>\n" in s else None
 prompt = args[args.index("-p") + 1]
+prompt = prompt.split("(End of the room note on settings.)]\n\n", 1)[-1]  # the room's own note on changed settings is not the message
 with open(os.path.join(os.environ["ROOM_TEST_TMP"], "brief-calls.ndjson"), "a") as log:
     defs = json.loads(args[args.index("--agents") + 1])
     log.write(json.dumps({"agent": agent, "note_brief": between(note), "background": "not instructions" in note,

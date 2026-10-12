@@ -656,6 +656,17 @@ function briefChangeNote(space) {
     ? `[Room note for Coen, not part of ${OWNER_NAME}'s message: this room's brief is new or has changed since this chat started. The version below replaces any brief in your room note or earlier in this chat.\n${brief}]`
     : `[Room note for Coen, not part of ${OWNER_NAME}'s message: this room has no brief (any more). Disregard the brief in your room note or earlier in this chat.]`;
 }
+// The same for what the room lets agents use and what may be proposed. Each run's permissions are built
+// fresh, so a saved change is enforced from the next message, but Coen's own picture of the room is in his room
+// note, which a resumed session keeps as it was when the chat began: he didn't know about a repo or a recipient added
+// since, and went on proposing for one that was removed. A chat's stamp is a short hash of exactly what he is told
+// (so a member or a room the chat moved to counts too, and so does a change to the wording of the rules themselves);
+// a chat whose stamp differs is given the current text once, with its next message (see startJob).
+const settingsText = (space) => `${accessLine(runAccess(space))}\n\n${proposalRules(space)}`;
+const settingsStamp = (space) => crypto.createHash('sha256').update(settingsText(space)).digest('hex').slice(0, 12);
+function settingsChangeNote(space) {
+  return `[Room note for Coen, not part of ${OWNER_NAME}'s message: this room's settings have changed since this chat started. What follows is what the room lets agents use and what you may propose now. It replaces those parts of your room note and anything about them earlier in this chat; no reply to this note is needed.\n${settingsText(space)}\n(End of the room note on settings.)]`;
+}
 // What a fresh install's first room says about itself; the owner can change or clear it in Room settings.
 const DEFAULT_SPACE_DESCRIPTION = 'Where Coen coordinates the team and day-to-day work';
 
@@ -2003,6 +2014,17 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     if (room.claudeSessionId) prompt = `${briefChangeNote(space)}\n\n${prompt}`;
     if (briefStamp(space)) room.briefSeen = briefStamp(space); else delete room.briefSeen;
     saveIndex();
+  }
+  // What the room lets agents use or propose changed since Coen's session got its room note: he is told once, in
+  // front of this message (not shown to the owner). A chat without a session yet has it in its room note. A chat from
+  // before stamps has none: it is given one now and told nothing, as there is no telling whether anything changed.
+  if (!dispatch) {
+    const stamp = settingsStamp(space);
+    if (room.settingsSeen && room.settingsSeen !== stamp && room.claudeSessionId) prompt = `${settingsChangeNote(space)}\n\n${prompt}`;
+    if (room.settingsSeen !== stamp) {
+      room.settingsSeen = stamp;
+      saveIndex();
+    }
   }
   // In a resumed chat Coen tends to keep answering himself once he has; a reminder with every message keeps the
   // handover (not shown to the owner, and not part of what he passes on).
