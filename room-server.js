@@ -143,6 +143,26 @@ if (KEY_MODE && !API_KEY) stopStart('ROOM_AUTH is "api-key" but no key was found
 // use for any of it. runEnv() puts the key into the environment of a `claude` run and nowhere else.
 for (const name of AUTH_ENV) delete process.env[name];
 const scrub = (text) => (API_KEY ? String(text).split(API_KEY).join('[API key removed]') : text);
+// The same through everything an event holds. No way for the key into a run's context is known (no tool reads the
+// environment); this is the second line: if it ever got there, it would not leave in a reply, a tool's details, a
+// proposal or the transcript. It is an exact match, so a key that is encoded or split on purpose passes, and what
+// an agent sends to the web (a search, a fetched address) has left before the room sees it.
+const scrubDeep = (v) => (!API_KEY ? v
+  : typeof v === 'string' ? scrub(v)
+    : Array.isArray(v) ? v.map(scrubDeep)
+      : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrubDeep(x)])) : v);
+// A text cut to `cap` characters with the key taken out. Cutting first could leave half a key at the end, which
+// no longer matches; so a key that starts before the cut is kept whole until it has been replaced.
+function cutScrubbed(raw, cap) {
+  if (!API_KEY) return raw.slice(0, cap);
+  let end = cap;
+  for (let i = raw.indexOf(API_KEY); i !== -1 && i < cap; i = raw.indexOf(API_KEY, i + 1)) end = Math.max(end, i + API_KEY.length);
+  return scrub(raw.slice(0, end));
+}
+const fileHasKey = (file) => {
+  if (!API_KEY) return false;
+  try { return fs.readFileSync(file, 'utf8').includes(API_KEY); } catch { return false; }
+};
 
 // With a Claude plan login around, the CLI uses that login and not the key (checked on 2026-10-10: an invalid key
 // still got an answer). So key-mode runs get a config folder of their own, where no plan login exists: only then is
@@ -2134,7 +2154,32 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     if (pendingText) appendEvent(room.roomId, pendingText);
     pendingText = null;
   };
+  // In key mode nothing leaves here with the key in it. Text arrives in pieces, and a key cut in two matches in
+  // neither, so the end of each speaker's text is held back by one character less than the key's length until
+  // more text or another event follows; `release` lets go of what is held.
+  const held = new Map();
+  const release = (except = null) => {
+    for (const [who, h] of held) {
+      if (who === except) continue;
+      held.delete(who);
+      if (h.text) emit({ ...h.ev, text: h.text });
+    }
+  };
   const send = (ev) => {
+    if (!API_KEY) return emit(ev);
+    if (ev.type === 'text' && typeof ev.text === 'string') {
+      const who = `${ev.who}|${ev.cid || ''}`;
+      release(who);
+      const all = scrub(((held.get(who) || {}).text || '') + ev.text);
+      const keep = Math.min(all.length, API_KEY.length - 1);
+      if (all.length > keep) emit({ ...ev, text: all.slice(0, all.length - keep) });
+      held.set(who, { ev, text: all.slice(all.length - keep) });
+      return undefined;
+    }
+    release();
+    return emit(scrubDeep(ev));
+  };
+  const emit = (ev) => {
     const tagged = { ...ev, jobId: job.jobId };
     if (!dispatch && ev.type === 'text' && ev.who === 'coen') job.coenText += ev.text;
     if (focus && ev.type === 'text' && ev.who === focus.key) job.focusText += ev.text;
@@ -2152,12 +2197,14 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
   // For what only matters while it lasts (an `activity`): to the pages watching now, not into the transcript or the
   // job's own list, so a page that joins later doesn't get it and a replay never does.
   const sendLive = (ev) => {
-    const line = JSON.stringify({ ...ev, jobId: job.jobId }) + '\n';
+    const line = JSON.stringify({ ...scrubDeep(ev), jobId: job.jobId }) + '\n';
     for (const sub of job.subscribers) sub.write(line);
   };
 
   function finish(status, error = '') {
     if (job.done) return;
+    // Text still held back (key mode) belongs to the answer: out with it before proposals are read from it.
+    release();
     job.done = true;
     clearTimeout(job.stopTimer);
     jobs.delete(room.roomId);
@@ -2352,7 +2399,10 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
           if (pendingDrafts.has(block.tool_use_id)) {
             const name = pendingDrafts.get(block.tool_use_id);
             pendingDrafts.delete(block.tool_use_id);
-            if (!block.is_error) {
+            if (!block.is_error && fileHasKey(path.join(DRAFTS_DIR, name))) {
+              // The file is the agent's and is left as it is; it is not shown, and not handed to a next maker.
+              send({ type: 'notice', text: `The draft ${name} holds the room's API key, so it is not shown here or passed on. The file is still in drafts/: open it yourself and take the key out before using it.` });
+            } else if (!block.is_error) {
               job.drafts.add(name);
               send({ type: 'draft', ...(route(parent) || self), name });
             }
@@ -2403,7 +2453,8 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       }
     });
     child.stderr.on('data', (chunk) => {
-      if (stderr.length < STDERR_CAP) stderr = (stderr + chunk).slice(0, STDERR_CAP);
+      // Room for one key more than the cap, so that a key which starts before the cut is still whole (cutScrubbed).
+      if (stderr.length < STDERR_CAP + API_KEY.length) stderr = (stderr + chunk).slice(0, STDERR_CAP + API_KEY.length);
     });
     child.on('error', (err) => {
       fail(`Couldn't start Claude: ${err.message}`);
@@ -2420,7 +2471,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       }
       const status = job.stopRequested ? 'stopped' : code === 0 && !capHit ? 'ok' : 'error';
       if (status === 'error' && capHit) fail(`This run stopped at the spend cap for one run ($${RUN_CAP_USD.toFixed(2)}). What was written so far is above. Send a message to carry on, or restart the room with a higher ROOM_RUN_CAP_USD.`);
-      else if (status === 'error') fail(claudeError || stderr.trim() || `Claude exited with code ${code}`);
+      else if (status === 'error') fail(claudeError || cutScrubbed(stderr, STDERR_CAP).trim() || `Claude exited with code ${code}`);
       else finish(status);
     });
   }

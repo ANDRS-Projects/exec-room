@@ -687,6 +687,11 @@ Q a plan chat starts fresh on the key, old job lines don't count: (None, "the ro
 Q the next message resumes the key's session: ('key-session', 'api-key')
 Q a run's tools on a key: (['Agent', 'Edit', 'Glob', 'Grep', 'Read', 'WebFetch', 'WebSearch', 'Write'], True, True, True)
 Q gh is started without the key: [{'args': ['issue', 'view'], 'given': ['GH_HOST', 'SUITE_EXTRA', 'PATH', 'HOME']}]
+Q the key in what a run sent out: ({'page': False, 'recommendations.json': False, 'jobs.ndjson': False, 'old-chat.ndjson': False}, False, 6)
+Q the reply, put together: The key is [API key removed], and so on.P
+Q a draft with the key is withheld, a clean one is shown: (['2026-10-13-coen-clean.md'], ["The draft 2026-10-13-coen-key-leak.md holds the room's API"])
+Q the proposal that held it: [('Post with [API key removed]', 'Use [API key removed] in it.')]
+Q error output is cut after the key is out: (False, False, 8203, 'xxxxxxx[API key removed]')
 Q a run on a key: nothing of the room's or of other tools, and no MCP servers: (['SUITE_EXTRA'], True, "the room's key", False)
 Q on the plan the page gets no caps: ('subscription', None, None)
 Q a key chat starts fresh on the plan: (None, None, False, None, None, ["This chat was last used with an API key, and Coen's memory of it doesn't carry over to the Claude plan. The history above is still here, but he starts fresh from this message."])

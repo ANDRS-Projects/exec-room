@@ -2220,6 +2220,23 @@ try:
         ksay("see https://github.com/Example-Org/key-test/issues/1")
         gh_log = os.path.join(TMP, "keymode-gh.ndjson")
         out("Q gh is started without the key", [json.loads(l) for l in open(gh_log)] if os.path.exists(gh_log) else "gh was not called")
+        # The second line of defence: if the key ever got into a run's context, it does not leave in a
+        # reply (also when it is cut over two pieces of text), a tool's details, a proposal, the transcript or the
+        # job log; a draft that holds it is not shown or passed on; and error output is cut after the key is out.
+        evs = ksay("leak everywhere")
+        index_chat = lambda: kroom()["roomId"] + ".ndjson"
+        seen = json.dumps(evs)
+        files = {f: open(os.path.join(data, f)).read() for f in ("recommendations.json", "jobs.ndjson", os.path.join("rooms", index_chat()))}
+        half = KEY[:len(KEY) // 2]
+        out("Q the key in what a run sent out", ({"page": KEY in seen, **{os.path.basename(f): KEY in t for f, t in files.items()}}, half in seen, seen.count("[API key removed]")))
+        out("Q the reply, put together", "".join(e["text"] for e in evs if e["type"] == "text" and e.get("who") == "coen")[:41])
+        out("Q a draft with the key is withheld, a clean one is shown", ([e["name"] for e in evs if e["type"] == "draft"], [e["text"][:58] for e in evs if e["type"] == "notice"]))
+        out("Q the proposal that held it", [(e["rec"]["summary"], e["rec"]["body"]) for e in evs if e["type"] == "recommendation"])
+        for name in ("2026-10-13-coen-key-leak.md", "2026-10-13-coen-clean.md"):
+            os.remove(os.path.join(opts.root, "drafts", name))
+        evs = ksay("pad stderr")
+        err = errors(evs)[0]
+        out("Q error output is cut after the key is out", (KEY in err, KEY[:6] in err, len(err), err[-24:]))
         run = kcalls()[-1]
         out("Q a run on a key: nothing of the room's or of other tools, and no MCP servers", (run["leftover_env"], run["strict_mcp"], run["key"], run["room_key_var"]))
     finally:
