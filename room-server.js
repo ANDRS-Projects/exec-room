@@ -2290,7 +2290,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     if (KEY_MODE && keySpentToday() >= DAY_CAP_USD) fail(`Today's API key spend cap is reached ($${keySpentToday().toFixed(2)} of $${DAY_CAP_USD.toFixed(2)}), so ${job.who} wasn't started. It starts again tomorrow; to go on today, restart the room with a higher ROOM_DAY_CAP_USD.`);
     else run(id);
   };
-  // Only the owner's own messages: a brief or a follow-up the room writes itself isn't hers.
+  // Only the owner's own messages: a brief or a follow-up the room writes itself isn't one of them.
   // What the message links to and agents can't open themselves: GitHub issues, and on an API key Notion pages.
   const reads = dispatch || auto ? [] : [
     issueLinks(text).length && readLinkedIssues(text, space),
