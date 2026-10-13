@@ -422,7 +422,7 @@ function proposalRules(space) {
 ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {"action": "github_issue", "repo": one of ${targets.repos.map((r) => `"${r}"`).join(', ')}, "summary": "one line", "title": "…", "body": "markdown"}.${targets.publicRepos.length ? ` These repos are public, so an issue there is visible to everyone: ${targets.publicRepos.join(', ')}. Write those issues for outsiders and leave out anything internal (Notion content, private repos, costs, clients, plans, the room itself); the others are private.` : ' All of them are private.'}
 - Comment on an existing issue in one of this room's repos (e.g. your review of it, or an update): {"action": "github_comment", "repo": one of the repos above, "issue": its number, "summary": "one line", "body": "markdown"}.${targets.publicRepos.length ? ' Comments on the public repos are visible to everyone too; write them the same way.' : ''}
 ` : ''}${NOTION_TOKEN && targets.notionDbs.length ? `- Save social posts as Notion drafts, one row per post (Status is always draft; scheduling stays with the owner): {"action": "notion_draft", "database": one of ${targets.notionDbs.map((k) => [k, NOTION_DBS[k]]).map(([k, db]) => `"${k}" (${db.name}, accounts: ${db.accounts.join(' / ')})`).join(', ')}, "summary": "one line", "posts": [up to 5 of {"channel": one of ${NOTION_CHANNELS.map((c) => `"${c}"`).join(', ')}, "title": "…", "content": "the post text, copied verbatim from the maker's draft (keep X thread 'Tweet N:' markers)", optional "account"}], optional "account" for all posts, "image_prompt", "source_insight"}. Put a whole package (e.g. LinkedIn + X + Notes, with an image maker's prompt as image_prompt) in one proposal. Output DBs are only for posts meant for delivery.
-` : ''}${NOTION_TOKEN && targets.notionPlaces.length ? `- Save anything else as a new Notion page (a long article, research, a strategy doc, a review, meeting notes, a digest): {"action": "notion_page", "parent": the Notion URL or id of the page to put it under, "summary": "one line", "title": "…", "content": "markdown (headings, lists, quotes, code, links), up to ${NOTION_PAGE_MAX} characters"}. You choose the place, one of this room's: ${targets.notionPlaces.map((p) => `${p.name} (${p.id})${p.for ? ` for ${p.for}` : ''}`).join('; ')}. You may also pick a more fitting sub-page inside one of these places that you find with Notion search (it's checked when the owner approves); it only works where the owner has shared the page with the room.
+` : ''}${NOTION_TOKEN && targets.notionPlaces.length ? `- Save anything else as a new Notion page (a long article, research, a strategy doc, a review, meeting notes, a digest): {"action": "notion_page", "parent": the Notion URL or id of the page to put it under, "summary": "one line", "title": "…", "content": "markdown (headings, lists, quotes, code, links), up to ${NOTION_PAGE_MAX} characters"}. You choose the place, one of this room's: ${targets.notionPlaces.map((p) => `${p.name} (${p.id})${p.for ? ` for ${p.for}` : ''}`).join('; ')}. You may also pick a more fitting sub-page inside one of these places that you find with Notion search (it's checked when the owner approves); it only works where the owner has shared the page with the room.${roomPages(space).length ? `\n- Update a Notion page this room created earlier, instead of making a new one for a new version of the same document: {"action": "notion_page_update", "page": its Notion URL or id, "summary": "one line, say what changed", "title": "…", "content": "the whole new version in markdown, up to ${NOTION_PAGE_MAX} characters"}. The new version goes on top and the previous one is kept under it. Only these pages can be updated: ${roomPages(space).map((r) => `${r.title} (${notionId(r.result.url)})`).join('; ')}.` : ''}
 ` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send by hand (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. Only a short draft opens straight in a mail app (up to about ${EMAIL_OPENS_ABOUT} characters of text); the owner copies and pastes a longer one by hand, so keep an email short where that fits the message, and don't split one email in two to get under it. This is allowed because the room never sends it: approving only records the owner's decision, then the owner opens the draft in a mail app and sends it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
 ` : `- Email drafts are off in this room because it has no email recipients. If the owner asks for an email, say that these can be turned on by adding the recipient (an address, or a domain) under Room settings → "Email recipients for drafts", and then ask again in a new chat. Don't write the email as a file instead.
 `}Nothing that publishes, schedules, posts or sends messages can be proposed${targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer the note and propose again.${targets.repos.length ? `
@@ -1269,6 +1269,12 @@ function validateRec(o, space = null) {
     if (Object.values(NOTION_DBS).some((db) => db.id.replace(/-/g, '') === id)) throw new Error('"parent" is an Output DB; use notion_draft for posts');
     return { action: 'notion_page', summary, parent: id, title: str(o.title, 'title', 200).replace(/\s+/g, ' '), content: str(o.content, 'content', NOTION_PAGE_MAX) };
   }
+  if (o.action === 'notion_page_update' && NOTION_TOKEN) {
+    const id = notionId(o.page);
+    if (!id) throw new Error('"page" must be the Notion URL or id of the page to update');
+    if (!roomMadePage(space, id)) throw new Error("that page wasn't created by this room; only a page the room made itself can be updated");
+    return { action: 'notion_page_update', summary, page: id, title: str(o.title, 'title', 200).replace(/\s+/g, ' '), content: str(o.content, 'content', NOTION_PAGE_MAX) };
+  }
   if (o.action === 'email_draft') {
     const targets = targetsOf(space);
     if (!targets.allowedRecipients.length) throw new Error("this room has no email recipients, so it can't propose emails");
@@ -1389,13 +1395,75 @@ async function notionRequest(method, urlPath, body) {
   const res = await fetch(`${NOTION_API}${urlPath}`, {
     method,
     headers: { Authorization: `Bearer ${NOTION_TOKEN}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(30000),
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 404) throw Object.assign(new Error("Notion can't find that page; it may not be shared with the room's integration"), { notFound: true });
   if (!res.ok) throw new Error(`Notion ${res.status}: ${data.message || 'request failed'}`);
   return data;
+}
+
+// The proposal that created a Notion page in this room, or null: only such a page may be updated. The room knows its
+// own pages from the links its approvals returned; a page written by hand, or made in another room, is never one.
+// The pages this room made that can still be named to Coen, newest first.
+const roomPages = (space) => Object.values(recs).filter((r) => r.action === 'notion_page' && r.state === 'done' && r.result && notionId(r.result.url) && spaceOf(r.roomId).id === space.id)
+  .sort((a, b) => String(b.decidedAt || '').localeCompare(String(a.decidedAt || ''))).slice(0, 15);
+function roomMadePage(space, pageId) {
+  const id = String(pageId || '').replace(/-/g, '');
+  return Object.values(recs).find((r) => r.action === 'notion_page' && r.state === 'done' && r.result && notionId(r.result.url) === id
+    && spaceOf(r.roomId).id === (space || spaceOf(r.roomId)).id) || null;
+}
+
+// A block as Notion returned it, in the form Notion takes back: only plain kinds without anything nested, which is
+// all the room itself writes. Anything else (a table, an image, a nested list someone added by hand) can't be copied.
+const COPYABLE = new Set(['paragraph', 'heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'quote', 'code', 'divider', 'to_do', 'callout']);
+const copyOf = (b) => (b && COPYABLE.has(b.type) && !b.has_children && b[b.type] ? { object: 'block', type: b.type, [b.type]: b[b.type] } : null);
+const UPDATE_MAX_BLOCKS = 800;
+
+// Replaces the content of a page the room made, and keeps what was there: the new version on top, the previous one
+// under "Previous version" at the bottom. Notion has no "insert at the top" and no "move", so the order is: add the
+// new blocks at the end, add copies of the old ones after them, and only when all of that has worked remove the
+// originals. If the old content can't be copied (too long, or kinds of block the room doesn't write), nothing is
+// removed and the new version stays below the old one: a wrong approval can never lose text.
+// Changing a title and removing blocks need the integration's "Update content" capability; that is tried first, on
+// the title, so that a missing capability stops the update before anything is added.
+async function updateNotionDoc(rec) {
+  const page = rec.page;
+  try {
+    await notionRequest('PATCH', `/pages/${page}`, { properties: { title: { title: richText(rec.title) } } });
+  } catch (err) {
+    if (/Notion 403/.test(err.message)) throw new Error('the room\'s Notion integration may not change existing pages: switch on "Update content" for it in Notion (Settings, Connections), then approve again. Nothing was changed');
+    throw err;
+  }
+  const old = [];
+  let cursor = '';
+  do {
+    const list = await notionRequest('GET', `/blocks/${page}/children?page_size=100${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ''}`);
+    old.push(...(Array.isArray(list.results) ? list.results : []));
+    cursor = list.has_more && list.next_cursor ? list.next_cursor : '';
+  } while (cursor && old.length <= UPDATE_MAX_BLOCKS);
+  const fresh = markdownBlocks(rec.content);
+  fresh.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: inlineText(creditLine(rec)).map((t) => ({ ...t, annotations: { italic: true, color: 'gray' } })) } });
+  const append = async (blocks) => {
+    for (let i = 0; i < blocks.length; i += 100) await notionRequest('PATCH', `/blocks/${page}/children`, { children: blocks.slice(i, i + 100) });
+  };
+  const url = `https://www.notion.so/${page}`;
+  const copies = old.map(copyOf);
+  const keepable = old.length <= UPDATE_MAX_BLOCKS && !cursor && copies.every(Boolean);
+  try {
+    await append(fresh);
+    if (!keepable) return { url, kept: 'above' };
+    if (old.length) {
+      const when = new Date().toISOString().slice(0, 10);
+      await append([{ object: 'block', type: 'divider', divider: {} },
+        { object: 'block', type: 'heading_2', heading_2: { rich_text: richText(`Previous version (replaced on ${when})`) } }, ...copies]);
+      for (const b of old) await notionRequest('DELETE', `/blocks/${b.id}`);
+    }
+  } catch (err) {
+    throw Object.assign(new Error(`page partly updated, nothing was removed that isn't also further down the page: ${err.message}`), { url });
+  }
+  return { url, kept: old.length ? 'below' : 'none' };
 }
 
 // Creates a new page under an existing page (never a database row), 100 blocks per request.
@@ -2723,6 +2791,22 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     }
     rec.state = error ? 'failed' : 'done';
     rec.result = error ? { urls, error } : { urls };
+    saveRecs();
+    logDecision(rec, { result: rec.result });
+    return res.json({ events: [decision, recResult(rec, rec.result)] });
+  }
+  if (rec.action === 'notion_page_update') {
+    try {
+      // Checked again now: still a page this room made, still in a place the room may write to.
+      const made = roomMadePage(spaceOf(rec.roomId), rec.page);
+      if (!made) throw new Error("that page wasn't created by this room, so nothing was changed");
+      if (!(await underPlace(made.parent, targets.notionPlaces))) throw new Error("the place that page is in is no longer one of this room's Notion places, so nothing was changed");
+      rec.result = await updateNotionDoc(rec);
+      rec.state = 'done';
+    } catch (err) {
+      rec.result = { error: err.message.slice(0, 500), ...(err.url ? { url: err.url } : {}) };
+      rec.state = 'failed';
+    }
     saveRecs();
     logDecision(rec, { result: rec.result });
     return res.json({ events: [decision, recResult(rec, rec.result)] });

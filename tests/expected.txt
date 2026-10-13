@@ -513,6 +513,16 @@ S hidden connectors warnings: ['room.config.json: skipped "hiddenConnectors" ent
 S owner name from the config: Sam Lee
 T2 an old chat is told nothing and gets a stamp: (False, True)
 T2 a change after that is told: (True, "[Room note for Coen, not part of the owner's message: this r")
+N2 a page the room didn't make: ([], ["that page wasn't created by this room; only a page the room made itsel"])
+N2 before any page, the update isn't offered: {'offers_update': False, 'names_first': False}
+N2 the page is made: ('done', None, '')
+N2 as made: ('First doc', [('heading_1', 'First'), ('paragraph', 'Old text.'), ('paragraph', 'Proposed by Coen in Exec Room (Ops room) and')])
+N2 now the update is offered, with the page named: ({'offers_update': True, 'names_first': True}, [('notion_page_update', True, 'First doc, v2')], [])
+N2 without the Update content capability nothing is touched: (('failed', None, 'the room\'s Notion integration may not change existing pages: switch on "Update content" for it i'), 'First doc', 3)
+N2 approved: ('done', 'below', '')
+N2 new on top, the previous version under it: ('First doc, v2', [('paragraph', 'New text.'), ('paragraph', 'Proposed by Coen in Exec Room (Ops room) and'), ('divider', '---'), ('heading_2', 'Previous version (replaced on <date>)'), ('heading_1', 'First'), ('paragraph', 'Old text.'), ('paragraph', 'Proposed by Coen in Exec Room (Ops room) and')])
+N2 content the room can't copy: added below, nothing removed: (('done', 'above', ''), 2, [('paragraph', 'Third text.'), ('paragraph', 'Proposed by Coen in Exec Room (Ops room) and')])
+N2 decided: [('notion_page', 'done'), ('notion_page_update', 'failed'), ('notion_page_update', 'done'), ('notion_page_update', 'done')]
 U room list: ['<tmp>/c2/x', '~/y', '~/.ssh']
 U run note: What this room lets agents use: reading files in <tmp>/c2/x, ~/y, ~/.ssh, drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.
 U start-up check: [['~/.ssh']]
