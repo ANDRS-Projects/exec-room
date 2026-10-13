@@ -490,6 +490,7 @@ function addRecCard(rec) {
     : rec.action === 'notion_draft' ? `Proposal · Notion draft${posts.length > 1 ? `s (${posts.length} posts)` : ''}`
     : rec.action === 'email_draft' ? 'Proposal · email draft'
     : rec.action === 'notion_page' ? 'Proposal · Notion page'
+    : rec.action === 'notion_page_update' ? 'Proposal · update a Notion page'
     : rec.action === 'github_comment' ? 'Proposal · GitHub comment' : 'Proposal · GitHub issue';
   head.append(el('span', 'rec-kind', rec.by ? title.replace(/^Proposal/, `Proposal from ${nameOf(rec.by)}`) : title), pill);
   // Under the summary, for a dismissed card only: why it was dismissed (when the owner said), and a way to read
@@ -566,6 +567,16 @@ function addRecCard(rec) {
     const where = recField('Under', '');
     where.lastChild.append(under, ' · a new page, nothing existing changes');
     card.append(where, recField('Title', rec.title), recDetails('Page content', rec.content));
+  } else if (rec.action === 'notion_page_update') {
+    // Link the page so what is there now can be read before approving.
+    const page = el('a', null, 'open the page as it is now');
+    page.href = `https://www.notion.so/${rec.page}`;
+    page.target = '_blank';
+    page.rel = 'noopener noreferrer';
+    const where = recField('Page', '');
+    where.lastChild.append(page, ' · a page this room created');
+    card.append(where, recField('Title', rec.title), recDetails('New version', rec.content),
+      el('p', 'rec-note', 'The new version goes on top of the page. What is there now is kept under it, as "Previous version".'));
   } else if (rec.action === 'github_comment') {
     // Link the issue so it can be checked before approving.
     const issue = el('a', null, `${rec.repo}#${rec.issue}`);
@@ -592,6 +603,7 @@ function addRecCard(rec) {
     dispatch: `Approve · send to ${makers}`,
     notion_draft: posts.length > 1 ? `Approve · save ${posts.length} Notion drafts` : 'Approve · save as Notion draft',
     notion_page: 'Approve · create Notion page',
+    notion_page_update: 'Approve · update the page, keep the old version',
     email_draft: 'Approve · nothing is sent',
     github_issue: rec.public ? 'Approve · publish public issue' : 'Approve · create issue',
     github_comment: rec.public ? 'Approve · post public comment' : 'Approve · post comment',
@@ -727,6 +739,20 @@ function showRecResult(ev) {
       entry.status.append(link);
     });
     if (ev.error) entry.status.append(el('span', 'err-text', "Stopped at: " + ev.error));
+  } else if (entry.rec.action === 'notion_page_update' && (isNotion || ev.state === 'done')) {
+    // `kept`: where the previous version went. "above" means it could not be copied, so nothing was removed.
+    const how = ev.error ? 'Page partly updated. '
+      : ev.kept === 'above' ? "New version added below the old one: the old one holds things the room can't copy, so nothing was removed. "
+        : ev.kept === 'none' ? 'Page updated. ' : 'Page updated; the previous version is kept at the bottom. ';
+    entry.status.append(el('span', null, how));
+    if (isNotion) {
+      const link = el('a', null, 'Open in Notion');
+      link.href = ev.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      entry.status.append(link);
+    }
+    if (ev.error) entry.status.append(el('span', 'err-text', ' ' + ev.error));
   } else if (entry.rec.action === 'notion_page' && (isNotion || ev.state === 'done')) {
     entry.status.append(el('span', null, ev.error ? 'Page created. ' : 'Saved as a Notion page. '));
     if (isNotion) {
@@ -2384,7 +2410,7 @@ spaceTabs.forEach((tab, i) => {
 
 const ACTION_LABELS = {
   dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft',
-  notion_page: 'Notion page', email_draft: 'Email draft', create_agent: 'New agent',
+  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', create_agent: 'New agent',
 };
 const DECISION_WORDS = { approved: 'approved', revised: 'asked for a revision', dismissed: 'dismissed' };
 const DECISIONS_ABOUT = 'Every proposal you approve, send back for a revision or dismiss in this room is listed here, across all its chats: who decided, what it was, when, and what came of it.';

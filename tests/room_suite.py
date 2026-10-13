@@ -1560,6 +1560,106 @@ try:
         out("T2 a change after that is told", (offered()["told_settings"], offered()["told_starts"]))
     finally:
         s.stop()
+    # N2: updating a Notion page the room made (notion_page_update). The new version goes on top and what was there is
+    # kept under "Previous version"; only a page this room created can be named; a page with content the room can't
+    # copy loses nothing; and without the integration's "Update content" capability nothing is touched at all.
+    class BookNotion(BaseHTTPRequestHandler):
+        """Fake Notion that keeps pages and their blocks."""
+        pages, may_update, n = {}, True, [0]
+
+        def reply(self, obj, code=200):
+            body = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def body(self):
+            return json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+
+        def blocks(self, children):
+            made = []
+            for c in children:
+                self.n[0] += 1
+                made.append({**c, "id": f"blk-{self.n[0]}", "has_children": False})
+            return made
+
+        def do_GET(self):
+            parts = self.path.split("?")[0].strip("/").split("/")
+            if parts[-1] == "children":
+                return self.reply({"results": self.pages[parts[-2]]["blocks"], "has_more": False})
+            ident = parts[-1]
+            self.reply({"object": "page", "id": ident, "parent": self.pages[ident]["parent"] if ident in self.pages else {"type": "workspace"}})
+
+        def do_POST(self):
+            asked = self.body()
+            self.n[0] += 1
+            ident = f"{self.n[0]:032x}"
+            self.pages[ident] = {"title": asked["properties"]["title"]["title"][0]["text"]["content"], "parent": asked["parent"] | {"type": "page_id"}, "blocks": self.blocks(asked.get("children", []))}
+            self.reply({"object": "page", "id": ident, "url": f"https://www.notion.so/Doc-{ident}"})
+
+        def do_PATCH(self):
+            asked, parts = self.body(), self.path.strip("/").split("/")
+            if parts[-2] == "pages":
+                if not self.may_update:
+                    return self.reply({"message": "Insufficient permissions for this endpoint."}, 403)
+                self.pages[parts[-1]]["title"] = asked["properties"]["title"]["title"][0]["text"]["content"]
+                return self.reply({"object": "page", "id": parts[-1]})
+            self.pages[parts[-2]]["blocks"] += self.blocks(asked["children"])
+            self.reply({"results": []})
+
+        def do_DELETE(self):
+            ident = self.path.strip("/").split("/")[-1]
+            for page in self.pages.values():
+                page["blocks"] = [b for b in page["blocks"] if b["id"] != ident]
+            self.reply({"object": "block", "id": ident})
+
+        def log_message(self, *a):
+            pass
+
+    fake = ThreadingHTTPServer(("127.0.0.1", NOTION_PORT), BookNotion)
+    threading.Thread(target=fake.serve_forever, daemon=True).start()
+    s = Server("pageupdate", {"ROOM_NOTION_API": f"http://127.0.0.1:{NOTION_PORT}"})
+    try:
+        place = json.loads(call("/api/workspaces")[1])["workspaces"][0]["targets"]["notionPlaces"][0]["id"]
+        offered = lambda: [json.loads(l) for l in open(os.path.join(TMP, "pageupdate-calls.ndjson"))][-1]
+        text = lambda b: "".join(t["text"]["content"] for t in b[b["type"]].get("rich_text", [])) if b["type"] != "divider" else "---"
+        shape = lambda ident: [(b["type"], re.sub(r"\d{4}-\d\d-\d\d", "<date>", text(b))[:44]) for b in BookNotion.pages[ident]["blocks"]]
+
+        def propose(rec):
+            job = json.loads(call("/api/coen", {"text": "REC: " + json.dumps(rec)})[1])["jobId"]
+            call("/api/stream")
+            evs = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+            return [e["rec"] for e in evs if e["type"] == "recommendation"], [e["text"].split(" couldn't be used (", 1)[-1][:70] for e in evs if e["type"] == "notice"]
+
+        def approve(rec):
+            evs = json.loads(call(f"/api/recs/{rec['recId']}/approve", {})[1])["events"]
+            return [(e["state"], e.get("kept"), (e.get("error") or "")[:96]) for e in evs if e["type"] == "rec_result"][0]
+
+        update = lambda page, **more: {"action": "notion_page_update", "page": page, "summary": "v2", "title": "First doc, v2", "content": "New text.", **more}
+        out("N2 a page the room didn't make", propose(update("e" * 32)))
+        out("N2 before any page, the update isn't offered", offered())
+        made, _ = propose({"action": "notion_page", "parent": place, "summary": "v1", "title": "First doc", "content": "# First\n\nOld text."})
+        out("N2 the page is made", approve(made[0]))
+        ident = next(iter(BookNotion.pages))
+        out("N2 as made", (BookNotion.pages[ident]["title"], shape(ident)))
+        recs, notes = propose(update(f"https://www.notion.so/Doc-{ident}"))
+        out("N2 now the update is offered, with the page named", (offered(), [(r["action"], r["page"] == ident, r["title"]) for r in recs], notes))
+        BookNotion.may_update = False
+        out("N2 without the Update content capability nothing is touched", (approve(recs[0]), BookNotion.pages[ident]["title"], len(shape(ident))))
+        BookNotion.may_update = True
+        recs, _ = propose(update(ident))
+        out("N2 approved", approve(recs[0]))
+        out("N2 new on top, the previous version under it", (BookNotion.pages[ident]["title"], [(k, re.sub(r"\d{4}-\d\d-\d\d", "<date>", t)) for k, t in shape(ident)]))
+        BookNotion.pages[ident]["blocks"].append({"id": "blk-table", "type": "table", "has_children": True, "table": {}})
+        before = len(shape(ident))
+        recs, _ = propose(update(ident, title="First doc, v3", content="Third text."))
+        out("N2 content the room can't copy: added below, nothing removed", (approve(recs[0]), len(shape(ident)) - before, shape(ident)[-2:]))
+        out("N2 decided", [(r["action"], r["state"]) for r in json.load(open(os.path.join(TMP, "data-pageupdate", "recommendations.json"))).values()])
+    finally:
+        s.stop()
+        fake.shutdown()
+        fake.server_close()
     # U: paths are shown with ~ only for the home folder and what's inside it: with HOME=<tmp>/c, <tmp>/c2/x stays as it
     # is (not "~2/x"). node and the
     # fake claude's python3 come from real-bin, found with the real HOME: pyenv, asdf, mise or volta shims need it.
