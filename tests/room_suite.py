@@ -744,6 +744,20 @@ try:
         out("X m365 run", (run["tools"], run["allowed"], run["denied_m365"]))
         out("X m365 note", run["note"])
         out("X m365 room-built advisor", run["custom_tools"])
+        # The same for Notion: an advisor with that group is given the three read tools by name where the room has
+        # Notion on, and none of them where it is off. A consulted agent with a tool list gets exactly that list, so
+        # without the names an advisor had Read, Grep and Glob and nothing of the connector.
+        call("/api/agents", {"name": "Nia", "role": "advisor", "does": "reads Notion", "instructions": "Read.", "tools": ["files", "notion"]})
+        space = json.loads(call("/api/workspaces")[1])
+        here = next(w for w in space["workspaces"] if w["id"] == space["current"])
+        seen = {}
+        for on in (True, False):
+            call(f"/api/workspaces/{here['id']}", {"name": here["name"], "members": here["members"], "access": {**here["access"], "notion": on}})
+            call("/api/coen", {"text": "hello notion"})
+            events(call("/api/stream")[1])
+            seen["on" if on else "off"] = [t.split("__")[-1] for t in last()["custom_tools"]["room-nia"]]
+        out("X notion room-built advisor", seen)
+        call(f"/api/workspaces/{here['id']}", {"name": here["name"], "members": here["members"], "access": here["access"]})
         # Every run (Coen's and the maker's) blocks the room's own data folder and sets its permission mode itself.
         calls = [json.loads(l) for l in open(os.path.join(TMP, "access-calls.ndjson"))]
         out("X data folder blocked", sorted({(c["agent"], *sorted(r for r in set(untmp(c["denied_read"])) if "<tmp>" in r)) for c in calls}))

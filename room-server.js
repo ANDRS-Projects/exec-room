@@ -224,8 +224,8 @@ const DRAFT_RULES = ['Write(drafts/**)', 'Edit(drafts/**)'];
 // reach. It used to follow from how permissionsFor happens to be written; onlySafeTools makes it a rule: a run whose
 // tool list holds anything else is not started.
 const SAFE_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch', 'Agent', 'ToolSearch', ...DRAFT_TOOLS]);
-function onlySafeTools(tools, whose) {
-  const off = tools.filter((t) => !SAFE_TOOLS.has(t));
+function onlySafeTools(tools, whose, more = null) {
+  const off = tools.filter((t) => !SAFE_TOOLS.has(t) && !(more && more.has(t)));
   if (off.length) throw new Error(`The room refused to start ${whose}: its tool list holds ${off.join(', ')}, which no room agent may have.`);
   return tools;
 }
@@ -243,6 +243,8 @@ const NOTION_READ = ['notion-search', 'notion-fetch', 'notion-query-data-sources
 const M365_SERVER = 'mcp__claude_ai_Microsoft_365';
 const M365 = M365_SERVER + '__';
 const M365_READ = ['outlook_email_search'].map((t) => M365 + t);
+// The only connector tools any agent may be given by name: reading Notion and searching mail.
+const CONNECTOR_READ = new Set([...NOTION_READ, ...M365_READ]);
 // Blocked by name when mail is on: every other tool of the connector, so none of them is even in the agents' view.
 // The names are the connector's real ones, as a sandbox run listed them on 2026-09-28 (45 visible, plus the non-mail
 // search tools that were already blocked). The real guard is still that only M365_READ is allowed: a tool the
@@ -534,11 +536,21 @@ function peers(space) {
 
 // What Coen can consult in this room: its execs plus room-built advisors, each limited to its own tool groups.
 // Coen only knows the agents passed here, so an agent outside the room can't be consulted at all.
+// The tool list of a room-built advisor. A consulted agent with a list gets exactly that list, so the connector's
+// read tools must be on it by name: with the built-in names alone (ToolSearch included) an advisor with the Notion
+// or mail group was given Read, Grep and Glob and nothing of the connector (seen live on 2026-10-14). Only the read
+// tools the room allows and the advisor's groups call for are added; what may be called is still decided by the
+// run's allow rules.
+function advisorTools(space, a) {
+  const perms = permissionsFor(runAccess(space), { groups: a.tools });
+  return [...perms.tools, ...perms.allowed.filter((t) => CONNECTOR_READ.has(t))];
+}
+
 function execAgents(space) {
   const all = { [AGENT]: EXEC_AGENTS[AGENT] };
   for (const [type, key] of Object.entries(PEERS)) if (inSpace(space, key)) all[type] = EXEC_AGENTS[type];
   for (const a of Object.values(custom)) {
-    if (a.role === 'advisor' && inSpace(space, a.key)) all[customAgentName(a.key)] = { ...customDefinition(a), tools: permissionsFor(runAccess(space), { groups: a.tools }).tools };
+    if (a.role === 'advisor' && inSpace(space, a.key)) all[customAgentName(a.key)] = { ...customDefinition(a), tools: advisorTools(space, a) };
   }
   const focus = focusOf(space);
   if (focus && all[focus.type]) all[focus.type] = { ...all[focus.type], prompt: `${all[focus.type].prompt}${focusNote(space, focus)}` };
@@ -2049,7 +2061,8 @@ function buildArgs(text, resumeId, maker, space, attachRead = []) {
   const perms = permissionsFor(access, { lead: !maker, groups: m && m.tools });
   const agents = m ? makerAgents(maker) : execAgents(space);
   onlySafeTools(perms.tools, m ? m.name : 'Coen');
-  for (const [name, a] of Object.entries(agents)) if (Array.isArray(a.tools)) onlySafeTools(a.tools, `the agent "${name}"`);
+  // An advisor's own list may also name the connectors' read tools (see advisorTools); nothing else.
+  for (const [name, a] of Object.entries(agents)) if (Array.isArray(a.tools)) onlySafeTools(a.tools, `the agent "${name}"`, CONNECTOR_READ);
   const args = [
     '-p', text,
     '--agents', JSON.stringify(agents),
