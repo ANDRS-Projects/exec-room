@@ -152,9 +152,9 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 
 **Screen reader.** While a turn runs, a screen reader is told only what matters, in a short sentence each time: that your message went out, that a focus agent took over, how the turn ended ("Coen replied.", or who was consulted and how many replied), that a proposal is waiting for your decision, how an approved action ended, and any notice or error the room shows in the chat (a proposal that couldn't be used, a run that failed, a message that wasn't sent). The text of a reply is not read out as it streams in: read it in the chat when the turn is over. Opening a saved chat announces nothing. The agents in the rail are two groups, advisors and makers, and each agent's button is labelled with its name and what it does.
 
-**Reading.** The state of a proposal, a consulted agent or a chat is written out in a label ("waiting for you", "done", "failed"), not shown by colour alone. Those labels are 12px or larger, the fields you type in have an edge at 3:1 against white, and the pulsing "working" dots stand still when your system asks for reduced motion.
+**Reading.** The state of a proposal, a consulted agent or a chat is written out in a label ("waiting for you", "done", "failed"), not shown by colour alone. Those labels are 12px or larger, the fields you type in have an edge at 3:1 against white, and the pulsing "working" dots stand still when your system asks for reduced motion. There is a dark theme: it follows your system by default, and the half-moon button in the header lets you choose Auto, Light or Dark and one of three dark styles (navy, black, warm), remembered in your browser. Text and field edges keep their contrast in each.
 
-**Known gaps.** The spoken updates were checked by reading what the page hands to a screen reader, not yet in a full session with VoiceOver or NVDA. The outlines of cards, buttons and agent chips are lighter than 3:1; buttons and chips carry a text label, so the outline is not the only cue. Some secondary text is 11px. A room that is working elsewhere shows a dot in the room switcher, with "Working now" only as hover text. There is no dark mode and no high-contrast theme. If something doesn't work with your setup, please open an issue.
+**Known gaps.** The spoken updates were checked by reading what the page hands to a screen reader, not yet in a full session with VoiceOver or NVDA. The outlines of cards, buttons and agent chips are lighter than 3:1; buttons and chips carry a text label, so the outline is not the only cue. Some secondary text is 11px. A room that is working elsewhere shows a dot in the room switcher, with "Working now" only as hover text. There is no high-contrast theme. If something doesn't work with your setup, please open an issue.
 
 ## Tests
 
@@ -162,7 +162,7 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-717 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 717 checks match tests/expected.txt`.
+725 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 725 checks match tests/expected.txt`.
 
 ## Security
 

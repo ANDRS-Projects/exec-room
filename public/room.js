@@ -1685,6 +1685,43 @@ spaceButton.addEventListener('click', async () => {
 document.addEventListener('click', (e) => { if (!e.target.closest('.space-switch')) closeSpaceMenu(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !spaceMenu.hidden) { closeSpaceMenu(); spaceButton.focus(); } });
 
+// ---- Light or dark: a small menu in the header. The choice is this browser's, not a room's (see theme.js).
+const themeMenu = $('theme-menu');
+const themeToggle = $('theme-toggle');
+// What is on the page now: after a choice in a private window nothing is remembered, and the page has still changed.
+let themeNow = RoomTheme.current();
+function closeThemeMenu() {
+  themeMenu.hidden = true;
+  themeToggle.setAttribute('aria-expanded', 'false');
+}
+function renderThemeMenu(focusOn = null) {
+  themeMenu.replaceChildren();
+  const group = (label, key, options, chosen) => {
+    themeMenu.appendChild(el('p', 'space-menu-label', label));
+    for (const [value, text] of options) {
+      const b = el('button', `space-item${value === chosen ? ' current' : ''}`, text);
+      b.type = 'button';
+      b.dataset.value = value;
+      b.setAttribute('aria-pressed', String(value === chosen));
+      b.addEventListener('click', (e) => { e.stopPropagation(); themeNow = RoomTheme.choose(key, value); renderThemeMenu(value); });
+      themeMenu.appendChild(b);
+    }
+  };
+  group('Theme', 'room-theme', [['auto', 'Auto (follows your system)'], ['light', 'Light'], ['dark', 'Dark']], themeNow.theme);
+  group('Dark style', 'room-dark-style', [['navy', 'Navy'], ['black', 'Black'], ['warm', 'Warm']], themeNow.style);
+  const again = focusOn && themeMenu.querySelector(`[data-value="${focusOn}"]`);
+  if (again) again.focus();
+}
+themeToggle.addEventListener('click', () => {
+  if (!themeMenu.hidden) { closeThemeMenu(); return; }
+  renderThemeMenu();
+  themeMenu.hidden = false;
+  themeToggle.setAttribute('aria-expanded', 'true');
+  themeMenu.querySelector('.current').focus();
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('.theme-switch')) closeThemeMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !themeMenu.hidden) { closeThemeMenu(); themeToggle.focus(); } });
+
 // A different room means a different chat, history and rail: reloading draws it all from scratch.
 async function switchSpace(w) {
   closeSpaceMenu();

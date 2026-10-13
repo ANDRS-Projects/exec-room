@@ -12,7 +12,44 @@
   --frame-dot: rgba(96, 76, 40, 0.11);
   /* Workspace pill in the mark's colours: navy on cream, a cream-tinted border so it holds on the warm base. */
   --frame-accent: #1A1A2E; --frame-accent-fill: #F4EFE6; --frame-accent-line: #E2D8C3; --frame-gold: #C9A227;
+  /* Warnings (amber), errors (red), done (green), solid buttons, shadows and overlays. Every colour a rule uses is
+     named here, so the dark theme below can give each one a value and nothing stays light by accident. */
+  --warn: #633806; --warn-fill: #FAEEDA; --warn-line: #EFC98B; --warn-soft: #8a4b08;
+  --danger: #A32D2D; --danger-text: #791F1F; --danger-fill: #FCEBEB; --danger-line: #F09595;
+  --ok: #085041; --ok-fill: #E1F5EE;
+  --solid: #1a1a2e; --on-solid: #fff; --stop: #A32D2D; --on-stop: #fff;
+  --shadow: rgba(26, 26, 46, 0.12); --shadow-strong: rgba(26, 26, 46, 0.22);
+  --backdrop: rgba(26, 26, 46, 0.28); --backdrop-strong: rgba(26, 26, 46, 0.4); --code-fill: rgba(0, 0, 0, 0.06);
+  color-scheme: light;
   --frame-font: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Dark theme. theme.js sets data-theme on the page before it is drawn: "dark" when the browser's choice is Dark, or
+   Auto on a system that is dark. data-dark picks the base: navy (from the ink colour, the default), black or warm.
+   The three share every accent colour and differ only in their base, so a change to the page is checked in light
+   and dark, not in four themes. Text on a surface is at least 4.5:1 and a field's edge 3:1 in each. */
+:root[data-theme="dark"] {
+  --bg: #12121f; --surface: #1b1b2e; --border: #34344d; --text: #e9e9f4; --muted: #a3a3c2; --border-control: #7c7c99;
+  --coen: #7db7ee; --coen-fill: #17304a;
+  --maker: #d9b65f; --maker-fill: #33290f;
+  --custom: #9db4cf; --custom-fill: #1f2a38;
+  --frame-bg: var(--bg); --frame-dot: rgba(255, 255, 255, 0.05);
+  --frame-accent: #f4efe6; --frame-accent-fill: #2a2740; --frame-accent-line: #45415f;
+  --warn: #e9b765; --warn-fill: #3a2c12; --warn-line: #6b5220; --warn-soft: #e0a45a;
+  --danger: #f08a8a; --danger-text: #f5a3a3; --danger-fill: #3d1a1a; --danger-line: #7a3333;
+  --ok: #6fd1b4; --ok-fill: #12332b;
+  --solid: #e9e9f4; --on-solid: #12121f; --stop: #A32D2D; --on-stop: #fff;
+  --shadow: rgba(0, 0, 0, 0.5); --shadow-strong: rgba(0, 0, 0, 0.6);
+  --backdrop: rgba(0, 0, 0, 0.5); --backdrop-strong: rgba(0, 0, 0, 0.6); --code-fill: rgba(255, 255, 255, 0.08);
+  color-scheme: dark;
+}
+:root[data-theme="dark"][data-dark="black"] {
+  --bg: #000000; --surface: #121212; --border: #2e2e2e; --text: #ededed; --muted: #a0a0a0; --border-control: #777777;
+  --frame-accent-fill: #1f1f1f; --frame-accent-line: #3a3a3a; --solid: #ededed; --on-solid: #000000;
+}
+:root[data-theme="dark"][data-dark="warm"] {
+  --bg: #1c1a17; --surface: #26231f; --border: #3d3933; --text: #f1ede6; --muted: #b3aa9c; --border-control: #857c6e;
+  --frame-accent-fill: #332e27; --frame-accent-line: #4a443a; --solid: #f1ede6; --on-solid: #1c1a17;
 }
 /* Inter (OFL, vendored from @fontsource-variable/inter) for the header only; the chat keeps the system font. */
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("vendor/inter/inter-latin-wght-normal.woff2") format("woff2"); }
@@ -39,7 +76,7 @@ body {
 button.workspace { font-family: inherit; cursor: pointer; }
 button.workspace::after { content: ""; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; opacity: 0.6; }
 button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: var(--frame-gold); }
-.space-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 200px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px rgba(26, 26, 46, 0.12); display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.space-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 200px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
 /* Rooms with work in progress: a pulsing dot in the menu, and on the pill when it's another room. */
 .space-item.working::before, button.workspace.bg-working::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--coen); border: none; opacity: 1; animation: hint-pulse 1.2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .space-item.working::before, button.workspace.bg-working::after { animation: none; } }
@@ -68,14 +105,14 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .access-list .access-empty { color: var(--muted); background: none; padding-left: 0; min-height: 0; }
 /* Remove buttons: a 28px target, with a ring when reached by keyboard. */
 .access-remove { margin-left: auto; flex: none; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; padding: 0; font-family: inherit; }
-.access-remove:hover { color: #A32D2D; background: var(--surface); border-color: var(--border); }
+.access-remove:hover { color: var(--danger); background: var(--surface); border-color: var(--border); }
 .access-remove:focus-visible { outline: 2px solid var(--coen); outline-offset: 1px; }
 .access-add { display: flex; gap: 6px; }
 .access-add input { flex: 1; min-width: 0; border: 1px solid var(--border-control); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; }
 .access-add .ghost { margin-left: 0; }
 .place-add { flex-wrap: wrap; }
-.access-list.public li:not(.access-empty) { background: #FAEEDA; }
-.rec-warning { margin: 0; padding: 8px 10px; border-radius: 8px; background: #FAEEDA; color: #633806; border: 1px solid #EFC98B; font-size: 13px; }
+.access-list.public li:not(.access-empty) { background: var(--warn-fill); }
+.rec-warning { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-fill); color: var(--warn); border: 1px solid var(--warn-line); font-size: 13px; }
 .rec-note { margin: 0; font-size: 12px; color: var(--muted); }
 .email-links a.ghost { display: inline-flex; align-items: center; text-decoration: none; color: var(--text); }
 /* Under an approved draft's buttons: until when the room keeps the text, and the button that removes it now. */
@@ -105,7 +142,7 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .space-top { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 0; border-bottom: 1px solid var(--border); background: var(--surface); }
 .room-summary { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); font-size: 12.5px; line-height: 1.5; }
 .room-summary b { font-weight: 600; }
-.room-summary .out { background: #FAEEDA; color: #633806; border-bottom: 1px solid #EFC98B; border-radius: 3px; padding: 0 3px; }
+.room-summary .out { background: var(--warn-fill); color: var(--warn); border-bottom: 1px solid var(--warn-line); border-radius: 3px; padding: 0 3px; }
 /* On a narrow dialog the row scrolls sideways. The row, not each tab, sits over the line under it: a scrolling box
    cuts off what sticks out of it, and that was the selected tab's underline. */
 .space-tabs { display: flex; gap: 2px; overflow-x: auto; overflow-y: hidden; margin-bottom: -1px; }
@@ -113,7 +150,7 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .space-tab:hover { color: var(--text); }
 .space-tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
 .space-tab:focus-visible { outline: 2px solid var(--coen); outline-offset: -2px; }
-.tab-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: #EFC98B; box-shadow: inset 0 0 0 1px #633806; }
+.tab-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-line); box-shadow: inset 0 0 0 1px var(--warn); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* The dialog scrolls under a sticky header and Save bar; scrolling to an error must stop clear of both. */
 #space-editor { scroll-padding-block: 64px 72px; }
@@ -151,18 +188,18 @@ button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: 
 .field-label .count { margin-left: 4px; }
 .sec .count.on, .space-tab .count.on, .field-label .count.on { color: var(--text); }
 .sec .hint { min-width: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sec .tag-out { margin-left: auto; flex: none; font-size: 11px; color: #633806; }
+.sec .tag-out { margin-left: auto; flex: none; font-size: 11px; color: var(--warn); }
 .sec-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .sec-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
-.sec-note.key-off { margin-top: 6px; color: #633806; }
+.sec-note.key-off { margin-top: 6px; color: var(--warn); }
 /* Shown only while runs are paid with an API key (pay-as-you-go), next to the room's name. */
-.auth-badge { flex: none; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: #FAEEDA; color: #633806; white-space: nowrap; cursor: help; }
+.auth-badge { flex: none; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: var(--warn-fill); color: var(--warn); white-space: nowrap; cursor: help; }
 .sec-sub { margin: 4px 0 0; font-size: 13px; font-weight: 600; }
 .sec-sub small { font-weight: 400; color: var(--muted); margin-left: 4px; }
-.sec.outside { border-color: #EFC98B; }
-.sec.outside > .sec-head { background: #FAEEDA; box-shadow: inset 4px 0 0 #EFC98B; color: #633806; border-bottom-color: #EFC98B; }
-.sec.outside .hint { color: #633806; opacity: 0.8; }
-.sec.outside .count { background: var(--surface); border-color: #EFC98B; color: #633806; }
+.sec.outside { border-color: var(--warn-line); }
+.sec.outside > .sec-head { background: var(--warn-fill); box-shadow: inset 4px 0 0 var(--warn-line); color: var(--warn); border-bottom-color: var(--warn-line); }
+.sec.outside .hint { color: var(--warn); opacity: 0.8; }
+.sec.outside .count { background: var(--surface); border-color: var(--warn-line); color: var(--warn); }
 @media (max-width: 560px) { .byline { display: none; } }
 /* The rail (with its Add agent chip) is hidden on narrow screens; this header button stands in for it there. */
 .top .add-agent-top { display: none; margin-left: 0; }
@@ -204,7 +241,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .chat-edit input { width: 100%; min-width: 0; border: 1px solid var(--border-control); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface); }
 .chat-edit-actions { display: flex; gap: 6px; align-items: center; }
 .chat-edit-actions button { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 12px; color: var(--text); cursor: pointer; }
-.chat-edit-actions .save { background: var(--text); border-color: var(--text); color: #fff; }
+.chat-edit-actions .save { background: var(--solid); border-color: var(--solid); color: var(--on-solid); }
 .chat-edit-actions small { color: var(--muted); font-size: 11px; }
 .chats-note { margin: 0; padding: 0 4px; font-size: 12px; color: var(--muted); line-height: 1.45; }
 @media (min-width: 1100px) {
@@ -214,8 +251,8 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
   body.chats-open .layout.rail-open { grid-template-columns: 240px minmax(0, 680px) 360px; }
 }
 @media (max-width: 1099px) {
-  body.chats-open .chats { position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); border-radius: 0 12px 12px 0; border-left: none; box-shadow: 0 8px 32px rgba(26, 26, 46, 0.22); }
-  body.chats-open .chats-backdrop { display: block; position: fixed; z-index: 30; inset: 0; background: rgba(26, 26, 46, 0.28); }
+  body.chats-open .chats { position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); border-radius: 0 12px 12px 0; border-left: none; box-shadow: 0 8px 32px var(--shadow-strong); }
+  body.chats-open .chats-backdrop { display: block; position: fixed; z-index: 30; inset: 0; background: var(--backdrop); }
 }
 
 .main { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
@@ -245,7 +282,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 /* Coen's name on his own messages, only where a focus agent usually answers. */
 .msg.coen .msg-name { display: none; }
 .room-has-focus .msg.coen .msg-name { display: flex; }
-.bubble.err { background: #FCEBEB; color: #791F1F; border: 1px solid #F09595; white-space: pre-wrap; }
+.bubble.err { background: var(--danger-fill); color: var(--danger-text); border: 1px solid var(--danger-line); white-space: pre-wrap; }
 .notice, .meta { font-size: 12px; color: var(--muted); }
 /* Export of a room-built agent: the install commands, selectable in one go. */
 .export-note { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
@@ -256,7 +293,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .proposal-hint::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--coen); animation: hint-pulse 1.2s ease-in-out infinite; }
 @keyframes hint-pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .proposal-hint::before { animation: none; } }
-.meta.warn { color: #8a4b08; }
+.meta.warn { color: var(--warn-soft); }
 
 .tools { font-size: 12px; color: var(--muted); align-self: flex-start; max-width: 100%; }
 .tools summary { cursor: pointer; }
@@ -270,9 +307,9 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 
 .composer { display: flex; gap: 8px; align-items: flex-end; padding: 12px 14px; border-top: 1px solid var(--border); }
 .composer textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--border-control); border-radius: 8px; padding: 10px 12px; font: inherit; line-height: 1.4; max-height: 220px; }
-.composer button { height: 40px; padding: 0 16px; border: none; border-radius: 8px; background: var(--text); color: #fff; font-size: 14px; cursor: pointer; }
+.composer button { height: 40px; padding: 0 16px; border: none; border-radius: 8px; background: var(--solid); color: var(--on-solid); font-size: 14px; cursor: pointer; }
 .composer button:disabled { opacity: 0.5; cursor: default; }
-.composer .stop { background: #A32D2D; }
+.composer .stop { background: var(--stop); color: var(--on-stop); }
 /* Files picked for the next message: a row above the message box, with what happens to them in words. */
 .composer { flex-wrap: wrap; }
 .composer .attach { flex: none; width: 40px; padding: 0; display: grid; place-items: center; background: var(--surface); color: var(--text); border: 1px solid var(--border); }
@@ -284,7 +321,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .composer .file-remove { flex: none; width: 22px; height: 22px; padding: 0; background: none; color: var(--muted); font-size: 16px; line-height: 1; border-radius: 6px; }
 .composer .file-remove:hover { background: var(--border); color: var(--text); }
 .attach-note, .attach-error { flex: 1 0 100%; margin: 0; font-size: 12px; color: var(--muted); }
-.attach-error { color: #791F1F; }
+.attach-error { color: var(--danger-text); }
 .msg.user .attached { max-width: 94%; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 
 .rail { display: flex; flex-direction: column; min-height: 0; gap: 10px; }
@@ -327,7 +364,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .pill { margin-left: auto; font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--bg); color: var(--muted); }
 .pill.working { background: var(--fill); color: var(--accent); }
 .pill.replied { background: var(--fill); color: var(--accent); }
-.pill.failed, .pill.stopped, .pill.interrupted { background: #FCEBEB; color: #791F1F; }
+.pill.failed, .pill.stopped, .pill.interrupted { background: var(--danger-fill); color: var(--danger-text); }
 .brief { font-size: 12px; color: var(--muted); }
 .brief summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brief div { white-space: pre-wrap; margin-top: 4px; }
@@ -347,9 +384,9 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 /* "approved by <name>, <time>" next to the pill; the head wraps when it doesn't fit on one line. */
 .rec-head { flex-wrap: wrap; }
 .rec-decided { font-size: 12px; color: var(--muted); }
-.pill.pending { background: #FAEEDA; color: #633806; }
+.pill.pending { background: var(--warn-fill); color: var(--warn); }
 .pill.approved, .pill.running { background: var(--coen-fill); color: var(--coen); }
-.pill.done { background: #E1F5EE; color: #085041; }
+.pill.done { background: var(--ok-fill); color: var(--ok); }
 .pill.revised { background: var(--bg); color: var(--muted); }
 .pill.dismissed { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
 .rec.dismissed { gap: 4px; padding: 8px 12px; background: var(--bg); }
@@ -366,7 +403,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .rec-details .post-text { margin-top: 6px; padding: 8px 10px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rec-details .md { margin-top: 6px; padding: 8px 10px; background: var(--bg); border-radius: 8px; }
 .rec-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.approve { height: 34px; padding: 0 14px; border: none; border-radius: 8px; background: var(--text); color: #fff; font-size: 13px; cursor: pointer; }
+.approve { height: 34px; padding: 0 14px; border: none; border-radius: 8px; background: var(--text); color: var(--on-solid); font-size: 13px; cursor: pointer; }
 .rec-actions .ghost { margin-left: 0; height: 34px; }
 .rec-actions .rec-dismiss { margin-left: auto; }
 .rec-actions button:disabled { opacity: 0.5; cursor: default; }
@@ -375,7 +412,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .rec-revise .approve { align-self: flex-start; }
 .rec-form-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .rec-form-buttons .ghost { margin-left: 0; height: 34px; }
-.form-error, .err-text { color: #A32D2D; font-size: 12px; }
+.form-error, .err-text { color: var(--danger); font-size: 12px; }
 .rec-status { font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .rec-status a { color: var(--coen); }
 
@@ -390,7 +427,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .copy-btn:hover, .copy-btn:focus-visible { background: var(--bg); color: var(--text); }
 
 .viewer { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 64px); border: 1px solid var(--border); border-radius: 12px; padding: 0; color: var(--text); }
-.viewer::backdrop { background: rgba(26, 26, 46, 0.4); }
+.viewer::backdrop { background: var(--backdrop-strong); }
 .viewer-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; background: var(--surface); }
 .viewer-head h2 { font-size: 14px; margin: 0; font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
 .viewer-note { font-size: 12px; color: var(--muted); }
@@ -430,7 +467,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .rec-field .rec-avatar { width: 28px; height: 28px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
 .agent-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid var(--border); position: sticky; bottom: 0; background: var(--surface); }
 .agent-actions .ghost { margin-left: 0; height: 34px; }
-.agent-actions .danger { margin-right: auto; color: #A32D2D; }
+.agent-actions .danger { margin-right: auto; color: var(--danger); }
 .agent-actions button:disabled { opacity: 0.5; cursor: default; }
 
 .md > :first-child { margin-top: 0; }
@@ -438,8 +475,8 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .md p, .md ul, .md ol { margin: 0 0 8px; }
 .md ul, .md ol { padding-left: 20px; }
 .md h1, .md h2, .md h3, .md h4 { font-size: 14px; margin: 10px 0 6px; }
-.md code { font-family: ui-monospace, monospace; font-size: 12px; background: rgba(0, 0, 0, 0.06); padding: 1px 4px; border-radius: 4px; }
-.md pre { background: rgba(0, 0, 0, 0.06); padding: 8px; border-radius: 6px; overflow-x: auto; }
+.md code { font-family: ui-monospace, monospace; font-size: 12px; background: var(--code-fill); padding: 1px 4px; border-radius: 4px; }
+.md pre { background: var(--code-fill); padding: 8px; border-radius: 6px; overflow-x: auto; }
 .md pre code { background: none; padding: 0; }
 .md table { border-collapse: collapse; margin: 0 0 8px; display: block; overflow-x: auto; }
 .md th, .md td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
@@ -459,14 +496,14 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 
 /* Room-built agents' colour tones, in the order they're handed out: the first five stay clear of the built-in
    agents' colours. Text in the tone on its fill is at least 4.9:1. */
-.tone-1 { --tone: #8A3A88; --tone-fill: #F6E8F5; }
-.tone-2 { --tone: #116877; --tone-fill: #E0F2F5; }
-.tone-3 { --tone: #A6304D; --tone-fill: #FBE7EE; }
-.tone-4 { --tone: #5A4FB0; --tone-fill: #ECEAFB; }
-.tone-5 { --tone: #536812; --tone-fill: #EEF3DC; }
-.tone-6 { --tone: #B0442A; --tone-fill: #FAECE7; }
-.tone-7 { --tone: #86570A; --tone-fill: #FAEEDA; }
-.tone-8 { --tone: #0F6E56; --tone-fill: #E1F5EE; }
+.tone-1 { --tone-l: #8A3A88; --tone-fill-l: #F6E8F5; }
+.tone-2 { --tone-l: #116877; --tone-fill-l: #E0F2F5; }
+.tone-3 { --tone-l: #A6304D; --tone-fill-l: #FBE7EE; }
+.tone-4 { --tone-l: #5A4FB0; --tone-fill-l: #ECEAFB; }
+.tone-5 { --tone-l: #536812; --tone-fill-l: #EEF3DC; }
+.tone-6 { --tone-l: #B0442A; --tone-fill-l: #FAECE7; }
+.tone-7 { --tone-l: #86570A; --tone-fill-l: #FAEEDA; }
+.tone-8 { --tone-l: #0F6E56; --tone-fill-l: #E1F5EE; }
 /* A soft edge in the agent's own tone, the same weight as the grey border on other pills: without it a filled pill has
    no outline and is hard to pick out. The first border-color is for browsers without color-mix(). */
 .chip.custom[class*="tone-"] { background: var(--tone-fill); border-color: var(--tone-fill); border-color: color-mix(in srgb, var(--tone) 40%, var(--tone-fill)); }
@@ -491,3 +528,16 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .picker-item .meta { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .picker-item .add { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--tone, var(--coen)); }
 .picker-build { align-self: flex-start; margin-top: 6px; }
+
+/* An agent's own colour pair (the eight tones of room-built agents) is written once, as its light values. Dark makes
+   its pair from the same colour: lighter for the ink, a dark tint of it for the fill. */
+[class*="tone-"] { --tone: var(--tone-l); --tone-fill: var(--tone-fill-l); }
+:root[data-theme="dark"] [class*="tone-"] {
+  --tone: color-mix(in srgb, var(--tone-l) 45%, #ffffff); --tone-fill: color-mix(in srgb, var(--tone-l) 28%, var(--surface));
+}
+/* Fields without a background of their own get the browser's, which is a mid grey on dark: set them into the page. */
+:root[data-theme="dark"] :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select) { background-color: var(--bg); color: var(--text); }
+/* The theme menu in the header: like the room switcher's, opening to the left of its button. */
+.theme-switch { position: relative; }
+.theme-menu { left: auto; right: 0; min-width: 170px; }
+#theme-toggle { font-size: 14px; line-height: 1; padding: 6px 10px; }
