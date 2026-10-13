@@ -22,7 +22,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Approve before act** — agents propose; you approve each action on a card, then the server carries it out
 - **Rooms** — separate chats, each with its own members, its own limits on what agents may read and propose, and a one-line description of what the room is for
 - **A brief per room** — what every agent in the room should know about your business (customers, pricing, tone), written by you in Room settings and given to Coen, every advisor and every maker as background
-- **Chat list** — every chat in a room is kept; go back to one from the Chats panel and give it a name
+- **Chat list** — every chat in a room is kept; go back to one from the Chats panel, give it a name, or archive it to take it out of the list (nothing is removed, and it can be put back)
 - **GitHub** — issues and comments in the repos you allow per room (private repos only, unless you mark one as public)
 - **Notion** — posts saved as drafts in databases you configure, and long-form pages under pages you allow; a page the room made can later be updated in place, with the previous version kept under the new one (this needs the "Update content" capability on your Notion integration)
 - **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
@@ -162,7 +162,7 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-736 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 736 checks match tests/expected.txt`.
+747 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 747 checks match tests/expected.txt`.
 
 ## Security
 

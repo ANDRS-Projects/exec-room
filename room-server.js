@@ -2668,6 +2668,8 @@ app.post('/api/coen', (req, res) => {
   try { files = validateAttachments(req.body.files); } catch (err) { return res.status(400).json({ error: err.message }); }
   const busy = busyReason(currentRoom().roomId);
   if (busy) return res.status(409).json({ error: busy });
+  // A message in an archived chat puts it back in the list: it is in use again.
+  if (currentRoom().archivedAt) { delete currentRoom().archivedAt; saveIndex(); }
   res.json({ jobId: startJob(text, null, false, null, currentRoom(), [], files).jobId });
 });
 
@@ -3247,14 +3249,17 @@ function publicChat(chat, space) {
     waiting: Object.values(recs).filter((r) => r.roomId === chat.roomId && r.state === 'pending').length,
     // Only a chat with messages can have lost them: a new, empty chat is not "history only".
     ...(chat.title && !remembered && !jobs.has(chat.roomId) && { historyOnly: true }),
+    ...(chat.archivedAt && { archived: true }),
   };
 }
 
 // A room's chats, the latest first. A chat that never got a message is left out, unless it is the one that's open.
 // (A chat from before rooms has no workspaceId and is the default room's, as everywhere else.)
-function chatsOf(space) {
+// An archived chat (`archivedAt`) is left out of the list and comes in a list of its own; a chat saved before
+// archiving existed has no such field and is in the list as before.
+function chatsOf(space, archived = false) {
   return Object.values(index.rooms)
-    .filter((c) => (c.workspaceId || DEFAULT_SPACE) === space.id && (c.title || space.chat === c.roomId || jobs.has(c.roomId)))
+    .filter((c) => (c.workspaceId || DEFAULT_SPACE) === space.id && (c.title || space.chat === c.roomId || jobs.has(c.roomId)) && Boolean(c.archivedAt) === archived)
     .sort((a, b) => ((a.updatedAt || '') < (b.updatedAt || '') ? 1 : (a.updatedAt || '') > (b.updatedAt || '') ? -1 : 0))
     .map((c) => publicChat(c, space));
 }
@@ -3263,7 +3268,8 @@ app.get('/api/workspaces/:id/chats', (req, res) => {
   const space = knownSpace(req, res);
   if (!space) return;
   const all = chatsOf(space);
-  res.json({ total: all.length, keepDays: SESSION_KEEP_DAYS, chats: all.slice(0, CHATS_MAX) });
+  const archived = chatsOf(space, true);
+  res.json({ total: all.length, keepDays: SESSION_KEEP_DAYS, chats: all.slice(0, CHATS_MAX), archivedTotal: archived.length, archived: archived.slice(0, CHATS_MAX) });
 });
 
 // A chat by the id in the address, only when the index has it and its room still exists: a deleted room's chats
@@ -3301,6 +3307,38 @@ app.post('/api/chats/:id/rename', (req, res) => {
   const hidden = name.match(HIDDEN_CHARS);
   if (hidden) return res.status(400).json({ error: `the name has an invisible character (U+${hidden[0].codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}); type it again as plain text` });
   if (name) found.chat.name = name; else delete found.chat.name;
+  saveIndex();
+  res.json({ chat: publicChat(found.chat, found.space) });
+});
+
+// Archiving takes a chat out of the list without removing anything: its transcript, its decisions, the email texts
+// and Notion pages that came from it, and Coen's memory of it all stay as they are, and it can still be opened and
+// read. Not while someone works in it or a proposal waits there: neither should go on out of sight. When it is
+// the chat that's open, its room gets a new, empty one. Coen isn't told, and it isn't logged.
+app.post('/api/chats/:id/archive', (req, res) => {
+  const found = knownChat(req, res);
+  if (!found) return;
+  const { chat, space } = found;
+  if (!chat.title) return res.status(400).json({ error: 'an empty chat has nothing to archive' });
+  if (jobs.has(chat.roomId)) return res.status(409).json({ error: `${jobs.get(chat.roomId).who} is still working in this chat. Archive it once that's finished.` });
+  const waiting = Object.values(recs).filter((r) => r.roomId === chat.roomId && r.state === 'pending').length;
+  if (waiting) return res.status(409).json({ error: `${waiting} proposal${waiting > 1 ? 's' : ''} in this chat ${waiting > 1 ? 'wait' : 'waits'} for your decision. Decide first, then archive it.` });
+  chat.archivedAt = new Date().toISOString();
+  const wasOpen = space.chat === chat.roomId;
+  if (wasOpen) {
+    // The current room gets its new chat now; another room gets one the next time it is opened (currentRoom()).
+    space.chat = null;
+    saveSpaces();
+    if (spaces.current === space.id) newRoom();
+  }
+  saveIndex();
+  res.json({ chat: publicChat(chat, space), wasOpen, roomId: currentRoom().roomId });
+});
+
+app.post('/api/chats/:id/unarchive', (req, res) => {
+  const found = knownChat(req, res);
+  if (!found) return;
+  delete found.chat.archivedAt;
   saveIndex();
   res.json({ chat: publicChat(found.chat, found.space) });
 });

@@ -1766,7 +1766,11 @@ async function switchSpace(w) {
 const chatsWide = window.matchMedia('(min-width: 1100px)');
 const chatList = $('chat-list');
 const chatsNote = $('chats-note');
+const chatsArchived = $('chats-archived');
+const chatArchivedList = $('chat-archived-list');
 let renamingChat = false;   // the list isn't redrawn under a name that is being typed
+const ARCHIVE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>';
+const PUT_BACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
 let chatKeepDays = 30;
 const PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 
@@ -1817,8 +1821,30 @@ async function openChat(id) {
   }
 }
 
+// Archiving takes a chat out of the list and puts it under "Archived", where it can be opened or put back; nothing
+// of it is removed. The server refuses while someone works in it or a proposal waits there, and says so. When it
+// was the chat that's open, the room has a new, empty chat: the page loads that.
+async function setArchived(c, label, archived) {
+  sayNow = true;   // the owner's own action on this page: its result is spoken
+  try {
+    const data = await agentRequest(`/api/chats/${encodeURIComponent(c.id)}/${archived ? 'archive' : 'unarchive'}`, {});
+    if (data.wasOpen) { location.reload(); return; }
+    chatsDrawn = '';
+    await fetchChats();
+    say(archived ? `Archived the chat “${label}”. It is under Archived, at the bottom of the chat list.` : `Put the chat “${label}” back in the chat list.`);
+    // The row that had the focus is gone: on to where the chat went.
+    if (archived) chatsArchived.querySelector('summary').focus();
+    else { const row = [...chatList.children].find((li) => li.dataset.id === c.id); if (row) row.querySelector('.chat-open').focus(); }
+  } catch (err) {
+    chatsNote.textContent = err.message;
+    chatsNote.hidden = false;
+    say(err.message);
+  }
+}
+
 function chatRow(c) {
   const row = el('li', `chat-row${c.current ? ' current' : ''}`);
+  row.dataset.id = c.id;
   const label = c.title ? `${c.title}${c.cut ? '…' : ''}` : 'New chat';
   const open = el('button', 'chat-open');
   open.type = 'button';
@@ -1841,7 +1867,7 @@ function chatRow(c) {
   open.append(el('span', 'chat-title', label), meta);
   open.addEventListener('click', () => { if (c.current) { if (!chatsWide.matches) setChats(false); } else openChat(c.id); });
   row.append(open);
-  if (c.title) {
+  if (c.title && !c.archived) {
     const rename = el('button', 'chat-rename');
     rename.type = 'button';
     rename.innerHTML = PENCIL;
@@ -1849,6 +1875,15 @@ function chatRow(c) {
     rename.setAttribute('aria-label', `Rename the chat “${label}”`);
     rename.addEventListener('click', () => editChatName(row, c));
     row.append(rename);
+  }
+  if (c.title) {
+    const archive = el('button', 'chat-rename chat-archive');
+    archive.type = 'button';
+    archive.innerHTML = c.archived ? PUT_BACK_ICON : ARCHIVE_ICON;
+    archive.title = c.archived ? 'Put back in the chat list' : 'Archive';
+    archive.setAttribute('aria-label', c.archived ? `Put the chat “${label}” back in the chat list` : `Archive the chat “${label}”`);
+    archive.addEventListener('click', () => setArchived(c, label, !c.archived));
+    row.append(archive);
   }
   return row;
 }
@@ -1923,6 +1958,13 @@ async function fetchChats() {
     $('chats-new').textContent = fresh ? 'New chat' : '+ New chat';
     if (fresh) $('chats-new').setAttribute('aria-current', 'true'); else $('chats-new').removeAttribute('aria-current');
     chatList.replaceChildren(...(data.chats || []).filter((c) => c.title || !c.current).map(chatRow));
+    // Archived chats, when there are any (an older server sends none): closed until asked for, except when the
+    // chat that's open is one of them.
+    const archived = data.archived || [];
+    chatsArchived.hidden = !archived.length;
+    chatsArchived.querySelector('summary').textContent = `Archived (${data.archivedTotal || archived.length})`;
+    chatArchivedList.replaceChildren(...archived.map(chatRow));
+    if (archived.some((c) => c.current)) chatsArchived.open = true;
     const more = (data.total || 0) - (data.chats || []).length;
     chatsNote.textContent = more > 0 ? `Showing the latest ${data.chats.length} of ${data.total} chats.` : !(data.chats || []).some((c) => c.title) ? 'Chats in this room are kept here, so you can go back to one.' : '';
     chatsNote.hidden = !chatsNote.textContent;
