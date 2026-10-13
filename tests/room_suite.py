@@ -201,7 +201,28 @@ try:
         out("A page, no menu roles", ("role=\"menu" in page, "aria-haspopup" in page, "'menuitem'" in str(call("/room.js")[1])))
         # A field's edge is the only thing that shows where it is, so it has its own colour, 3:1 against white (#9090a8).
         css = str(call("/room.css")[1])
-        out("A page, fields have their own edge colour", (re.findall(r'--border-control: (#\w+);', css), len(re.findall(r'border: 1px solid var\(--border-control\)', css))))
+        out("A page, fields have their own edge colour", (re.findall(r'--border-control: (#\w+);', css)[:1], len(re.findall(r'border: 1px solid var\(--border-control\)', css))))
+        # Light and dark. Every colour a rule uses has a name, so the dark theme can give each one a value: a colour
+        # written straight into a rule would stay as it is in dark. An agent's own pair (--tone-l) is the one exception,
+        # as dark derives its pair from it. theme.js picks the theme before the page is drawn; run here in node's vm.
+        blocks = re.findall(r'(:root[^{]*)\{([^}]*)\}', css)
+        named = lambda body: set(re.findall(r'(--[\w-]+):', body))
+        light, dark = named(blocks[0][1]), named(next(b for sel, b in blocks if sel.strip() == ':root[data-theme="dark"]'))
+        rules = re.sub(r':root[^{]*\{[^}]*\}', '', css)
+        out("A page, colours written straight into a rule", sorted(set(re.findall(r'#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)', "\n".join(l for l in rules.split("\n") if "--tone-l" not in l)))))
+        out("A page, light colours the dark theme leaves as they are", sorted(light - dark))
+        out("A page, dark styles", [sel.strip() for sel, _ in blocks[1:] if " " not in sel.strip()])
+        out("A static /theme.js", call("/theme.js")[0])
+        out("A page sets the theme before the stylesheet", re.search(r'<script src="theme\.js"></script>\s*<link rel="stylesheet" href="room\.css">', page) is not None)
+        def themed(cases):
+            script = ("const vm = require('vm'), fs = require('fs'); const ctx = vm.createContext({});"
+                      "vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), ctx);"
+                      "console.log(JSON.stringify(JSON.parse(process.argv[2]).map(([t, s, d]) => { const r = ctx.RoomTheme.resolve(t, s, d); return [r.theme, r.style, r.dark]; })));")
+            done = subprocess.run(["node", "-e", script, os.path.join(opts.root, "public", "theme.js"), json.dumps(cases)], capture_output=True, text=True, check=True)
+            return json.loads(done.stdout)
+        out("A theme: nothing stored, light and dark system", themed([[None, None, False], [None, None, True]]))
+        out("A theme: a choice beats the system", themed([["light", "warm", True], ["dark", "black", False], ["auto", "navy", True]]))
+        out("A theme: odd stored values", themed([["sepia", "pink", True], ["", "", False], [5, {}, True]]))
         # A built-in agent as the room runs it, for the page's read-only view. Nothing can be saved there: no route writes to the agents' folder.
         def built_in(key):
             code, body = call("/api/agents/built-in/" + key)[:2]

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Exec Room</title>
 <link rel="icon" id="brand-icon" href="mark.svg" type="image/svg+xml">
+<script src="theme.js"></script>
 <link rel="stylesheet" href="room.css">
 </head>
 <body>
@@ -22,6 +23,10 @@
   </div>
   <button type="button" class="ghost" id="chats-toggle" aria-controls="chats" aria-expanded="false" title="This room's chats">Chats</button>
   <button type="button" class="ghost" id="reset" title="Start a new chat in this room; the one you leave stays in the chat list">New chat</button>
+  <div class="theme-switch">
+    <button type="button" class="ghost" id="theme-toggle" aria-controls="theme-menu" aria-expanded="false" title="Light or dark" aria-label="Light or dark">◐</button>
+    <div class="space-menu theme-menu" id="theme-menu" hidden></div>
+  </div>
   <button type="button" class="ghost add-agent-top" id="add-agent-top" title="Add an agent you built to this room, or build a new one">+ Agent</button>
 </header>
 

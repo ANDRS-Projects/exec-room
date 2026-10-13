@@ -55,6 +55,14 @@ A page, chip groups: ['aria-label="Advisors Coen can consult"', 'aria-labelledby
 A page, makers' group label exists: True
 A page, no menu roles: (False, False, False)
 A page, fields have their own edge colour: (['#9090a8'], 6)
+A page, colours written straight into a rule: []
+A page, light colours the dark theme leaves as they are: ['--frame-font', '--frame-gold', '--frame-ink', '--frame-muted']
+A page, dark styles: [':root[data-theme="dark"]', ':root[data-theme="dark"][data-dark="black"]', ':root[data-theme="dark"][data-dark="warm"]']
+A static /theme.js: 200
+A page sets the theme before the stylesheet: True
+A theme: nothing stored, light and dark system: [['auto', 'navy', False], ['auto', 'navy', True]]
+A theme: a choice beats the system: [['light', 'warm', False], ['dark', 'black', True], ['auto', 'navy', True]]
+A theme: odd stored values: [['auto', 'navy', True], ['auto', 'navy', False], ['auto', 'navy', True]]
 A built-in agent, coen: (200, ('Coen', 'lead', 'agents/coo/AGENT.md', '', True, True, ['does', 'file', 'instructions', 'key', 'model', 'name', 'role']))
 A built-in agent, nobody: (404, None)
 A built-in agent, __proto__: (404, None)
