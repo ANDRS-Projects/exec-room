@@ -186,9 +186,18 @@ function addText(holder, text) {
     if (!text.trim()) return;
     holder.bubble = { el: el('div', 'bubble md'), raw: '', stripRecs: Boolean(holder.isCoen || holder.inline), owner: holder.inline ? nameOf(holder.who) : 'Coen' };
     holder.bubble.copy = copyButton(holder.bubble);
-    // The bubble and its copy icon share a box as wide as the bubble, so the icon sits under its right edge.
+    // A reply in the panel is in a narrow column; Coen's, and one given in the chat, only get the icon for a table.
+    holder.bubble.holder = holder;
+    holder.bubble.pane = !holder.isCoen && !holder.inline;
+    holder.bubble.asked = holder.isCoen ? '' : holder.prompt || '';
+    holder.bubble.name = holder.isCoen ? 'Coen' : nameOf(holder.who);
+    holder.bubble.enlarge = enlargeButton(holder.bubble);
+    unsettled.add(holder.bubble);
+    // The bubble and its icons share a box as wide as the bubble, so the icons sit under its right edge.
     const reply = el('div', 'reply');
-    reply.append(holder.bubble.el, holder.bubble.copy);
+    const actions = el('div', 'reply-actions');
+    actions.append(holder.bubble.enlarge, holder.bubble.copy);
+    reply.append(holder.bubble.el, actions);
     holder.el.appendChild(reply);
     holder.tools = null;
   }
@@ -198,6 +207,48 @@ function addText(holder, text) {
 
 // What a reply says, as it was written (markdown), without the proposal blocks that are shown as cards.
 const bubbleText = (b) => (b.stripRecs ? stripRecs(b.raw) : b.raw.trim());
+
+// A reply in a large window: the panel is a narrow column, and a table needs more room than any column here has.
+// The icon comes once the reply is finished (the window shows the reply as it is then): on every reply in the
+// panel, and on one in the chat only when it has a table.
+const ENLARGE_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>';
+const answerViewer = $('answer-viewer');
+const unsettled = new Set(); // replies that may still grow
+
+function enlargeButton(bubble) {
+  const btn = el('button', 'copy-btn enlarge-btn');
+  btn.type = 'button';
+  btn.hidden = true;
+  btn.title = 'Enlarge';
+  btn.setAttribute('aria-label', `Enlarge this reply from ${bubble.name}`);
+  btn.innerHTML = ENLARGE_ICON;
+  btn.addEventListener('click', () => openAnswer(bubble));
+  return btn;
+}
+
+function openAnswer(bubble) {
+  $('answer-title').textContent = bubble.name;
+  const body = $('answer-body');
+  body.replaceChildren();
+  if (bubble.asked) {
+    const brief = el('details', 'brief');
+    brief.append(el('summary', null, (MAKERS.has(bubble.holder.who) ? 'Brief: ' : 'Coen asks: ') + (bubble.asked.split('\n')[0] || '')), el('div', null, bubble.asked));
+    body.appendChild(brief);
+  }
+  const text = el('div', 'md');
+  text.innerHTML = renderMd(bubbleText(bubble));
+  body.appendChild(text);
+  answerViewer.showModal();
+}
+
+$('answer-close').addEventListener('click', () => answerViewer.close());
+
+function settleEnlarge(bubble) {
+  unsettled.delete(bubble);
+  const text = bubbleText(bubble);
+  bubble.enlarge.hidden = !(text && (bubble.pane || renderMd(text).includes('<table')));
+}
+const settleEnlargeOf = (holder) => { for (const b of [...unsettled]) if (b.holder === holder) settleEnlarge(b); };
 
 // A small copy icon under each reply. The result is said in words next to it, since hover text is easy to miss.
 const COPY_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
@@ -297,7 +348,7 @@ function addConsult(who, cid, prompt, focus = false) {
   const t = ensureTurn();
   if (focus) {
     coenMsg = null;
-    const msg = { who, cid, status: 'working', inline: true, el: appendToThread(el('div', `msg focus ${who}${BUILT_IN.has(who) ? '' : ' custom'}${toneOf(who)}`)), bubble: null, tools: null };
+    const msg = { who, cid, prompt, status: 'working', inline: true, el: appendToThread(el('div', `msg focus ${who}${BUILT_IN.has(who) ? '' : ' custom'}${toneOf(who)}`)), bubble: null, tools: null };
     const head = el('div', 'focus-head');
     msg.pill = el('span', 'pill working', 'working');
     head.append(avatarFor(who), el('span', 'name', nameOf(who)), el('span', 'via', 'via Coen'), msg.pill);
@@ -322,7 +373,7 @@ function addConsult(who, cid, prompt, focus = false) {
     placeGroup(t);
   }
   const cls = `card ${who}${MAKERS.has(who) ? ' maker' : ''}${BUILT_IN.has(who) ? '' : ' custom'}${toneOf(who)}`;
-  const card = { who, cid, status: 'working', el: el('div', cls), bubble: null, tools: null };
+  const card = { who, cid, prompt, status: 'working', el: el('div', cls), bubble: null, tools: null };
   const head = el('div', 'card-head');
   card.pill = el('span', 'pill working', 'working');
   head.append(avatarFor(who), el('span', 'name', nameOf(who)), card.pill);
@@ -337,6 +388,7 @@ function addConsult(who, cid, prompt, focus = false) {
 
 function setCardStatus(card, status) {
   card.status = status;
+  if (status !== 'working') settleEnlargeOf(card);
   card.pill.className = `pill ${status}`;
   card.pill.textContent = MAKERS.has(card.who) && status === 'replied' ? 'done' : status;
 }
@@ -348,6 +400,7 @@ function cardFor(ev) {
 
 function endTurn(ev) {
   settleAllTools();
+  for (const b of [...unsettled]) settleEnlarge(b);
   clearProposalHint();
   loadChats();
   if (turn && !turn.ended) {
@@ -390,7 +443,7 @@ function handle(ev) {
     startTurn(ev.text, ev.auto || false, ev.files);
   } else if (ev.type === 'break') {
     if (ev.who === 'coen') { settleTools(coenMsg && coenMsg.tools); coenMsg = null; }
-    else { const card = cardFor(ev); if (card) { settleTools(card.tools); card.bubble = null; card.tools = null; } }
+    else { const card = cardFor(ev); if (card) { settleTools(card.tools); if (card.bubble) settleEnlarge(card.bubble); card.bubble = null; card.tools = null; } }
   } else if (ev.type === 'text') {
     if (ev.who === 'coen') addText(ensureCoenMsg(), ev.text);
     else { const card = cardFor(ev); if (card) addText(card, ev.text); }

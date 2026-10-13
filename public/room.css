@@ -206,7 +206,8 @@ button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: 
 .ghost { margin-left: auto; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: 12px; color: var(--muted); cursor: pointer; }
 
 .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 680px) 120px; justify-content: center; gap: 16px; padding: 0 16px 16px; }
-.layout.rail-open { grid-template-columns: minmax(0, 680px) 360px; }
+/* The panel takes the width the window has left over, up to 560px: 728px is the chat column, the gap and the padding. */
+.layout.rail-open { grid-template-columns: minmax(0, 680px) clamp(360px, calc(100vw - 728px), 560px); }
 
 /* The room's chats. On a wide window a panel left of the chat; below that a drawer over it, opened from the header. */
 .top .ghost ~ .ghost { margin-left: 0; }
@@ -248,7 +249,7 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
   /* The panel has its own New chat and its own way to hide: the header's two buttons only show while it is hidden. */
   body.chats-open #chats-toggle, body.chats-open #reset { display: none; }
   body.chats-open .layout { grid-template-columns: 240px minmax(0, 680px) 120px; }
-  body.chats-open .layout.rail-open { grid-template-columns: 240px minmax(0, 680px) 360px; }
+  body.chats-open .layout.rail-open { grid-template-columns: 240px minmax(0, 680px) clamp(360px, calc(100vw - 984px), 560px); }
 }
 @media (max-width: 1099px) {
   body.chats-open .chats { position: fixed; z-index: 31; top: 0; bottom: 0; left: 0; width: min(300px, 86vw); border-radius: 0 12px 12px 0; border-left: none; box-shadow: 0 8px 32px var(--shadow-strong); }
@@ -425,6 +426,11 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .card .reply { align-self: stretch; max-width: 100%; }
 .copy-btn { align-self: flex-end; flex-direction: row-reverse; display: inline-flex; align-items: center; gap: 5px; height: 24px; margin-top: -2px; padding: 0 5px; border: none; border-radius: 6px; background: none; color: var(--muted); font-size: 12px; cursor: pointer; }
 .copy-btn:hover, .copy-btn:focus-visible { background: var(--bg); color: var(--text); }
+.reply-actions { align-self: flex-end; display: flex; align-items: center; gap: 2px; }
+/* A reply in a large window (the enlarge icon): nearly the window's width, for a table the panel is too narrow for. */
+.viewer.wide { width: min(1100px, calc(100vw - 32px)); }
+.viewer.wide .viewer-head h2 { font-family: inherit; }
+.answer-body { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
 
 .viewer { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 64px); border: 1px solid var(--border); border-radius: 12px; padding: 0; color: var(--text); }
 .viewer::backdrop { background: var(--backdrop-strong); }
