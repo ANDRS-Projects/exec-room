@@ -33,6 +33,13 @@ elif agent == "room-iris":
     path = os.path.join(os.getcwd(), "drafts", "2026-09-26-iris-test.md")
     out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "P1", "name": "Write", "input": {"file_path": path, "content": "x"}}]}})
     out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "P1", "content": "ok"}]}})
+elif "wrong block" in prompt:
+    # One proposal as the room reads it, one tagged json, one with no tag, and a json block that is no proposal.
+    say("Three proposals and an example."
+        + rec({"action": "github_issue", "repo": "demo-app", "summary": "In the right block", "title": "x", "body": "y"})
+        + "\n```json\n" + json.dumps({"action": "create_agent", "summary": "Tagged json", "name": "Riley"}) + "\n```\n"
+        + "\n```\n" + json.dumps({"action": "dispatch", "agent": "wren", "summary": "No tag", "brief": "x"}) + "\n```\n"
+        + "\n```json\n" + json.dumps({"name": "not a proposal"}) + "\n```\n")
 elif "revise" in prompt:
     say("Revised as asked.")
 else:

@@ -135,6 +135,7 @@ D two dismissals, in order, with a reason and without: ["[Room note for Coen, no
 D the job log keeps the message as it was written: and now?
 D told once: 
 D a maker's run leaves the note for Coen's next one: [('room-wren', False), ('room-iris', False), ('chief-operating-officer', True)]
+D a proposal in the wrong block: (['In the right block'], ["Coen's proposal couldn't be turned into a card (it wasn't in the form the room reads). Ask him to propose it again."])
 E proposals: [('Dark mode package', 3), ('Legacy single post', 1), ('Sneaky', 1)]
 E sneaky fields dropped: True
 E approve Dark mode package: (200, [('decision', None, None), ('rec_result', ['https://app.notion.com/p/x', 'https://app.notion.com/p/x', 'https://app.notion.com/p/x'], None)])

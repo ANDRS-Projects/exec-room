@@ -369,6 +369,11 @@ try:
         for _ in range(3):
             events(call("/api/stream")[1])
         out("D a maker's run leaves the note for Coen's next one", [(r["agent"], note(r["prompt"]) != "") for r in runs()[before:]])
+        # A proposal in a block the room doesn't read (tagged json, or with no tag) is not accepted: one notice says
+        # so, however many there are. A json block that is no proposal gets nothing.
+        call("/api/coen", {"text": "proposals in the wrong block"})
+        evs = events(call("/api/stream")[1])
+        out("D a proposal in the wrong block", ([e["rec"]["summary"] for e in evs if e["type"] == "recommendation"], [e["text"] for e in evs if e["type"] == "notice"]))
     finally:
         s.stop()
 
