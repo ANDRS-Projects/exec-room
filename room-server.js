@@ -417,7 +417,11 @@ function focusNote(space, focus) {
 function proposalRules(space) {
   const all = makers(space);
   const targets = targetsOf(space);
-  return `To get something done beyond advice, propose it for the owner's approval: end your message with up to three fenced blocks tagged recommendation, each containing one JSON object. the owner sees it as a card with Approve, Revise and Dismiss buttons; nothing happens until it is approved, so never say it's done. A dismissed proposal is closed for good: don't propose the same thing again unless the owner asks for it. You are told about a dismissal in a room note with the owner's next message (through Coen, when you are a room's focus agent), with the reason when one was given; it needs no reply. Supported actions:${Object.keys(all).length ? `
+  return `To get something done beyond advice, propose it for the owner's approval: end your message with up to three fenced blocks tagged recommendation, each containing one JSON object. The tag is what makes it a card: open the block with three backticks followed by the word recommendation, never json, like this:
+\`\`\`recommendation
+{"action": "…", "summary": "…"}
+\`\`\`
+A block with any other tag is shown to the owner as plain text, without buttons. the owner sees it as a card with Approve, Revise and Dismiss buttons; nothing happens until it is approved, so never say it's done. A dismissed proposal is closed for good: don't propose the same thing again unless the owner asks for it. You are told about a dismissal in a room note with the owner's next message (through Coen, when you are a room's focus agent), with the reason when one was given; it needs no reply. Supported actions:${Object.keys(all).length ? `
 - Dispatch to a maker, who writes the output into drafts/: {"action": "dispatch", "agent": one of ${Object.keys(all).map((k) => `"${k}"`).join(', ')}, "summary": "one line", "brief": "what it's about, the source, account, audience and links", optional "then": a second maker who runs right after with the first maker's draft (e.g. an image maker for the header image), optional "then_brief": extra context for that second maker}. One approval covers the whole chain. Makers: ${Object.entries(all).map(([k, m]) => `${k} = ${m.name}, ${m.does}`).join('; ')}.` : ''}
 ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {"action": "github_issue", "repo": one of ${targets.repos.map((r) => `"${r}"`).join(', ')}, "summary": "one line", "title": "…", "body": "markdown"}.${targets.publicRepos.length ? ` These repos are public, so an issue there is visible to everyone: ${targets.publicRepos.join(', ')}. Write those issues for outsiders and leave out anything internal (Notion content, private repos, costs, clients, plans, the room itself); the others are private.` : ' All of them are private.'}
 - Comment on an existing issue in one of this room's repos (e.g. your review of it, or an update): {"action": "github_comment", "repo": one of the repos above, "issue": its number, "summary": "one line", "body": "markdown"}.${targets.publicRepos.length ? ' Comments on the public repos are visible to everyone too; write them the same way.' : ''}
@@ -1507,6 +1511,17 @@ function extractRecs(text, space) {
   });
 }
 
+// A proposal in a block the room doesn't read (tagged json, or with no tag) gets no card, and the page shows it as
+// a piece of code: smaller models do this. It is only noticed here, never accepted, so that the owner can be told.
+// A block counts when its JSON names one of validateRec's actions.
+const REC_ACTIONS = ['dispatch', 'github_issue', 'github_comment', 'notion_draft', 'notion_page', 'notion_page_update', 'email_draft', 'create_agent'];
+function hasMisfiledRec(text) {
+  const rest = text.replace(/```recommendation[^\n]*\n[\s\S]*?\n```/g, '');
+  return [...rest.matchAll(/```[^\n]*\n([\s\S]*?)\n```/g)].some((m) => {
+    try { return REC_ACTIONS.includes(JSON.parse(m[1]).action); } catch { return false; }
+  });
+}
+
 // Runs gh with fixed arguments (flags as --x=value), optional stdin, and a timeout; resolves with stdout.
 function ghRun(args, stdin = '', timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
@@ -2325,6 +2340,9 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
         saveRecs();
         logDecision(rec, {});
         send({ type: 'recommendation', rec });
+      }
+      for (const [text, by] of [[job.coenText, null], ...(focus ? [[job.focusText, focus]] : [])]) {
+        if (hasMisfiledRec(text)) send({ type: 'notice', text: `${by ? by.name : 'Coen'}'s proposal couldn't be turned into a card (it wasn't in the form the room reads). Ask ${by ? by.name : 'him'} to propose it again.` });
       }
     }
     // Attached files go when the turn ends, however it ended. What was read from them is not undone by this.
