@@ -668,6 +668,17 @@ N a new chat is listed while it is open: [('new', '', {'current': True})]
 N an empty chat that was left is not listed: ['c-recent', 'c-old', 'c-nosession']
 N stored: ('Pricing talk', 'Old question about pricing for anna@client.example', False, 'c-nosession')
 N names stay out of the job log: False
+N before archiving: no archived chats: (['c-recent', 'c-old', 'c-nosession'], 3, [], 0)
+N archive: proposals still waiting: (409, '{"error":"1 proposal in this chat waits for your decision. Decide first, then archive it."}')
+N archive: unknown, a deleted room's, an empty chat: (404, 404, (400, '{"error":"an empty chat has nothing to archive"}'), 404)
+N archive: refused for the same reason: (409, '{"error":"2 proposals in this chat wait for your decision. Decide first, then archive it."}')
+N archive a chat that isn't open: (200, False, True, 'c-nosession', (['c-old', 'c-nosession'], 2, [('c-recent', True, False)], 1))
+N archived: stored with a date, transcript and session kept: (True, 'coen-session', 'AAA')
+N archive the open chat: the room gets a new, empty one: (200, True, True, None, True, (['new', 'c-old'], 2, [('c-recent', True, False), ('c-nosession', True, False)], 2))
+N an archived chat can still be opened and read: (200, 'c-recent', [('c-recent', True, True), ('c-nosession', True, False)])
+N a message in an archived chat puts it back: (False, 'coen-session', (['c-recent', 'c-old'], 2, [('c-nosession', True, False)], 1))
+N put back by hand: (200, False, (['c-recent', 'c-old', 'c-nosession'], 3, [], 0))
+N archiving stays out of the job log: False
 Q start-up refuses an unknown mode: (1, ['ROOM_AUTH must be "subscription" (the Claude plan, the default) or "api-key", not "plan".'])
 Q start-up refuses key mode without a key: (1, ['ROOM_AUTH is "api-key" but no key was found. Set ROOM_ANTHROPIC_API_KEY, or ROOM_ANTHROPIC_API_KEY_REF to its 1Password reference (op://…), or start the room on the Claude plan with `npm run room`.'])
 Q start-up refuses a key reference 1Password can't read: (1, ['ROOM_AUTH is "api-key" but no key was found. Set ROOM_ANTHROPIC_API_KEY, or ROOM_ANTHROPIC_API_KEY_REF to its 1Password reference (op://…), or start the room on the Claude plan with `npm run room`.'])

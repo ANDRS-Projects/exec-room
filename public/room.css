@@ -238,6 +238,12 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 @media (prefers-reduced-motion: reduce) { .chat-flag.working::before { animation: none; } }
 .chat-rename { flex: none; border: none; background: none; color: var(--muted); padding: 6px; margin: 3px 3px 0 0; border-radius: 6px; cursor: pointer; line-height: 0; }
 .chat-rename svg { width: 14px; height: 14px; }
+.chat-rename + .chat-archive { margin-left: -3px; }
+/* Archived chats: under the list, closed until asked for. */
+.chats-archived { flex: none; border-top: 1px solid var(--border); padding-top: 6px; }
+.chats-archived > summary { padding: 4px 8px; font-size: 12px; color: var(--muted); cursor: pointer; border-radius: 6px; }
+.chats-archived > summary:hover { color: var(--text); }
+.chats-archived .chat-list { flex: none; max-height: 34vh; overflow-y: auto; margin-top: 4px; }
 .chat-edit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 7px 8px; }
 .chat-edit input { width: 100%; min-width: 0; border: 1px solid var(--border-control); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; color: var(--text); background: var(--surface); }
 .chat-edit-actions { display: flex; gap: 6px; align-items: center; }

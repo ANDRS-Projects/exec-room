@@ -2118,6 +2118,35 @@ try:
         saved = json.load(open(os.path.join(data, "rooms", "index.json")))["rooms"]
         out("N stored", (saved["c-old"]["name"], saved["c-old"]["title"], "workspaceId" in saved["c-old"], json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]["exec"]["chat"]))
         out("N names stay out of the job log", "Pricing talk" in open(os.path.join(data, "jobs.ndjson")).read())
+        # Archiving: out of the list, nothing removed. Every chat above was saved without `archivedAt` (the shape
+        # from before archiving) and is listed as before.
+        listed = lambda: (lambda d: ([c["id"] if c["id"].startswith("c-") else "new" for c in d["chats"]], d["total"],
+                                    [(c["id"], c.get("archived"), c.get("current", False)) for c in d["archived"]], d["archivedTotal"]))(json.loads(call("/api/workspaces/exec/chats")[1]))
+        index_of = lambda chat_id: json.load(open(os.path.join(data, "rooms", "index.json")))["rooms"][chat_id]
+        out("N before archiving: no archived chats", listed())
+        out("N archive: proposals still waiting", call("/api/chats/c-old/archive", {})[:2])
+        out("N archive: unknown, a deleted room's, an empty chat", (call("/api/chats/nope/archive", {})[0], call("/api/chats/c-gone/archive", {})[0], call("/api/chats/c-empty/archive", {})[:2],
+                                                                    call("/api/chats/nope/unarchive", {})[0]))
+        # The messages above left proposals waiting in c-recent too: decided first, as the refusal asks.
+        out("N archive: refused for the same reason", call("/api/chats/c-recent/archive", {})[:2])
+        call("/api/chats/c-recent/open", {})
+        for r in json.loads(call("/api/room")[1])["events"]:
+            if r["type"] == "recommendation":
+                call(f"/api/recs/{r['rec']['recId']}/dismiss", {})
+        call("/api/chats/c-nosession/open", {})
+        code, body, _ = call("/api/chats/c-recent/archive", {})
+        out("N archive a chat that isn't open", (code, json.loads(body)["wasOpen"], json.loads(body)["chat"].get("archived"), json.loads(body)["roomId"], listed()))
+        out("N archived: stored with a date, transcript and session kept", ("archivedAt" in index_of("c-recent"), index_of("c-recent")["claudeSessionId"], index_of("c-recent")["title"][:3]))
+        code, body, _ = call("/api/chats/c-nosession/archive", {})
+        new_id = json.loads(body)["roomId"]
+        out("N archive the open chat: the room gets a new, empty one", (code, json.loads(body)["wasOpen"], new_id not in ("c-nosession", "c-recent", "c-old"), index_of(new_id)["title"],
+                                                                      json.loads(call("/api/room")[1])["roomId"] == new_id, listed()))
+        code, body, _ = call("/api/chats/c-recent/open", {})
+        out("N an archived chat can still be opened and read", (code, json.loads(call("/api/room")[1])["roomId"], listed()[2]))
+        say("carry on here")
+        out("N a message in an archived chat puts it back", ("archivedAt" in index_of("c-recent"), resumed()[-1], listed()))
+        out("N put back by hand", (call("/api/chats/c-nosession/unarchive", {})[0], "archivedAt" in index_of("c-nosession"), listed()))
+        out("N archiving stays out of the job log", "archiv" in open(os.path.join(data, "jobs.ndjson")).read())
     finally:
         s.stop()
     # Q: runs paid with an API key instead of the Claude plan. Chosen when the room starts, never
