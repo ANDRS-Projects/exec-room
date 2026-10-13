@@ -1584,10 +1584,28 @@ try:
                 made.append({**c, "id": f"blk-{self.n[0]}", "has_children": False})
             return made
 
+        # Like Notion: a block is handed out with empty fields (`icon: null`) and read-only ones in its text
+        # (`plain_text`, `href`), and none of those is accepted back.
+        @staticmethod
+        def handed_out(b):
+            kind = b[b["type"]]
+            text = [{**t, "plain_text": t.get("text", {}).get("content", ""), "href": None} for t in kind.get("rich_text", [])]
+            return {**b, b["type"]: {**kind, **({"rich_text": text} if "rich_text" in kind else {}), "icon": None}}
+
+        @staticmethod
+        def refused(children):
+            for i, c in enumerate(children):
+                kind = c.get(c.get("type"), {})
+                if any(v is None for v in kind.values()):
+                    return f"body failed validation: body.children[{i}].{c['type']}.icon should be an object or `undefined`, instead was `null`."
+                if any("plain_text" in t or "href" in t for t in kind.get("rich_text", [])):
+                    return f"body failed validation: body.children[{i}].{c['type']}.rich_text[0].plain_text should be not present"
+            return None
+
         def do_GET(self):
             parts = self.path.split("?")[0].strip("/").split("/")
             if parts[-1] == "children":
-                return self.reply({"results": self.pages[parts[-2]]["blocks"], "has_more": False})
+                return self.reply({"results": [b if b["type"] == "table" else self.handed_out(b) for b in self.pages[parts[-2]]["blocks"]], "has_more": False})
             ident = parts[-1]
             self.reply({"object": "page", "id": ident, "parent": self.pages[ident]["parent"] if ident in self.pages else {"type": "workspace"}})
 
@@ -1605,6 +1623,9 @@ try:
                     return self.reply({"message": "Insufficient permissions for this endpoint."}, 403)
                 self.pages[parts[-1]]["title"] = asked["properties"]["title"]["title"][0]["text"]["content"]
                 return self.reply({"object": "page", "id": parts[-1]})
+            why = self.refused(asked["children"])
+            if why:
+                return self.reply({"message": why}, 400)
             self.pages[parts[-2]]["blocks"] += self.blocks(asked["children"])
             self.reply({"results": []})
 

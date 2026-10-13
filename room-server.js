@@ -1418,7 +1418,18 @@ function roomMadePage(space, pageId) {
 // A block as Notion returned it, in the form Notion takes back: only plain kinds without anything nested, which is
 // all the room itself writes. Anything else (a table, an image, a nested list someone added by hand) can't be copied.
 const COPYABLE = new Set(['paragraph', 'heading_1', 'heading_2', 'heading_3', 'bulleted_list_item', 'numbered_list_item', 'quote', 'code', 'divider', 'to_do', 'callout']);
-const copyOf = (b) => (b && COPYABLE.has(b.type) && !b.has_children && b[b.type] ? { object: 'block', type: b.type, [b.type]: b[b.type] } : null);
+// Notion hands a block out with fields it does not take back: empty ones (`icon: null` on a paragraph, `link: null`
+// in a piece of text; seen on the first real update: "paragraph.icon should be an object or undefined,
+// instead was null") and read-only ones in rich text (`plain_text`, `href`). Both are left out of a copy.
+const RICH_TEXT_KEEP = new Set(['type', 'text', 'annotations', 'mention', 'equation']);
+function sendable(v, richText = false) {
+  if (Array.isArray(v)) return v.map((x) => sendable(x, richText));
+  if (!v || typeof v !== 'object') return v;
+  return Object.fromEntries(Object.entries(v)
+    .filter(([k, x]) => x !== null && x !== undefined && (!richText || RICH_TEXT_KEEP.has(k)))
+    .map(([k, x]) => [k, sendable(x, k === 'rich_text' || k === 'caption')]));
+}
+const copyOf = (b) => (b && COPYABLE.has(b.type) && !b.has_children && b[b.type] ? { object: 'block', type: b.type, [b.type]: sendable(b[b.type]) } : null);
 const UPDATE_MAX_BLOCKS = 800;
 
 // Replaces the content of a page the room made, and keeps what was there: the new version on top, the previous one
