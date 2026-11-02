@@ -9,7 +9,7 @@ tests/expected.txt.
     python3 tests/room_suite.py --update      # accept the current behaviour as the new snapshot
     python3 tests/room_suite.py --root <dir>  # run against another checkout (e.g. a Dependabot branch)
 """
-import argparse, base64, difflib, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
+import argparse, base64, difflib, hashlib, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
@@ -2161,7 +2161,7 @@ try:
     def key_start(what, **extra):
         tmpd = os.path.join(TMP, f"key-start-{what.replace(' ', '-')}")
         env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "keymode") + os.pathsep + os.environ["PATH"], PORT=str(PORT), ROOM_CONTEXT_CHECK="off",
-                   ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token", ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"), **extra)
+                   ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token", **{"ROOM_CONFIG_FILE": os.path.join(TESTS, "room.config.test.json"), **extra})
         done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
         out(f"Q start-up refuses {what}", (done.returncode, done.stderr.strip().splitlines()))
 
@@ -2494,6 +2494,486 @@ try:
         out("S2 and the page is told nothing", json.loads(call("/api/room")[1]).get("contextLeak"))
     finally:
         s.stop()
+
+    # M3: the Exec Room's own MCP servers. A pretend server plays the vendor: it lists four tools (two that
+    # read, one that writes, one the catalog doesn't know), answers the start-up test call only for the suite's token,
+    # refuses everything on /deny, and answers as an event stream on /stream. A catalog and a config written here set
+    # up servers that work, and every kind of entry that must be refused.
+    MCP_PORT = int(os.environ.get("ROOM_TEST_MCP_PORT", "4197"))
+    mcp_log = []
+
+    class FakeMcp(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
+            auth = self.headers.get("authorization")
+            mcp_log.append((self.path, body.get("method"), "the test token" if auth == "Bearer good-token" else "another token" if auth else "none"))
+            if self.path == "/deny":
+                self.send_response(401)
+                self.end_headers()
+                return
+            if body.get("id") is None:
+                self.send_response(202)
+                self.end_headers()
+                return
+            method = body["method"]
+            if method == "initialize":
+                result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "fake", "version": "1"}}
+            elif method == "tools/list":
+                result = {"tools": [{"name": n, "inputSchema": {"type": "object"}} for n in ("read_a", "read_b", "write_c", "extra_d")]}
+            elif auth != "Bearer good-token":
+                result = {"isError": True, "content": [{"type": "text", "text": "Invalid or expired API token"}]}
+            else:
+                result = {"content": [{"type": "text", "text": "the books"}]}
+            msg = json.dumps({"jsonrpc": "2.0", "id": body["id"], "result": result})
+            stream = self.path == "/stream"
+            data = (f"event: message\ndata: {msg}\n\n" if stream else msg).encode()
+            self.send_response(200)
+            self.send_header("content-type", "text/event-stream" if stream else "application/json")
+            self.send_header("mcp-session-id", "fake-session")
+            self.end_headers()
+            self.wfile.write(data)
+
+    fake_mcp = ThreadingHTTPServer(("127.0.0.1", MCP_PORT), FakeMcp)
+    threading.Thread(target=fake_mcp.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{MCP_PORT}"
+    catalog = os.path.join(TMP, "mcp-catalog.json")
+    reads = {"read_a": "reads", "read_b": "reads", "write_c": "writes"}
+    with open(catalog, "w") as f:
+        json.dump({"fakebooks": {"name": "Fakebooks", "by": "Fake Co", "description": "Test books.", "token": {"url": f"{base}/good"}, "claudeAi": "Fakebooks",
+                                 "check": {"tool": "read_a", "arguments": {}}, "tools": reads},
+                   "fakestream": {"name": "Fakestream", "token": {"url": f"{base}/stream"}, "tools": reads}}, f)
+    mcp_config = os.path.join(TMP, "room.config.mcp.json")
+    with open(mcp_config, "w") as f:
+        json.dump({"notionDatabases": {}, "mcpServers": {
+            "books": {"catalog": "fakebooks", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_a", "read_b"]},
+            "stream": {"catalog": "fakestream", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_a"]},
+            "badtoken": {"catalog": "fakebooks", "tokenEnv": "SUITE_MCP_WRONG", "tools": ["read_a"]},
+            "writer": {"catalog": "fakebooks", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_a", "write_c"]},
+            "notoken": {"catalog": "fakebooks", "tokenEnv": "SUITE_MCP_NONE", "tools": ["read_a"]},
+            "nocatalog": {"catalog": "nope", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_a"]},
+            "unknowntool": {"catalog": "fakebooks", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_z"]},
+            "keytoken": {"catalog": "fakebooks", "tokenEnv": "ANTHROPIC_API_KEY", "tools": ["read_a"]},
+            "handmade": {"name": "Own server", "url": f"{base}/good", "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_b"]},
+            "handtools": {"url": f"{base}/good", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_b"]},
+            "program": {"command": "npx", "args": ["some-server"], "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_b"]},
+            "inurl": {"url": f"{base}/good?token=x", "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_b"]},
+            "down": {"url": "http://127.0.0.1:1/mcp", "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_a"]},
+            "denied": {"url": f"{base}/deny", "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_a"]},
+            "Bad_Name": {"catalog": "fakebooks", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_a"]},
+        }}, f)
+    mcp_env = {"ROOM_MCP_CATALOG": catalog, "SUITE_MCP_TOKEN": "good-token", "SUITE_MCP_WRONG": "wrong"}
+    mcp_calls_file = os.path.join(TMP, "mcp-calls.ndjson")
+    mcp_calls = lambda: [json.loads(l) for l in open(mcp_calls_file)] if os.path.exists(mcp_calls_file) else []
+    data = os.path.join(TMP, "data-mcp")
+
+    def overview():
+        for _ in range(100):  # the servers are checked after the start: until none is still being checked
+            got = json.loads(call("/api/mcp")[1])
+            if all(x["status"] != "checking" for x in got["servers"]):
+                return got
+            time.sleep(0.05)
+        return got
+
+    def msay(text):
+        job = json.loads(call("/api/coen", {"text": text})[1])["jobId"]
+        call("/api/stream")
+        evs = [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+        return evs, mcp_calls()[-1] if mcp_calls() else None
+
+    # The rooms file is one from before the servers (no "mcp" in a room's access), without the Notion databases this
+    # config doesn't have.
+    rooms = default_rooms()
+    rooms["workspaces"]["exec"]["targets"].update(notionDbs=[], notionPlaces=[])
+    os.makedirs(os.path.join(data, "rooms"))
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": None, "title": None,
+                   "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}}}, f)
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump(rooms, f)
+    s = Server("mcp", mcp_env, data_name="data-mcp", config=mcp_config)
+    try:
+        body = overview()
+        out("M3 every entry with its state", [(x["id"], x["status"], x["statusText"], x["problem"][:90]) for x in body["servers"]])
+        books = next(x for x in body["servers"] if x["id"] == "books")
+        detail = {k: books[k] for k in ("name", "by", "origin", "tools", "blocked", "tokenFrom", "kind", "address", "rooms", "paused", "usable")}
+        detail["address"] = detail["address"].replace(str(MCP_PORT), "<port>")
+        out("M3 a working server in detail", detail)
+        out("M3 a server added by hand", {k: next(x for x in body["servers"] if x["id"] == "handmade")[k] for k in ("name", "origin", "tools", "blocked")})
+        out("M3 the overview holds no token", "good-token" not in json.dumps(body) and "wrong" not in json.dumps(body).replace("wrong state", ""))
+        out("M3 the start-up check, as the pretend server saw it", sorted(set(mcp_log)))
+        out("M3 the rooms file from before is read with nothing on", json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]["exec"]["access"].get("mcp"))
+        out("M3 room settings get the servers a room can switch on", json.loads(call("/api/workspaces")[1])["mcpServers"])
+        room = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+        acc = {k: v for k, v in room["access"].items() if k != "files"}
+        acc["files"] = []
+        update = lambda a: call(f"/api/workspaces/{room['id']}", {"name": room["name"], "members": None, "access": a})
+        out("M3 a switch that isn't a server's name is refused", (update({**acc, "mcp": {"Bad Id": True}})[:2], update({**acc, "mcp": ["books"]})[:2]))
+        evs, run = msay("hello")
+        out("M3 a room with nothing on: no server list, no server tools", (run["mcp"], run["allowed_mcp"]))
+        update({**acc, "mcp": {"books": True, "stream": True, "handmade": True, "badtoken": True, "gone": True, "off": False}})
+        out("M3 switched on in the room", json.loads(call("/api/workspaces")[1])["workspaces"][0]["access"]["mcp"])
+        evs, run = msay("hello again")
+        out("M3 the run's server list: only working servers the room has on, tokens in a header, a locked file in data/", run["mcp"])
+        out("M3 the run may use the ticked tools; the rest and the claude.ai duplicate are blocked", (run["allowed_mcp"], run["denied_mcp"], run["tool_search"], run["strict"]))
+        out("M3 the agents are told", run["note"][run["note"].find("; MCP"):])
+        out("M3 the list is gone when the turn ends", os.listdir(os.path.join(data, "mcp-runs")))
+        out("M3 the overview names the rooms", next(x for x in overview()["servers"] if x["id"] == "books")["rooms"])
+        # A page from before the servers sends access without them: the room keeps what it has on.
+        update({k: v for k, v in acc.items() if k != "mcp"})
+        out("M3 a save without the switches keeps them", json.loads(call("/api/workspaces")[1])["workspaces"][0]["access"]["mcp"])
+        # Pausing: everywhere, from the next message on, and kept over a restart.
+        out("M3 pause: bad body, unknown server", (call("/api/mcp/books/pause", {"paused": "yes"})[:2], call("/api/mcp/nobody/pause", {"paused": True})[:2]))
+        code, body, _ = call("/api/mcp/books/pause", {"paused": True})
+        out("M3 paused", (code, json.loads(body)["server"]["statusText"], json.load(open(os.path.join(data, "mcp-servers.json")))))
+        evs, run = msay("while paused")
+        out("M3 a paused server isn't in the next run, and agents are told", (sorted(run["mcp"]["servers"]), run["note"][run["note"].find("; MCP"):]))
+        out("M3 room settings show it paused", [x for x in json.loads(call("/api/workspaces")[1])["mcpServers"] if x["id"] == "books"])
+        call("/api/mcp/books/pause", {"paused": False})
+        # A room-built advisor gets the servers' tools only with its "mcp" group; one without it gets none.
+        call("/api/agents", {"name": "Ledger", "role": "advisor", "does": "reads the books", "instructions": "Look things up.", "tools": ["files", "mcp"]})
+        call("/api/agents", {"name": "Plain", "role": "advisor", "does": "reads files", "instructions": "Look things up.", "tools": ["files"]})
+        evs, run = msay("with advisors")
+        out("M3 room-built advisors' MCP tools", run["advisor_tools"])
+        # A tool the server didn't list at the start shows up in a run: blocked from the next run on, and said once.
+        evs, run = msay("surprise")
+        out("M3 an unknown server tool is noticed", [e["text"][:80] for e in evs if e["type"] == "notice"])
+        evs, run = msay("after the surprise")
+        out("M3 and blocked from then on", "mcp__books__surprise" in run["denied_mcp"])
+    finally:
+        s.stop()
+    out("M3 the terminal says why a server didn't start", sorted(l for l in s.stderr.splitlines() if "MCP server" in l))
+    # On a key: only the Exec Room's own servers load (--strict-mcp-config), and there's no claude.ai duplicate to block.
+    s = Server("mcp", {**mcp_env, "ROOM_AUTH": "api-key", "ROOM_ANTHROPIC_API_KEY": "sk-fake-room-key"}, data_name="data-mcp", config=mcp_config)
+    try:
+        overview()
+        out("M3 on a key the pause was kept, and resumed", next(x for x in overview()["servers"] if x["id"] == "books")["statusText"])
+        evs, run = msay("on a key")
+        out("M3 on a key: the same servers, nothing else", (sorted(run["mcp"]["servers"]), run["strict"], [t for t in run["denied_mcp"] if "claude_ai" in t]))
+    finally:
+        s.stop()
+
+    # M4: setting servers up on the settings page. A pretend vendor is an MCP server and its
+    # own sign-in service: it names its sign-in details in its 401, lets the Exec Room register, approves every sign-in
+    # at once, checks PKCE, and hands out a new renewal key at every renewal (the old one then fails). It can be told
+    # to refuse renewals. Its tools: one it calls read-only, one without a word, one that deletes. 1Password is the fake
+    # `op` in tests/fakes/mcp. The token path uses M3's pretend server.
+    OAUTH_PORT = int(os.environ.get("ROOM_TEST_OAUTH_PORT", "4198"))
+    ob = f"http://127.0.0.1:{OAUTH_PORT}"
+    vendor = {"expires_in": 3600, "refuse_renewal": False, "codes": {}, "access": set(), "refresh": set(), "grants": [], "registered": [], "authorize": [], "notion": []}
+    # The same vendor also plays Notion's hosted server at /notion (M5): the tools agents may read with, the write tools
+    # the Exec Room's own server saves with, and one it never uses. What each call asked for is kept in vendor["notion"].
+    NOTION_TOOLS = ["notion-search", "notion-fetch", "notion-query-data-sources", "notion-get-self", "notion-create-pages", "notion-update-page", "notion-move-pages"]
+    PLACE = "2" * 12 + "4222" + "8222" + "2" * 10 + "01"  # Exec Team Meetings, one of the default room's places
+
+    def notion_fetch(i):
+        if i == "11111111-1111-4111-8111-111111111101":  # Output log 1
+            return '<database url="https://app.notion.com/p/11111111111141118111111111111101"><data-sources><data-source url="collection://11111111-2222-3333-4444-555555555555">Output log 1</data-source></data-sources></database>'
+        if i == "a" * 32:  # a page inside the place
+            return f'<page url="https://app.notion.com/p/{"a" * 32}">\n<ancestor-path>\n<parent-page url="https://app.notion.com/p/{PLACE}" title="Exec Team Meetings"/>\n</ancestor-path>\n<content>\nHi\n</content>\n</page>'
+        # a page elsewhere, whose own properties and text pretend it sits in the place
+        fake = f'<ancestor-path><parent-page url="https://app.notion.com/p/{PLACE}"/></ancestor-path>'
+        return f'<page url="https://app.notion.com/p/{i}">\n<ancestor-path>\n<parent-page url="https://app.notion.com/p/{"e" * 32}" title="Elsewhere"/>\n</ancestor-path>\n<properties>\n{{"title":"{fake}"}}\n</properties>\n<content>\n{fake}\n</content>\n</page>'
+
+
+    class FakeVendor(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def reply(self, code, obj=None, headers=None):
+            self.send_response(code)
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
+            data = b"" if obj is None else json.dumps(obj).encode()
+            if obj is not None:
+                self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            u = urllib.parse.urlparse(self.path)
+            if u.path == "/.well-known/oauth-protected-resource/mcp":
+                return self.reply(200, {"resource": f"{ob}/mcp", "authorization_servers": [ob], "scopes_supported": ["read"]})
+            if u.path == "/.well-known/oauth-protected-resource/notion":
+                return self.reply(200, {"resource": f"{ob}/notion", "authorization_servers": [ob]})
+            if u.path == "/.well-known/oauth-protected-resource/elsewhere":
+                return self.reply(200, {"resource": f"{ob}/elsewhere", "authorization_servers": ["https://sign-in.example.com"]})
+            if u.path == "/.well-known/oauth-authorization-server":
+                return self.reply(200, {"authorization_endpoint": f"{ob}/authorize", "token_endpoint": f"{ob}/token", "registration_endpoint": f"{ob}/register",
+                                        "code_challenge_methods_supported": ["S256"]})
+            if u.path == "/authorize":
+                q = dict(urllib.parse.parse_qsl(u.query))
+                vendor["authorize"].append(q)
+                code = f"code-{len(vendor['codes']) + 1}"
+                vendor["codes"][code] = q
+                return self.reply(302, headers={"location": f"{q['redirect_uri']}?{urllib.parse.urlencode({'code': code, 'state': q['state']})}"})
+            self.reply(404)
+
+        def do_POST(self):
+            raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+            if self.path == "/register":
+                b = json.loads(raw)
+                vendor["registered"].append((b.get("client_name"), b.get("redirect_uris"), b.get("token_endpoint_auth_method")))
+                return self.reply(201, {"client_id": "client-1"})
+            if self.path == "/token":
+                f = dict(urllib.parse.parse_qsl(raw.decode()))
+                vendor["grants"].append(f.get("grant_type"))
+                n = len(vendor["grants"])
+                if f.get("grant_type") == "authorization_code":
+                    q = vendor["codes"].pop(f.get("code"), None)
+                    pkce = q and base64.urlsafe_b64encode(hashlib.sha256(f.get("code_verifier", "").encode()).digest()).rstrip(b"=").decode() == q["code_challenge"]
+                    if not q or not pkce or f.get("redirect_uri") != q["redirect_uri"]:
+                        return self.reply(400, {"error": "invalid_grant"})
+                elif f.get("grant_type") == "refresh_token":
+                    if vendor["refuse_renewal"] or f.get("refresh_token") not in vendor["refresh"]:
+                        return self.reply(400, {"error": "invalid_grant"})
+                    vendor["refresh"].discard(f["refresh_token"])
+                else:
+                    return self.reply(400, {"error": "unsupported_grant_type"})
+                vendor["access"].add(f"at-{n}")
+                vendor["refresh"].add(f"rt-{n}")
+                return self.reply(200, {"access_token": f"at-{n}", "refresh_token": f"rt-{n}", "expires_in": vendor["expires_in"], "token_type": "Bearer"})
+            body = json.loads(raw or b"{}")
+            if self.path == "/open":  # a server that needs no sign-in
+                return self.reply(200, {"jsonrpc": "2.0", "id": body.get("id"), "result": {}})
+            if self.path in ("/mcp", "/elsewhere", "/notion"):
+                token = (self.headers.get("authorization") or "")[7:]
+                if token not in vendor["access"]:
+                    return self.reply(401, headers={"www-authenticate": f'Bearer resource_metadata="{ob}/.well-known/oauth-protected-resource{self.path}"'})
+                if body.get("id") is None:
+                    return self.reply(202)
+                method = body["method"]
+                if method == "initialize":
+                    result = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "vendor", "version": "1"}}
+                elif method == "tools/list" and self.path == "/notion":
+                    result = {"tools": [{"name": n, "inputSchema": {"type": "object"}} for n in NOTION_TOOLS]}
+                elif method == "tools/call" and self.path == "/notion":
+                    name, a = body["params"]["name"], body["params"].get("arguments", {})
+                    vendor["notion"].append((name, a))
+                    made = f"{len(vendor['notion']):032x}"
+                    answer = ({"text": notion_fetch(a.get("id"))} if name == "notion-fetch"
+                              else {"pages": [{"id": made, "url": f"https://app.notion.com/p/{made}?pvs=1"}]} if name == "notion-create-pages"
+                              else {"page_id": a.get("page_id")} if name == "notion-update-page" else {"name": "Owner"})
+                    result = {"content": [{"type": "text", "text": json.dumps(answer)}]}
+                elif method == "tools/list":
+                    result = {"tools": [{"name": "look_up", "annotations": {"readOnlyHint": True}, "inputSchema": {"type": "object"}},
+                                        {"name": "count", "inputSchema": {"type": "object"}},
+                                        {"name": "remove", "annotations": {"destructiveHint": True}, "inputSchema": {"type": "object"}}]}
+                else:
+                    result = {"content": [{"type": "text", "text": "found"}]}
+                return self.reply(200, {"jsonrpc": "2.0", "id": body["id"], "result": result})
+            self.reply(404)
+
+    fake_vendor = ThreadingHTTPServer(("127.0.0.1", OAUTH_PORT), FakeVendor)
+    threading.Thread(target=fake_vendor.serve_forever, daemon=True).start()
+    page_catalog = os.path.join(TMP, "mcp-catalog.page.json")
+    with open(page_catalog, "w") as f:
+        json.dump({"fakebooks": {"name": "Fakebooks", "by": "Fake Co", "description": "Test books.", "token": {"url": f"{base}/good", "where": "Fakebooks: Settings, Tokens"},
+                                 "check": {"tool": "read_a", "arguments": {}}, "tools": reads},
+                   "fakeconnect": {"name": "Fakeconnect", "description": "Signs in.", "connect": {"url": f"{ob}/mcp", "scope": "read"},
+                                   "tools": {"look_up": "reads", "count": "reads", "remove": "writes"}}}, f)
+    page_config = os.path.join(TMP, "room.config.page.json")
+    with open(page_config, "w") as f:
+        json.dump({"notionDatabases": {}, "mcpServers": {"cfg": {"name": "By hand", "url": f"{base}/good", "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_b"]}}}, f)
+    page_env = {"ROOM_MCP_CATALOG": page_catalog, "SUITE_MCP_TOKEN": "good-token", "ROOM_TEST_MCP_RENEW_MS": "200"}
+    pdata = os.path.join(TMP, "data-mcp-page")
+    old_chat(pdata)
+    # The state file as PR A wrote it: only "paused".
+    with open(os.path.join(pdata, "mcp-servers.json"), "w") as f:
+        json.dump({"paused": []}, f)
+    signins = lambda: json.load(open(os.path.join(pdata, "mcp-signins.json")))
+    page_state = lambda: json.load(open(os.path.join(pdata, "mcp-servers.json")))
+    find = lambda sid: next((x for x in overview()["servers"] if x["id"] == sid), None)
+    add = lambda b: (lambda r: (r[0], json.loads(r[1])))(call("/api/mcp/add", b))
+
+    def call_abs(url):
+        try:
+            r = OPENER.open(urllib.request.Request(url), timeout=10)
+            return r.status, r.read().decode(), {k.lower(): v for k, v in r.headers.items()}
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode(), {k.lower(): v for k, v in e.headers.items()}
+
+    def follow(sign_in_url):
+        """The browser's part: the vendor's sign-in page approves at once and sends the browser back to the Exec Room."""
+        _, _, h = call_abs(sign_in_url)
+        back = urllib.parse.urlparse(h["location"])
+        got = call(f"{back.path}?{back.query}")
+        return back.query, got[0], dict(urllib.parse.parse_qsl(urllib.parse.urlparse(got[2]["Location"]).query))
+
+    s = Server("mcp", page_env, data_name="data-mcp-page", config=page_config)
+    try:
+        body = overview()
+        out("M4 the Popular grid and what is set up", (body["catalog"], [(x["id"], x["source"]) for x in body["servers"]]))
+        out("M4 a state file with only \"paused\" loads", page_state())
+        out("M4 refused before anything starts", [add(b) for b in (
+            {"name": "", "url": f"{ob}/mcp", "via": "connect"},
+            {"name": "Mine", "url": "http://example.com/mcp", "via": "connect"},
+            {"name": "Mine", "url": f"{ob}/mcp?key=1", "via": "connect"},
+            {"catalog": "nope", "via": "connect"},
+            {"catalog": "fakebooks", "via": "connect"},
+            {"catalog": "fakeconnect", "via": "token", "tokenRef": "op://Test/fakebooks/credential"},
+            {"catalog": "fakebooks", "via": "token", "tokenRef": "good-token"},
+            {"catalog": "fakebooks", "via": "token", "tokenRef": "op://Test/other/credential"},
+            {"name": "Open", "url": f"{ob}/open", "via": "connect"},
+            {"name": "Elsewhere", "url": f"{ob}/elsewhere", "via": "connect"},
+        )])
+        code, r = add({"catalog": "fakebooks", "via": "token", "tokenRef": "op://Test/fakebooks/credential"})
+        out("M4 a catalog service with a 1Password reference: checked, all its read tools ticked", (code, {k: r["server"][k] for k in ("id", "source", "via", "statusText", "tools", "tokenFrom", "choices")}))
+        out("M4 saved in the state file", page_state())
+        out("M4 the same service twice", add({"catalog": "fakebooks", "via": "token", "tokenRef": "op://Test/fakebooks/credential"}))
+        # Connect for a custom server: the answer is a link to the vendor's sign-in page.
+        code, r = add({"name": "Signed In", "url": f"{ob}/mcp", "via": "connect"})
+        link = urllib.parse.urlparse(r["signInUrl"])
+        q = dict(urllib.parse.parse_qsl(link.query))
+        out("M4 the sign-in link", (code, link.path, sorted(q), {k: q[k].replace(str(PORT), "<port>").replace(str(OAUTH_PORT), "<vendor>") for k in ("response_type", "client_id", "redirect_uri", "code_challenge_method", "resource", "scope")},
+                                   len(q["state"]) >= 32, len(q["code_challenge"]) == 43))
+        out("M4 the Exec Room registered itself", [(n, [u.replace(str(PORT), "<port>") for u in uris], m) for n, uris, m in vendor["registered"]])
+        out("M4 nothing is set up before the sign-in", find("signed-in"))
+        forged = call(f"/api/mcp/callback?{urllib.parse.urlencode({'state': 'forged', 'code': 'code-1'})}")
+        out("M4 a return with a state the Exec Room didn't hand out", (forged[0], dict(urllib.parse.parse_qsl(urllib.parse.urlparse(forged[2]["Location"]).query)), vendor["grants"]))
+        vendor["expires_in"] = 1  # the first token runs out at once, so the renewal timer renews it
+        back, code, page = follow(r["signInUrl"])
+        vendor["expires_in"] = 3600
+        out("M4 the return", (code, page))
+        replay = call(f"/api/mcp/callback?{back}")
+        out("M4 the same return again", dict(urllib.parse.parse_qsl(urllib.parse.urlparse(replay[2]["Location"]).query))["result"])
+        for _ in range(50):
+            if vendor["grants"].count("refresh_token"):
+                break
+            time.sleep(0.1)
+        time.sleep(0.4)
+        m = find("signed-in")
+        out("M4 signed in: works, nothing ticked yet", {k: m[k] for k in ("source", "via", "status", "statusText", "tools", "choices", "readHint", "usable", "tokenFrom")})
+        out("M4 renewed before it ran out, with the new renewal key kept", (vendor["grants"], {k: signins()["signed-in"][k] for k in ("accessToken", "refreshToken")},
+                                                                          oct(os.stat(os.path.join(pdata, "mcp-signins.json")).st_mode & 0o777)))
+        out("M4 the overview holds no token", not re.search(r'"(at|rt)-\d', json.dumps(overview())))
+        out("M4 choosing tools: not offered, a config server, unknown server", (call("/api/mcp/signed-in/tools", {"tools": ["look_up", "nope"]})[:2],
+                                                                                 call("/api/mcp/cfg/tools", {"tools": ["read_b"]})[:2], call("/api/mcp/nobody/tools", {"tools": []})[:2]))
+        code, b2, _ = call("/api/mcp/signed-in/tools", {"tools": ["look_up", "count"]})
+        out("M4 tools chosen", (code, json.loads(b2)["server"]["statusText"], {k: v for k, v in page_state()["servers"]["signed-in"].items() if k != "url"}))
+        out("M4 a catalog service can only get read tools", call("/api/mcp/fakebooks/tools", {"tools": ["read_a", "write_c"]})[:2])
+        room = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+        acc = {k: v for k, v in room["access"].items() if k != "files"}
+        call(f"/api/workspaces/{room['id']}", {"name": room["name"], "members": None, "access": {**acc, "files": [], "mcp": {"signed-in": True, "fakebooks": True}}})
+        evs, run = msay("with page servers")
+        out("M4 a run gets the servers set up on the page", ({k: v["path"] for k, v in run["mcp"]["servers"].items()}, run["allowed_mcp"], [t for t in run["denied_mcp"] if "signed-in" in t]))
+    finally:
+        s.stop()
+    out("M4 the terminal", sorted(l.replace(str(OAUTH_PORT), "<vendor>") for l in s.stderr.splitlines() if "MCP server" in l or "sign-in" in l))
+    # Over a restart: the page's servers come back (the token from 1Password again, the sign-in from its file). A page
+    # entry with the name of one in room.config.json is left out. A sign-in about to run out whose renewal is refused
+    # says "Sign in again", and no run gets it.
+    st = page_state()
+    st["servers"]["cfg"] = {"catalog": "fakebooks", "tokenRef": "op://Test/fakebooks/credential"}
+    with open(os.path.join(pdata, "mcp-servers.json"), "w") as f:
+        json.dump(st, f)
+    si = signins()
+    si["signed-in"]["expiresAt"] = int(time.time() * 1000) + 60000
+    with open(os.path.join(pdata, "mcp-signins.json"), "w") as f:
+        json.dump(si, f)
+    vendor["refuse_renewal"] = True
+    s = Server("mcp", page_env, data_name="data-mcp-page", config=page_config)
+    try:
+        out("M4 after a restart", [(x["id"], x["source"], x["statusText"], x["usable"]) for x in overview()["servers"]])
+        evs, run = msay("after the restart")
+        out("M4 a sign-in that needs renewing is in no run", sorted(run["mcp"]["servers"]))
+        vendor["refuse_renewal"] = False
+        code, r = (lambda x: (x[0], json.loads(x[1])))(call("/api/mcp/signed-in/signin", {}))
+        _, code, page = follow(r["signInUrl"])
+        m = find("signed-in")
+        out("M4 signed in again: the tools are kept", (page["result"], m["statusText"], m["tools"]))
+        out("M4 sign in again for a server without Connect", call("/api/mcp/fakebooks/signin", {})[:2])
+        out("M4 disconnect: a config server, unknown server", (call("/api/mcp/cfg/remove", {})[:2], call("/api/mcp/nobody/remove", {})[:2]))
+        out("M4 disconnected", (call("/api/mcp/signed-in/remove", {})[:2], find("signed-in"), sorted(page_state()["servers"]), sorted(signins())))
+        out("M4 the job log", [(l["change"], l["server"]) for l in map(json.loads, open(os.path.join(pdata, "jobs.ndjson"))) if l.get("kind") == "mcp"])
+    finally:
+        s.stop()
+    out("M4 the terminal after the restart", sorted(l.replace(str(OAUTH_PORT), "<vendor>") for l in s.stderr.splitlines() if "MCP server" in l or "sign-in" in l))
+
+    # M5: Notion through "Connect", against the vendor playing Notion's hosted server with the
+    # real catalog entry. On a key: before connecting, Notion only through links; connected, runs in rooms with Notion on
+    # get its three read tools (everything else of it blocked), a linked page is left to the agents, and saving goes
+    # through the connection, not the Notion token (whose API is pointed at nothing here). Text Notion would read as
+    # its own tags is escaped; a page whose place can't be confirmed from Notion's own path is refused. On the plan,
+    # once connected, agents read through the connection too and the claude.ai connector is blocked; paused, they read
+    # no Notion at all.
+    notion_catalog = os.path.join(TMP, "mcp-catalog.notion.json")
+    with open(notion_catalog, "w") as f:
+        json.dump({"notion": {**json.load(open(os.path.join(opts.root, "mcp-catalog.json")))["notion"], "connect": {"url": f"{ob}/notion"}}}, f)
+    notion_env = {"ROOM_MCP_CATALOG": notion_catalog, "ROOM_NOTION_API": "http://127.0.0.1:1"}
+    key_env = {**notion_env, "ROOM_AUTH": "api-key", "ROOM_ANTHROPIC_API_KEY": "sk-fake-room-key"}
+    spaces = lambda: json.loads(call("/api/workspaces")[1])
+    notion_said = lambda run: next((p for p in run["note"].split("; ") if "Notion" in p), None)
+    masked = lambda x: re.sub(r"\d{4}-\d{2}-\d{2}", "<date>", re.sub(r"rec-[0-9a-z-]+", "<rec>", json.dumps(x)))
+    proposed = lambda evs: [e["rec"] for e in evs if e["type"] == "recommendation"]
+    approve = lambda r: [(e["type"], e.get("state"), e.get("url") or e.get("urls"), e.get("error")) for e in json.loads(call(f"/api/recs/{r['recId']}/approve", {})[1])["events"]][-1]
+
+    def notion_room(on):
+        room = spaces()["workspaces"][0]
+        call(f"/api/workspaces/{room['id']}", {"name": room["name"], "members": None, "access": {**room["access"], "files": [], "notion": on}})
+
+    link = " https://www.notion.so/" + "a" * 32
+    s = Server("mcp", key_env, data_name="data-mcp-notion")
+    try:
+        notion_room(True)
+        evs, run = msay("before Notion is connected" + link)
+        out("M5 on a key, not connected: Notion through links", (run["mcp"], run["linked_notion"], notion_said(run)[:70]))
+        out("M5 not connected: the grid and the rooms' page", ([(c["id"], c["connect"], c["tokenWhere"]) for c in overview()["catalog"]], {k: spaces()[k] for k in ("notion", "notionConnected", "notionConnection")}))
+        code, r = add({"catalog": "notion", "via": "connect"})
+        _, code, page = follow(r["signInUrl"])
+        m = find("notion")
+        out("M5 connected", (page["result"], {k: m[k] for k in ("source", "via", "statusText", "tools", "choices", "notion")}, [x["name"] for x in m["rooms"]]))
+        out("M5 checked with a harmless read", [n for n, _ in vendor["notion"]])
+        w = spaces()
+        out("M5 the rooms' page: Notion isn't switched per room like the other servers", ({k: w[k] for k in ("notion", "notionConnected", "notionConnection")}, [x["id"] for x in w["mcpServers"]]))
+        evs, run = msay("with Notion connected" + link)
+        out("M5 a run reads Notion through the connection", ({k: v["path"] for k, v in run["mcp"]["servers"].items()}, run["allowed_mcp"], run["denied_mcp"], run["tool_search"], run["linked_notion"], notion_said(run)))
+        notion_room(False)
+        evs, run = msay("Notion off" + link)
+        out("M5 Notion off in the room", (run["mcp"], run["allowed_mcp"], run["denied_mcp"], run["linked_notion"], notion_said(run)))
+        notion_room(True)
+
+        draft = {"action": "notion_draft", "summary": "A post", "database": "output-log-1", "image_prompt": "A cat", "source_insight": "Seen at a meetup",
+                 "posts": [{"channel": "LinkedIn", "title": "Hello [world]", "content": "Line one\nLine two", "account": "Main"}]}
+        doc = {"action": "notion_page", "summary": "Notes", "parent": PLACE, "title": "Notes",
+               "content": "# Notes\n\nA <page url=\"https://www.notion.so/" + "d" * 32 + "\">moved</page> tag and `<b>code</b>`.\n\n```\nplain <x>\n```\n\n```js\nlet x = '<y>'\n```\n\nAfter."}
+        before = len(vendor["notion"])
+        evs, run = msay("save " + " ".join("REC:" + json.dumps(x) for x in (draft, doc)))
+        made = [approve(r) for r in proposed(evs)]
+        out("M5 saved through the connection", made)
+        out("M5 what Notion was asked", masked(vendor["notion"][before:]))
+        before = len(vendor["notion"])
+        evs, run = msay("save more " + " ".join("REC:" + json.dumps({**doc, "summary": k, "parent": p}) for k, p in (("Inside", "a" * 32), ("Elsewhere", "b" * 32))))
+        out("M5 a page inside a place, and one Notion doesn't place there", [approve(r) for r in proposed(evs)])
+        out("M5 what Notion was asked for those", [(n, a.get("id") or a.get("parent")) for n, a in vendor["notion"][before:]])
+        page_id = re.search(r"[0-9a-f]{32}", made[1][2]).group(0)
+        before = len(vendor["notion"])
+        evs, run = msay("update REC:" + json.dumps({"action": "notion_page_update", "summary": "Second version", "page": page_id, "title": "Notes v2", "content": "New <text>."}))
+        out("M5 updating a page the room made", ([approve(r) for r in proposed(evs)], masked(vendor["notion"][before:])))
+    finally:
+        s.stop()
+    s = Server("mcp", notion_env, data_name="data-mcp-notion")
+    try:
+        m = find("notion")
+        evs, run = msay("on the plan" + link)
+        out("M5 on the plan: agents read through the connection, not the claude.ai connector", (m["statusText"], m["notion"], {k: v["path"] for k, v in run["mcp"]["servers"].items()},
+                                                                                              run["allowed_mcp"], run["claude_notion"], run["linked_notion"], notion_said(run)))
+        call("/api/mcp/notion/pause", {"paused": True})
+        evs, run = msay("paused on the plan")
+        out("M5 paused on the plan: no Notion at all", (find("notion")["notion"], spaces()["notionConnection"], run["mcp"], run["allowed_mcp"], run["denied_mcp"], run["claude_notion"], notion_said(run)))
+    finally:
+        s.stop()
+    # On the plan without a connection, nothing changes: the claude.ai connector, as before.
+    s = Server("mcp", notion_env, data_name="data-mcp-plan-unconnected")
+    try:
+        evs, run = msay("not connected on the plan")
+        out("M5 on the plan, not connected: the claude.ai connector", (spaces()["notionConnection"], run["mcp"], run["claude_notion"], notion_said(run)))
+    finally:
+        s.stop()
+    fake_vendor.shutdown()
+    fake_mcp.shutdown()
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 

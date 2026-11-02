@@ -1,0 +1,19 @@
+{
+  "notion": {
+    "name": "Notion",
+    "by": "Notion",
+    "description": "Search, open and query your Notion workspace, and save what you approve: drafts, pages and updates, only to the places each room may use.",
+    "connect": {
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "check": {
+      "tool": "notion-get-self",
+      "arguments": {}
+    },
+    "tools": {
+      "notion-search": "reads",
+      "notion-fetch": "reads",
+      "notion-query-data-sources": "reads"
+    }
+  }
+}

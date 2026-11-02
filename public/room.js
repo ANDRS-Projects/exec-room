@@ -1621,7 +1621,11 @@ let space = null;       // the current room: { id, name, members (null = everyon
 let spaceList = [];
 let catalogue = [];     // every agent a room can have: { key, name, role, builtIn }
 let notionDbs = [];     // the Output DBs the server knows: { key, name }
-let notionOn = false;   // whether the room started with its Notion token (Notion actions at all)
+// The notes under Notion as the page has them (Notion not connected).
+const NOTION_VIA_NOTE = document.getElementById('access-notion-via').textContent;
+const NOTION_KEY_NOTE = document.getElementById('access-notion-key').textContent;
+let notionOn = false;   // whether saving to Notion works (Notion connected, or the Notion token)
+let mcpServers = [];    // the Exec Room's own MCP servers a room can switch on: { id, name, statusText, usable }
 const inRoom = (key) => !space || space.members == null || space.members.includes(key);
 const spaceMenu = $('space-menu');
 const spaceButton = $('brand-workspace');
@@ -1635,8 +1639,18 @@ async function loadSpaces() {
     catalogue = data.agents;
     notionDbs = data.notionDbs || [];
     notionOn = Boolean(data.notion);
+    mcpServers = data.mcpServers || [];
     // On an API key the connectors don't exist: the settings say so next to the two choices (which are kept).
     for (const id of ['access-notion-key', 'access-m365-key']) $(id).hidden = data.auth !== 'api-key';
+    // Connected with Connect, agents read Notion through that sign-in on the plan and on a key alike; the API-key
+    // note (links) only applies while it isn't connected.
+    $('access-notion-via').textContent = data.notionConnection === 'on'
+      ? "Read-only, through the Exec Room app's Notion sign-in (Exec Room settings, MCP servers). The claude.ai Notion connector isn't used."
+      : data.notionConnection === 'off'
+        ? "Read-only, through the Exec Room app's Notion sign-in, which is paused or needs signing in again: agents read no Notion until it works again."
+        : NOTION_VIA_NOTE;
+    $('access-notion-key').textContent = NOTION_KEY_NOTE;
+    if (data.notionConnection) $('access-notion-key').hidden = true;
     space = spaceList.find((w) => w.id === data.current) || null;
     if (space) spaceButton.textContent = space.name;
     markWorking();
@@ -1733,6 +1747,7 @@ function renderSpaceMenu(moving = false) {
   spaceMenu.appendChild(el('hr'));
   if (spaceList.length > 1) menuItem('Move this chat to…', () => { renderSpaceMenu(true); spaceMenu.querySelector('button').focus(); });
   menuItem('Room settings…', () => { closeSpaceMenu(); openSpaceEditor(space); });
+  menuItem('Exec Room settings…', () => { closeSpaceMenu(); openExecSettings(); });
   menuItem('+ New room', () => { closeSpaceMenu(); openSpaceEditor(null); });
 }
 
@@ -2074,6 +2089,7 @@ function openSpaceEditor(w) {
   $('access-websearch').checked = access.webSearch;
   $('access-notion').checked = access.notion;
   $('access-m365').checked = access.m365 === true;
+  renderMcpChoices(access.mcp || {});
   // What the room can propose; a new room starts with nothing (the server's default too).
   const targets = (w && w.targets) || { repos: [], notionDbs: [], notionPlaces: [] };
   // Public repos (e.g. open-source ones) are a separate list; the private list is the rest.
@@ -2415,6 +2431,27 @@ function placeEditRow(p, i) {
   return item;
 }
 
+// The Exec Room's MCP servers in "Can use": one box each, with the server's state when agents can't use it now (the
+// switch is kept either way). A server a room has on that isn't set up any more is kept, unseen, when saving.
+function renderMcpChoices(on) {
+  $('access-mcp-sec').hidden = !mcpServers.length;
+  $('access-mcp-list').replaceChildren(...mcpServers.map((m) => {
+    const label = el('label', 'choice');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.dataset.mcp = m.id;
+    box.checked = on[m.id] === true;
+    const text = el('span');
+    text.append(el('b', null, m.name), ' · read-only');
+    if (!m.usable) text.append(' ', el('small', 'mcp-off', `(${m.statusText.toLowerCase()})`));
+    label.append(box, text);
+    return label;
+  }));
+  mcpKept = Object.fromEntries(Object.keys(on).filter((id) => on[id] === true && !mcpServers.some((m) => m.id === id)).map((id) => [id, true]));
+}
+let mcpKept = {};
+const mcpChecked = () => [...$('access-mcp-list').querySelectorAll('input:checked')].map((b) => b.dataset.mcp);
+
 // Live summary on top, a count per section and per tab, from the lists and boxes as they are now.
 function updateSpaceSummary() {
   const len = (kind) => accessLists[kind].length;
@@ -2425,6 +2462,7 @@ function updateSpaceSummary() {
   const webSearch = $('access-websearch').checked;
   const notionRead = $('access-notion').checked;
   const m365Read = $('access-m365').checked;
+  const mcpOn = mcpChecked().length;
   const dbs = $('targets-dbs').querySelectorAll('input:checked').length;
   setCount('space-count-general', everyone ? 'all' : plural(members, 'member'), everyone || members > 0);
   setCount('access-file-count', String(len('files')), len('files') > 0);
@@ -2432,23 +2470,25 @@ function updateSpaceSummary() {
   setCount('access-websearch-count', webSearch ? 'on' : 'off', webSearch);
   setCount('access-notion-count', notionRead ? 'read' : 'off', notionRead);
   setCount('access-m365-count', m365Read ? 'read' : 'off', m365Read);
+  setCount('access-mcp-count', mcpOn ? String(mcpOn) : 'off', mcpOn > 0);
   setCount('targets-repo-count', String(len('repos')), len('repos') > 0);
   setCount('targets-public-repo-count', String(len('publicRepos')), len('publicRepos') > 0);
   setCount('targets-recipient-count', len('allowedRecipients') ? String(len('allowedRecipients')) : 'off', len('allowedRecipients') > 0);
   setCount('targets-db-count', String(dbs), dbs > 0);
   setCount('targets-place-count', String(places.length), places.length > 0);
   // Tab labels: how many sections there are switched on, and an amber dot when something there reaches outside.
-  const useOn = [len('files'), len('sites'), webSearch, notionRead, m365Read].filter(Boolean).length;
+  const useOn = [len('files'), len('sites'), webSearch, notionRead, m365Read, mcpOn].filter(Boolean).length;
   const proposeOn = [len('repos'), len('publicRepos'), len('allowedRecipients'), notionOn && dbs, notionOn && places.length].filter(Boolean).length;
   setCount('space-tab-use-count', String(useOn), useOn > 0);
   setCount('space-tab-propose-count', String(proposeOn), proposeOn > 0);
-  $('space-tab-use-dot').hidden = !webSearch;
+  $('space-tab-use-dot').hidden = !(webSearch || mcpOn);
   $('space-tab-propose-dot').hidden = !(len('publicRepos') || len('allowedRecipients'));
   // Each part is [text, reaches outside?]; the ones that reach outside get the amber mark.
   const reads = [[len('files') ? plural(len('files'), 'folder') : 'drafts/ only'], [len('sites') ? plural(len('sites'), 'site') : 'no sites']];
   if (webSearch) reads.push(['web search', true]);
   if (notionRead) reads.push(['Notion (read)']);
   if (m365Read) reads.push(['Microsoft 365 mail (read)']);
+  if (mcpOn) reads.push([plural(mcpOn, 'MCP server'), true]);
   const proposes = [];
   if (len('repos')) proposes.push([plural(len('repos'), 'private repo')]);
   if (len('publicRepos')) proposes.push([plural(len('publicRepos'), 'public repo'), true]);
@@ -2466,7 +2506,8 @@ function spaceAdditions() {
   const before = JSON.parse(spaceSnapshot);
   const webSearch = $('access-websearch').checked && !before.access.webSearch ? ['web search'] : [];
   const m365 = $('access-m365').checked && !before.access.m365 ? ['Microsoft 365 mail (read-only)'] : [];
-  return [...webSearch, ...m365, ...[
+  const mcp = mcpChecked().filter((id) => !(before.access.mcp || {})[id]).map((id) => `MCP server ${mcpServers.find((m) => m.id === id).name}`);
+  return [...webSearch, ...m365, ...mcp, ...[
     ['folder', accessLists.files, before.access.files],
     ['site', accessLists.sites, before.access.sites],
     ['public repo', accessLists.publicRepos, before.targets.publicRepos],
@@ -2499,6 +2540,316 @@ spaceTabs.forEach((tab, i) => {
     selectSpaceTab(spaceTabs[to], true);
   });
 });
+
+// ---- Exec Room settings: for the whole Exec Room, not one room. For now its MCP servers: each with its state, a
+// switch that pauses or resumes it in every room, and a gear for what it's set up with. Servers are set up here (the
+// Popular grid, or a custom one by its address) or by hand in room.config.json; this page never takes a command or
+// a token.
+const execSettings = $('exec-settings');
+$('exec-settings-close').addEventListener('click', () => execSettings.close());
+
+async function openExecSettings() {
+  await renderMcpServers();
+  execSettings.showModal();
+}
+
+async function renderMcpServers(focusId) {
+  const list = $('mcp-list');
+  let data;
+  try {
+    const res = await fetch('/api/mcp');
+    if (!res.ok) throw new Error(`the server answered ${res.status}`);
+    data = await res.json();
+  } catch (err) {
+    list.replaceChildren(el('p', 'form-error', `Couldn't load the MCP servers: ${err.message}`));
+    return;
+  }
+  mcpLastSeen = JSON.stringify(data.servers.map((m) => [m.id, m.status]));
+  $('mcp-count').textContent = String(data.servers.length);
+  $('mcp-count').classList.toggle('on', data.servers.length > 0);
+  list.replaceChildren(...(data.servers.length ? data.servers.map(mcpItem) : [el('p', 'sec-note', 'None set up yet: set one up below.')]));
+  $('mcp-popular').replaceChildren(...(data.catalog.length ? data.catalog.map(mcpPopularCard) : [el('p', 'sec-note', 'The catalog is empty.')]));
+  const custom = el('button', 'ghost', 'Add custom MCP');
+  custom.type = 'button';
+  custom.addEventListener('click', () => mcpSetupForm(null));
+  $('mcp-custom').replaceChildren(el('p', 'sec-note', 'A server at a web address (https://…). A program on this computer can only be added by hand in the config file.'), custom);
+  $('mcp-howto').textContent = `Servers can also be set up by hand in ${data.configFile}; those start when the Exec Room restarts, and win over one set up here with the same name. A change here applies from the next message on.`;
+  if (focusId) {
+    const sw = list.querySelector(`[data-mcp-switch="${CSS.escape(focusId)}"]`);
+    if (sw) sw.focus();
+  }
+}
+
+function mcpItem(m) {
+  const item = el('div', 'mcp-item');
+  const card = el('div', `mcp-card${m.usable ? '' : ' off'}`);
+  const icon = el('div', 'mcp-icon', m.name.slice(0, 1).toUpperCase());
+  icon.setAttribute('aria-hidden', 'true');
+  const main = el('div', 'mcp-main');
+  const status = el('div', 'mcp-status');
+  const dot = el('span', `mcp-dot${m.usable ? ' ok' : m.paused || m.status === 'checking' || (m.status === 'ready' && !m.tools.length) ? '' : ' bad'}`);
+  dot.setAttribute('aria-hidden', 'true');
+  status.append(dot, m.statusText);
+  main.append(el('div', 'mcp-name', m.name), status);
+  const details = el('div', 'mcp-details');
+  details.id = `mcp-details-${m.id}`;
+  details.hidden = true;
+  const gear = el('button', 'ghost mcp-gear', '⚙');
+  gear.type = 'button';
+  gear.setAttribute('aria-label', `Details for ${m.name}`);
+  gear.setAttribute('aria-expanded', 'false');
+  gear.setAttribute('aria-controls', details.id);
+  gear.addEventListener('click', () => {
+    details.hidden = !details.hidden;
+    gear.setAttribute('aria-expanded', String(!details.hidden));
+  });
+  // Only a server that works can be paused or resumed; one that didn't start says why under the gear.
+  const sw = el('button', 'mcp-switch');
+  sw.type = 'button';
+  sw.dataset.mcpSwitch = m.id;
+  sw.setAttribute('role', 'switch');
+  sw.setAttribute('aria-checked', String(m.status === 'ready' && !m.paused));
+  sw.setAttribute('aria-label', `${m.name}, on in the rooms that use it`);
+  sw.disabled = m.status !== 'ready';
+  sw.addEventListener('click', async () => {
+    sw.disabled = true;
+    try {
+      await agentRequest(`/api/mcp/${encodeURIComponent(m.id)}/pause`, { paused: !m.paused });
+      await renderMcpServers(m.id);
+      await loadSpaces();
+    } catch (err) {
+      sw.disabled = false;
+      details.hidden = false;
+      details.prepend(el('p', 'form-error', `Couldn't change it: ${err.message}`));
+    }
+  });
+  card.append(icon, main, gear, sw);
+  const row = (label, value) => {
+    const p = el('p', 'mcp-row');
+    p.append(el('b', null, `${label}: `), value);
+    return p;
+  };
+  if (m.problem) details.append(el('p', `mcp-problem${m.usable ? '' : ' bad'}`, m.problem.charAt(0).toUpperCase() + m.problem.slice(1) + '.'));
+  if (m.description) details.append(el('p', 'sec-note', m.description));
+  details.append(
+    ...(m.choices ? [] : [row(`Tools agents may use (${m.tools.length})`, m.tools.join(', '))]),
+    // Blocked for agents only: the Exec Room's own saves to Notion go through the same sign-in, after approval.
+    ...(m.blocked ? [row('Blocked for agents', `${m.blocked} other ${m.blocked === 1 ? 'tool' : 'tools'} the server offers.${m.notion ? " Agents can't write. Saving (a draft, a page, an update) is done by the Exec Room app after you approve it, only to the places of the room it was proposed in." : ''}`)] : []),
+    row('Token', m.via === 'connect' ? 'from signing in with Connect' : m.tokenFrom ? `from ${m.tokenFrom}` : 'none'),
+    ...(m.address ? [row('Address', m.address)] : []),
+    m.notion ? row('Rooms with Notion on', m.rooms.length ? m.rooms.map((r) => r.name).join(', ') : "none yet: switch Notion on in a room's settings, under Can use")
+      : row('Rooms with it on', m.rooms.length ? m.rooms.map((r) => r.name).join(', ') : "none yet: switch it on in a room's settings, under Can use"),
+    ...(m.notion ? [el('p', 'sec-note', `Agents in rooms with Notion on read Notion through this sign-in${m.notion.reading ? '' : ' (not right now: no Notion for agents until it works and is on again)'}; the claude.ai Notion connector is not used. They can propose saving to the places you allow per room; nothing is written without your approval.${m.notion.saving ? '' : ' Saving goes through this sign-in again once it works.'}`)] : []),
+    el('p', 'sec-note', m.source === 'page' ? `Set up on this page${m.origin === 'catalog' && m.by ? `, from the catalog (by ${m.by})` : ''}.`
+      : m.origin === 'catalog' ? `From the catalog${m.by ? `, by ${m.by}` : ''}, set up in room.config.json.` : 'Added by hand in room.config.json, not checked: you marked its tools as only reading.'),
+  );
+  if (m.choices) details.append(mcpToolChoices(m, details));
+  if (m.source === 'page') {
+    const actions = el('div', 'mcp-actions');
+    if (m.via === 'connect') {
+      const again = el('button', m.status === 'signin-expired' ? 'approve' : 'ghost', 'Sign in again');
+      again.type = 'button';
+      again.addEventListener('click', async () => {
+        again.disabled = true;
+        try {
+          mcpSignInStarted((await agentRequest(`/api/mcp/${encodeURIComponent(m.id)}/signin`, {})).signInUrl, m.name);
+        } catch (err) {
+          details.prepend(el('p', 'form-error', err.message));
+        }
+        again.disabled = false;
+      });
+      actions.append(again);
+    }
+    const remove = el('button', 'ghost danger', 'Disconnect');
+    remove.type = 'button';
+    remove.addEventListener('click', async () => {
+      if (!(await askConfirm(`Disconnect ${m.name}? Agents lose its tools in every room, and the Exec Room forgets its ${m.via === 'connect' ? 'sign-in' : 'token reference'}. ${m.via === 'connect' ? `To end the sign-in on ${m.name}'s side too, remove "Exec Room" in its own settings.` : ''}`, 'Disconnect'))) return;
+      try {
+        await agentRequest(`/api/mcp/${encodeURIComponent(m.id)}/remove`, {});
+        await renderMcpServers();
+        await loadSpaces();
+      } catch (err) {
+        details.prepend(el('p', 'form-error', err.message));
+      }
+    });
+    actions.append(remove);
+    details.append(actions);
+  }
+  // A server set up a moment ago with no tools ticked yet opens on its tool list.
+  if (m.choices && m.status === 'ready' && !m.tools.length) {
+    details.hidden = false;
+    gear.setAttribute('aria-expanded', 'true');
+  }
+  item.append(card, details);
+  return item;
+}
+
+// The tools agents get from a server set up on this page. A catalog service lists its read tools (all ticked when it
+// was set up); a custom server lists everything it offers, none ticked: only you can say which of them only read.
+function mcpToolChoices(m, details) {
+  const box = el('fieldset', 'mcp-tools');
+  box.append(el('legend', null, m.origin === 'catalog' ? `Tools agents may use (${m.tools.length} of ${m.choices.length} read tools)` : `Tools agents may use (${m.tools.length} ticked)`));
+  if (m.origin !== 'catalog') {
+    box.append(el('p', 'sec-note', m.choices.length
+      ? 'Tick only tools that read. Agents can\'t write themselves (writing goes through your approval). "Says it only reads" is the server\'s own claim, not checked by the Exec Room.'
+      : 'The server offers no tools right now.'));
+  }
+  const list = el('div', 'mcp-tool-list');
+  for (const t of m.choices) {
+    const label = el('label', 'mcp-tool');
+    const box1 = document.createElement('input');
+    box1.type = 'checkbox';
+    box1.value = t;
+    box1.checked = m.tools.includes(t);
+    label.append(box1, el('span', 'mcp-tool-name', t));
+    if (m.origin !== 'catalog' && m.readHint.includes(t)) label.append(el('span', 'mcp-hint', 'says it only reads'));
+    list.append(label);
+  }
+  const save = el('button', 'approve', 'Save tools');
+  save.type = 'button';
+  save.disabled = !m.choices.length;
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    try {
+      await agentRequest(`/api/mcp/${encodeURIComponent(m.id)}/tools`, { tools: [...list.querySelectorAll('input:checked')].map((i) => i.value) });
+      await renderMcpServers(m.id);
+      await loadSpaces();
+    } catch (err) {
+      save.disabled = false;
+      details.prepend(el('p', 'form-error', `Couldn't save the tools: ${err.message}`));
+    }
+  });
+  box.append(list, save);
+  return box;
+}
+
+// ---- Setting up a server from the page: a catalog service from the Popular grid, or a custom one by its address,
+// with Connect (signing in with the service in a new tab) or an API token from 1Password (its op:// reference: the
+// page never takes a token itself).
+let mcpLastSeen = '';
+let mcpWaitTimer = null;
+
+function mcpPopularCard(c) {
+  const card = el('div', 'mcp-pop');
+  const icon = el('div', 'mcp-icon', c.name.slice(0, 1).toUpperCase());
+  icon.setAttribute('aria-hidden', 'true');
+  const text = el('div', 'mcp-main');
+  text.append(el('div', 'mcp-name', c.name), el('p', 'sec-note', c.description));
+  const btn = el('button', c.setUp ? 'ghost' : 'approve', c.setUp ? 'Set up ✓' : 'Set Up');
+  btn.type = 'button';
+  btn.disabled = c.setUp;
+  btn.setAttribute('aria-label', c.setUp ? `${c.name} is set up` : `Set up ${c.name}`);
+  btn.addEventListener('click', () => mcpSetupForm(c));
+  card.append(icon, text, btn);
+  return card;
+}
+
+// One form for both: `c` is a catalog service, or null for a custom server.
+function mcpSetupForm(c) {
+  const box = $('mcp-setup');
+  const form = el('form', 'mcp-setup');
+  form.noValidate = true;
+  form.append(el('h3', null, c ? `Set up ${c.name}` : 'Add a custom MCP server'));
+  const field = (labelText, input, note) => {
+    const label = el('label', 'field');
+    label.append(el('span', null, labelText), input);
+    if (note) label.append(el('span', 'field-note', note));
+    return label;
+  };
+  const input = (name, placeholder) => {
+    const i = document.createElement('input');
+    i.name = name;
+    i.placeholder = placeholder;
+    i.autocomplete = 'off';
+    i.spellcheck = false;
+    return i;
+  };
+  let nameIn, urlIn;
+  if (!c) {
+    nameIn = input('name', 'e.g. Our docs');
+    urlIn = input('url', 'https://…');
+    form.append(field('Name', nameIn), field('Web address', urlIn, 'Where the server answers. No token, query or other details in it.'));
+  }
+  const ways = [];
+  if (!c || c.connect) ways.push(['connect', 'Connect', `Sign in with ${c ? c.name : 'the service'} in a new tab. The Exec Room keeps the sign-in and renews it.`]);
+  if (!c || c.tokenWhere !== null) ways.push(['token', 'API token from 1Password', `Make a token${c && c.tokenWhere ? ` (${c.tokenWhere})` : ''}, keep it in 1Password and give its reference here. 1Password asks you to approve each time the Exec Room starts.`]);
+  const group = el('fieldset', 'mcp-ways');
+  group.append(el('legend', null, 'How the Exec Room gets in'));
+  for (const [value, label, note] of ways) {
+    const l = el('label', 'mcp-way');
+    const r = document.createElement('input');
+    r.type = 'radio';
+    r.name = 'via';
+    r.value = value;
+    r.checked = value === ways[0][0];
+    l.append(r, el('b', null, ` ${label}`), el('span', 'field-note', note));
+    group.append(l);
+  }
+  const refIn = input('tokenRef', 'op://vault/item/credential');
+  const refField = field('1Password reference', refIn, 'In 1Password: the field\'s menu, Copy Secret Reference. Never the token itself.');
+  form.append(group, refField);
+  const error = el('p', 'form-error');
+  error.setAttribute('role', 'alert');
+  const go = el('button', 'approve', 'Set up');
+  go.type = 'submit';
+  const cancel = el('button', 'ghost', 'Cancel');
+  cancel.type = 'button';
+  cancel.addEventListener('click', () => box.replaceChildren());
+  const buttons = el('div', 'mcp-actions');
+  buttons.append(go, cancel);
+  form.append(error, buttons);
+  const way = () => form.querySelector('input[name="via"]:checked').value;
+  const sync = () => { refField.hidden = way() !== 'token'; };
+  group.addEventListener('change', sync);
+  sync();
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    error.textContent = '';
+    const body = { via: way(), ...(c ? { catalog: c.id } : { name: nameIn.value, url: urlIn.value.trim() }), ...(way() === 'token' ? { tokenRef: refIn.value.trim() } : {}) };
+    go.disabled = true;
+    go.textContent = way() === 'token' ? 'Waiting for 1Password…' : 'Starting…';
+    try {
+      const r = await agentRequest('/api/mcp/add', body);
+      box.replaceChildren();
+      if (r.signInUrl) mcpSignInStarted(r.signInUrl, c ? c.name : body.name);
+      else { await renderMcpServers(r.server.id); await loadSpaces(); }
+    } catch (err) {
+      error.textContent = err.message;
+      go.disabled = false;
+      go.textContent = 'Set up';
+    }
+  });
+  box.replaceChildren(form);
+  (nameIn || form.querySelector('input[name="via"]')).focus();
+}
+
+// A sign-in was started: open it in a new tab, say what to do if an app takes the link over, and watch for the
+// server to show up (or change) for up to 10 minutes.
+function mcpSignInStarted(url, name) {
+  window.open(url, '_blank', 'noopener');
+  const note = $('mcp-signin');
+  const copy = el('button', 'ghost', 'Copy the sign-in link');
+  copy.type = 'button';
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(url); copy.textContent = 'Copied'; } catch { copy.textContent = "Couldn't copy"; }
+  });
+  note.replaceChildren(el('p', null, `Finish signing in with ${name} in the new tab; this list updates when it's done. If ${name}'s desktop app opened instead of your browser, or no tab opened, copy the link into your browser.`), copy);
+  note.hidden = false;
+  clearInterval(mcpWaitTimer);
+  const until = Date.now() + 10 * 60 * 1000;
+  mcpWaitTimer = setInterval(async () => {
+    if (!execSettings.open || Date.now() > until) { clearInterval(mcpWaitTimer); note.hidden = true; return; }
+    try {
+      const data = await (await fetch('/api/mcp')).json();
+      if (JSON.stringify(data.servers.map((m) => [m.id, m.status])) !== mcpLastSeen) {
+        clearInterval(mcpWaitTimer);
+        note.hidden = true;
+        await renderMcpServers();
+        await loadSpaces();
+      }
+    } catch { /* try again on the next tick */ }
+  }, 2000);
+}
 
 // ---- Decisions tab (Room settings): read-only, the whole room across all its chats, one row per decided proposal.
 // It is no part of the form: it has no fields, so Save, the tab counts and the summary line never see it.
@@ -2658,7 +3009,8 @@ function spaceBody() {
     brief: $('space-brief').value.trim(),
     members: $('space-everyone').checked ? null : [...$('space-members').querySelectorAll('input:checked')].map((b) => b.dataset.member),
     focus: $('space-focus').value || null,
-    access: { files: accessLists.files, sites: accessLists.sites, webSearch: $('access-websearch').checked, notion: $('access-notion').checked, m365: $('access-m365').checked },
+    access: { files: accessLists.files, sites: accessLists.sites, webSearch: $('access-websearch').checked, notion: $('access-notion').checked, m365: $('access-m365').checked,
+      mcp: { ...mcpKept, ...Object.fromEntries(mcpChecked().map((id) => [id, true])) } },
     targets: {
       repos: [...accessLists.repos, ...accessLists.publicRepos],
       publicRepos: accessLists.publicRepos,
