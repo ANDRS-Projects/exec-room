@@ -1,0 +1,52 @@
+{
+  "money-magician": {
+    "name": "Money Magician",
+    "by": "Money Magician",
+    "description": "Read invoices, customers, vendors, taxes, profitability and reconciliation from your books.",
+    "token": {
+      "url": "https://kmgdglfbdryffywahnri.supabase.co/functions/v1/mcp-server-bundle",
+      "where": "Money Magician: Settings, API Tokens"
+    },
+    "connect": {
+      "url": "https://mcp.moneymagician.eu/",
+      "scope": "mcp:read"
+    },
+    "claudeAi": "Money_Magician",
+    "check": {
+      "tool": "get_financial_summary",
+      "arguments": {}
+    },
+    "tools": {
+      "query_invoices": "reads",
+      "get_invoice_details": "reads",
+      "search_customers": "reads",
+      "get_financial_summary": "reads",
+      "calculate_taxes": "reads",
+      "list_created_invoices": "reads",
+      "get_expenses_by_category": "reads",
+      "get_profitability_metrics": "reads",
+      "get_tax_position": "reads",
+      "get_reconciliation_status": "reads",
+      "get_top_customers": "reads",
+      "get_top_vendors": "reads",
+      "get_vendor_summary": "reads"
+    }
+  },
+  "notion": {
+    "name": "Notion",
+    "by": "Notion",
+    "description": "Search, open and query your Notion workspace, and save what you approve: drafts, pages and updates, only to the places each room may use.",
+    "connect": {
+      "url": "https://mcp.notion.com/mcp"
+    },
+    "check": {
+      "tool": "notion-get-self",
+      "arguments": {}
+    },
+    "tools": {
+      "notion-search": "reads",
+      "notion-fetch": "reads",
+      "notion-query-data-sources": "reads"
+    }
+  }
+}

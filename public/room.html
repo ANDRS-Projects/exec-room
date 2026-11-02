@@ -244,8 +244,8 @@
             <div class="sec-head"><h3 class="sec-title">Notion</h3><span class="count" id="access-notion-count"></span><span class="hint">read-only</span></div>
             <div class="sec-body">
               <label class="choice"><input type="checkbox" id="access-notion"> <span><b>Notion</b> · read-only</span></label>
-              <p class="sec-note">Read-only, through your Notion connector.</p>
-              <p class="sec-note key-off" id="access-notion-key" hidden>The room runs on an API key, so agents can't search Notion themselves. With this on, the room reads a Notion page for them when you put its link in your message (up to three, and only pages shared with the room's Notion integration).</p>
+              <p class="sec-note" id="access-notion-via">Read-only, through your Notion connector.</p>
+              <p class="sec-note key-off" id="access-notion-key" hidden>The room runs on an API key, so agents can't search Notion themselves until Notion is connected (Exec Room settings, MCP servers). Until then, with this on, the room reads a Notion page for them when you put its link in your message (up to three, and only pages shared with the room's Notion integration).</p>
             </div>
           </div>
           <div class="sec">
@@ -254,6 +254,13 @@
               <label class="choice"><input type="checkbox" id="access-m365"> <span><b>Outlook mail</b> · search</span></label>
               <p class="sec-note">Read-only, through your Microsoft 365 connector: agents can search mail (sender, subject, date and a short preview) but can't open emails, and never send, reply or delete. Switch it on only in rooms that need client mail.</p>
               <p class="sec-note key-off" id="access-m365-key" hidden>Not available while the room runs on an API key. Your choice is kept for when it runs on your Claude plan.</p>
+            </div>
+          </div>
+          <div class="sec outside" id="access-mcp-sec" hidden>
+            <div class="sec-head"><h3 class="sec-title">MCP servers</h3><span class="count" id="access-mcp-count"></span><span class="hint">read-only</span><span class="tag-out">reaches outside</span></div>
+            <div class="sec-body">
+              <div class="mcp-choices" id="access-mcp-list"></div>
+              <p class="sec-note">Set up once for the whole Exec Room (room menu → Exec Room settings). On here, agents in this room can use the tools ticked for that server and nothing else of it; what they ask goes to the service.</p>
             </div>
           </div>
         </div>
@@ -313,7 +320,7 @@
               </div>
             </div>
           </div>
-          <p class="access-empty sec-note" id="targets-notion-off" hidden>Notion actions are off: the room started without its Notion token.</p>
+          <p class="access-empty sec-note" id="targets-notion-off" hidden>Saving to Notion is off: Notion isn't connected (Exec Room settings, MCP servers), and the room has no Notion token.</p>
         </div>
       </div>
       <div class="space-panel" role="tabpanel" id="space-panel-decisions" aria-labelledby="space-tab-decisions" hidden>
@@ -353,6 +360,26 @@
     <div class="form-error" id="agent-import-error"></div>
   </div>
 </dialog>
+<dialog class="viewer" id="exec-settings" aria-labelledby="exec-settings-title">
+  <div class="viewer-head">
+    <h2 id="exec-settings-title">Exec Room settings</h2>
+    <span class="viewer-note">for every room</span>
+    <button type="button" class="ghost" id="exec-settings-close">Close</button>
+  </div>
+  <div class="viewer-body">
+    <div class="mcp-head"><h3 id="mcp-title">Connected MCP servers</h3><span class="count" id="mcp-count"></span></div>
+    <p class="panel-note">Tools agents can use besides the claude.ai connectors, on your Claude plan and on an API key alike. Agents only read: they get the tools ticked for a server and nothing else of it, and can't write themselves; writing goes through your approval. Each room switches a server on in its own settings (Can use).</p>
+    <div class="mcp-list" id="mcp-list" aria-labelledby="mcp-title"></div>
+    <div class="mcp-signin" id="mcp-signin" role="status" hidden></div>
+    <div class="mcp-head"><h3 id="mcp-popular-title">Popular MCPs</h3></div>
+    <div class="mcp-grid" id="mcp-popular" aria-labelledby="mcp-popular-title"></div>
+    <div class="mcp-head"><h3 id="mcp-custom-title">Manual MCP server setup</h3></div>
+    <div id="mcp-custom" aria-labelledby="mcp-custom-title"></div>
+    <div id="mcp-setup"></div>
+    <p class="sec-note" id="mcp-howto"></p>
+  </div>
+</dialog>
+
 <dialog class="viewer confirm" id="confirm-dialog" aria-labelledby="confirm-text">
   <form method="dialog">
     <p id="confirm-text"></p>

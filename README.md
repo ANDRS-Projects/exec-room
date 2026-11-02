@@ -24,7 +24,8 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **A brief per room** — what every agent in the room should know about your business (customers, pricing, tone), written by you in Room settings and given to Coen, every advisor and every maker as background
 - **Chat list** — every chat in a room is kept; go back to one from the Chats panel, give it a name, or archive it to take it out of the list (nothing is removed, and it can be put back)
 - **GitHub** — issues and comments in the repos you allow per room (private repos only, unless you mark one as public)
-- **Notion** — posts saved as drafts in databases you configure, and long-form pages under pages you allow; a page the room made can later be updated in place, with the previous version kept under the new one (this needs the "Update content" capability on your Notion integration)
+- **Notion** — posts saved as drafts in databases you configure, and long-form pages under pages you allow; a page the room made can later be updated in place, with the previous version kept under the new one. Connect Notion once in Exec Room settings and agents read it and the room saves through that sign-in (see [MCP servers and Notion](#mcp-servers-and-notion)); a Notion integration token works too
+- **MCP servers** — give agents read tools of other services: from the Popular list in Exec Room settings, or any server by its web address, signed in with Connect or with a token from 1Password; each room switches a server on for itself
 - **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Claude plan or API key** — runs use your Claude plan by default; start the room with `npm run room:key` to pay with an Anthropic API key instead, with a spend cap per run and per day
@@ -69,8 +70,8 @@ Started on an API key instead (see [Running on an API key](#running-on-an-api-ke
 - **Claude Code** (`claude`), signed in to your Claude plan (tested with version 2.1.285) — see the [Claude Code docs](https://code.claude.com/docs). By default the room runs agents on your plan and never uses an Anthropic API key; to pay with a key instead, see [Running on an API key](#running-on-an-api-key) (no plan sign-in is needed for that). It starts every run with `--agents`, `--tools`, `--setting-sources` and `--disable-slash-commands`, so it needs a recent version that has all four.
 - **Python 3** — only to run the tests
 - Optional: **GitHub CLI** (`gh`), signed in, for GitHub actions
-- Optional: a **Notion integration token**, for Notion actions
-- Optional: the **Notion** and **Microsoft 365** connectors on your claude.ai account, if agents should read Notion or search your Outlook mail. Agents read through those connectors; the integration token is used by the server (saving drafts and pages, checking where a page sits), never by agents. So a room's Notion and Microsoft 365 switches do nothing until the connector is connected.
+- Optional: **Notion**, connected once in Exec Room settings (Popular MCPs → Notion → Set Up → Connect), for agents reading Notion and for saving drafts and pages. Instead of connecting, a **Notion integration token** works for saving, with agents reading through the claude.ai Notion connector.
+- Optional: the **Notion** and **Microsoft 365** connectors on your claude.ai account, if agents should read Notion without connecting it in the room, or search your Outlook mail. Agents read through those connectors; the integration token is used by the server (saving drafts and pages, checking where a page sits), never by agents. So a room's Notion and Microsoft 365 switches do nothing until Notion is connected in the room or the connector is connected.
 
 ## Quick start
 
@@ -104,8 +105,8 @@ The choice is made when the room starts and holds until you stop it: the plan an
 
 What is different in key mode:
 
-- **Agents have no Notion or Microsoft 365 tools.** They read those through the claude.ai connectors of a Claude plan sign-in, and key-mode runs don't use that sign-in. A room's settings are kept for when it runs on the plan. Saving Notion drafts and pages (the integration token) and email drafts still work.
-- **Notion pages you link are read for them.** In a room with Notion reading on, put the link of a Notion page or database in your message and the room reads it with your integration token and hands it to the agents (you see a notice saying what was read). Up to three links per message, and only what is shared with your integration.
+- **Agents have no claude.ai connectors.** Those come with a Claude plan sign-in, and key-mode runs don't use that sign-in, so there is no Microsoft 365 mail. Notion works once it is connected in Exec Room settings: agents then read it through that sign-in, as on the plan. The room's own MCP servers work as on the plan. A room's settings are kept. Saving Notion drafts and pages and email drafts still work.
+- **Until Notion is connected, Notion pages you link are read for them.** In a room with Notion reading on, put the link of a Notion page or database in your message and the room reads it with your integration token and hands it to the agents (you see a notice saying what was read). Up to three links per message, and only what is shared with your integration.
   - **A page** comes with its text and its properties, so a row of a database (a post, say) arrives with its content.
   - **A database** comes with its row count, an overview with one line per row (title and short columns, for up to its 500 most recently edited rows) and its newest rows in full, so agents can count, filter and find rows across the table. For an older row in full, link that row.
   - Agents can't search Notion or follow links inside a page themselves, and Microsoft 365 mail is not available on a key.
@@ -128,13 +129,32 @@ Most settings live in the room itself (Room settings), per room: folders agents 
 | `notionChannels` | The channel names a post may have (default: X, LinkedIn, Substack Note, Substack Post, Instagram, Blog). |
 | `hiddenConnectors` | Other claude.ai connectors on your account to keep out of the agents' view, by the name in their tool names (`mcp__claude_ai_<name>__…`), e.g. `["My_Connector"]`. Agents can only call the tools a room allows; connectors that aren't hidden are still visible to them, so this keeps the rest out of their context. Claude Docs, Gmail, Slack, Google Drive and Google Calendar are always hidden. `Notion` and `Microsoft_365` can't be listed, as those are switched per room: such an entry is skipped with a warning at start-up, like an entry that isn't a connector name. |
 | `agentsGetClaudeFiles` | Whether agents are given Claude Code's own files, as any Claude Code session started in the room's folder would be: the `CLAUDE.md` files of that folder and the folders above it (this repo's notes for contributors, your personal `~/.claude/CLAUDE.md`, anything other tools write into such files) and the memory Claude Code keeps for the folder. Default `false`: agents get only what the room gives them (their own description, the room's note and brief, your message), and the room checks at every start that this still holds, with one small run that costs about a cent; `ROOM_CONTEXT_CHECK=off` skips that check. Set it to `true` if you keep instructions in `CLAUDE.md` that the agents should follow too; every agent in every room then gets all of those files, whatever else they say. |
+| `mcpServers` | MCP servers set up by hand, next to the ones set up in Exec Room settings: an entry from the catalog (`{"catalog": "<id>", "tools": [...], "tokenRef": "op://…"}`) or a server by its web address (`{"name": "…", "url": "https://…", "readOnlyTools": [...], "tokenRef": "op://…"}`, or `"tokenEnv"` with the name of a variable that holds the token). You name each tool agents may use. A program on your computer can't be added yet. See [MCP servers and Notion](#mcp-servers-and-notion). |
 | `ownerName` | Your name as decisions are recorded under it: "approved by …" on a proposal card, the Decisions tab in Room settings, and the credit line on what an approved proposal creates (default: "the owner"). One line, up to 60 characters. It is a label, not a login. |
 
-Share the databases and pages with your Notion integration. Posts are always saved with Status `draft`; publishing stays with you.
+With a Notion integration token, share the databases and pages with that integration; connected with Connect, the room reaches what you can reach in Notion, within each room's places. Posts are always saved with Status `draft`; publishing stays with you.
 
 Agent runs and `gh` are started with a short, fixed set of environment variables (what a program needs to run and reach the network, and their own login settings), not with everything your shell has. If your setup needs another variable passed on, for example one a version manager uses to find `node`, start the room with its name in `ROOM_PASS_ENV` (names separated by commas).
 
 Environment variables are listed in `.env.example`. The server reads them from your shell; it does not load a `.env` file.
+
+## MCP servers and Notion
+
+Exec Room settings (the room menu → Exec Room settings) list the MCP servers the room uses, for every room at once:
+
+- **Popular MCPs** — services from the room's catalog (`mcp-catalog.json`), set up with **Set Up**: Money Magician (reading your books: invoices, customers, vendors, taxes, profitability; with Connect or an API token) and Notion (with Connect).
+- **Add custom MCP** — any server by its web address. You tick the tools agents may use; the page shows which ones the server itself says only read, as the server's own claim.
+- **Connect or a token** — Connect signs in with the service in a new browser tab; the room keeps the sign-in and renews it. A token is given as a 1Password reference, never the token itself.
+- **Per room** — a room uses a server only when it is switched on in that room's settings (Can use). The toggle on a server's card pauses it in every room.
+
+Agents only read: they get the ticked tools of a server and nothing else of it, and the room refuses to start a server whose list holds a tool that writes.
+
+**Notion through Connect.** Set Notion up once (Popular MCPs → Notion → Set Up → Connect) and sign in with Notion. If the Notion desktop app opens instead of your browser, copy the sign-in link into the browser. Two things use that sign-in:
+
+- **Agents read.** In a room with Notion on they can search, open and query Notion: three read tools, nothing else. Notion's server offers more (68 tools in November 2026); the settings page lists the rest as blocked for agents. This is the same on a Claude plan and on an API key: once Notion is connected, the claude.ai Notion connector isn't used. Paused, or needing a new sign-in, agents read no Notion until it works again.
+- **The Exec Room app saves what you approve.** Agents can't write to Notion. They propose a save on a card: a draft in one of your databases (always with Status `draft`), a new page, or a new version of a page the room made. Only when you approve does the Exec Room app do it, and only into the places of the room the card came from. Approving doesn't unlock any of Notion's tools; the other tools (moving or deleting pages, comments, changing a database) are used by nobody.
+
+The sign-in has your own rights in Notion, so those limits come from the Exec Room app, not from Notion: see [SECURITY.md](SECURITY.md). A Notion integration token still works for saving while Notion isn't connected.
 
 ## Your own agents
 
@@ -162,7 +182,7 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-747 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 747 checks match tests/expected.txt`.
+821 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 821 checks match tests/expected.txt`.
 
 ## Security
 

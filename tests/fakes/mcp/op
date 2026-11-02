@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+# Test double for 1Password's `op read`: one reference holds the suite's test token; any other is not
+# found, the way a wrong reference or a declined approval ends.
+import sys
+
+if sys.argv[1:] == ["read", "op://Test/fakebooks/credential"]:
+    print("good-token")
+    sys.exit(0)
+print('[ERROR] could not read secret: "item not found"', file=sys.stderr)
+sys.exit(1)
