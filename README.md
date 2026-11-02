@@ -142,7 +142,7 @@ Environment variables are listed in `.env.example`. The server reads them from y
 
 Exec Room settings (the room menu → Exec Room settings) list the MCP servers the room uses, for every room at once:
 
-- **Popular MCPs** — services from the room's catalog (`mcp-catalog.json`), set up with **Set Up**.
+- **Popular MCPs** — services from the room's catalog (`mcp-catalog.json`), set up with **Set Up**: Money Magician (reading your books: invoices, customers, vendors, taxes, profitability; with Connect or an API token) and Notion (with Connect).
 - **Add custom MCP** — any server by its web address. You tick the tools agents may use; the page shows which ones the server itself says only read, as the server's own claim.
 - **Connect or a token** — Connect signs in with the service in a new browser tab; the room keeps the sign-in and renews it. A token is given as a 1Password reference, never the token itself.
 - **Per room** — a room uses a server only when it is switched on in that room's settings (Can use). The toggle on a server's card pauses it in every room.
