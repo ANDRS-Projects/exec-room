@@ -2896,7 +2896,11 @@ try:
     si["signed-in"]["expiresAt"] = int(time.time() * 1000) + 60000
     with open(os.path.join(pdata, "mcp-signins.json"), "w") as f:
         json.dump(si, f)
-    # The sign-in service says "too many requests": the sign-in isn't given up, the renewal is tried again.
+    # The sign-in service says "too many requests": the sign-in isn't given up, the renewal is tried again. That goes
+    # on after the token ran out (as after the Mac wakes without network), with the server in no run, until it works.
+    si["signed-in"]["expiresAt"] = int(time.time() * 1000) + 2500
+    with open(os.path.join(pdata, "mcp-signins.json"), "w") as f:
+        json.dump(si, f)
     vendor["busy"] = True
     s = Server("mcp", page_env, data_name="data-mcp-page", config=page_config)
     try:
@@ -2904,9 +2908,20 @@ try:
         time.sleep(0.5)
         busy = [l for l in map(json.loads, open(os.path.join(pdata, "jobs.ndjson"))) if l.get("kind") == "mcp" and l.get("change", "").startswith("renewal failed")]
         out("M4 a rate-limited renewal is tried again, the sign-in kept", (find("signed-in")["statusText"], [(l["change"], l.get("reason")) for l in busy][:1]))
+        time.sleep(2.5)
+        m = find("signed-in")
+        out("M4 ran out while renewing fails: kept, said, in no run", (m["status"], m["statusText"], m["usable"]))
+        vendor["busy"] = False
+        time.sleep(0.8)
+        m = find("signed-in")
+        out("M4 renewed once the service answers again", (m["statusText"], m["usable"]))
     finally:
         s.stop()
     vendor["busy"] = False
+    si = signins()
+    si["signed-in"]["expiresAt"] = int(time.time() * 1000) + 60000
+    with open(os.path.join(pdata, "mcp-signins.json"), "w") as f:
+        json.dump(si, f)
     vendor["refuse_renewal"] = True
     s = Server("mcp", page_env, data_name="data-mcp-page", config=page_config)
     try:

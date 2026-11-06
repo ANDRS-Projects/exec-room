@@ -799,15 +799,17 @@ M4 a run gets the servers set up on the page: ({'fakebooks': 'good', 'signed-in'
 server stderr: A sign-in return was refused: its state was unknown, used before or too old.
 M4 the terminal: ['A sign-in return was refused: its state was unknown, used before or too old.', 'A sign-in return was refused: its state was unknown, used before or too old.']
 M4 a rate-limited renewal is tried again, the sign-in kept: ('Connected · 2 tools ready', [('renewal failed, trying again every minute', 'its sign-in service answered 429 (Too many requests, wait a minute.)')])
+M4 ran out while renewing fails: kept, said, in no run: ('ready', 'Renewing the sign-in · trying every minute', False)
+M4 renewed once the service answers again: ('Connected · 2 tools ready', True)
 server stderr: MCP server "cfg" set up on the settings page is left out: room.config.json has a server by that name.
 M4 after a restart: [('cfg', 'config', 'Connected · 1 tool ready', True), ('fakebooks', 'page', 'Connected · 2 tools ready', True), ('signed-in', 'page', 'Sign in again', False)]
-M4 renewals in the job log: ([('renewed', ['at', 'until']), ('renewal failed, trying again every minute', ['at', 'reason']), ('renewal refused', ['at', 'reason'])], 'its sign-in service answered 400 (invalid_grant)', True, True)
+M4 renewals in the job log: ([('renewed', ['at', 'until']), ('renewal failed, trying again every minute', ['at', 'reason']), ('renewed', ['at', 'until']), ('renewal refused', ['at', 'reason'])], 'its sign-in service answered 400 (invalid_grant)', True, True)
 M4 a sign-in that needs renewing is in no run: ['fakebooks']
 M4 signed in again: the tools are kept: ('ok', 'Connected · 2 tools ready', ['look_up', 'count'])
 M4 sign in again for a server without Connect: (409, '{"error":"Fakebooks doesn\'t use Connect."}')
 M4 disconnect: a config server, unknown server: ((409, '{"error":"By hand is set up in room.config.json: remove it there."}'), (404, '{"error":"no such MCP server"}'))
 M4 disconnected: ((200, '{"removed":"signed-in"}'), None, ['cfg', 'fakebooks'], [])
-M4 the job log: [('added', 'fakebooks'), ('signed in', 'signed-in'), ('renewed', 'signed-in'), ('tools', 'signed-in'), ('renewal failed, trying again every minute', 'signed-in'), ('renewal refused', 'signed-in'), ('signed in', 'signed-in'), ('removed', 'signed-in')]
+M4 the job log: [('added', 'fakebooks'), ('signed in', 'signed-in'), ('renewed', 'signed-in'), ('tools', 'signed-in'), ('renewal failed, trying again every minute', 'signed-in'), ('renewed', 'signed-in'), ('renewal refused', 'signed-in'), ('signed in', 'signed-in'), ('removed', 'signed-in')]
 server stderr: MCP server "cfg" set up on the settings page is left out: room.config.json has a server by that name.
 M4 the terminal after the restart: ['MCP server "cfg" set up on the settings page is left out: room.config.json has a server by that name.', 'MCP server "signed-in" (Signed In): Sign in again (the sign-in ran out and couldn\'t be renewed: its sign-in service answered 400 (invalid_grant)).']
 M5 on a key, not connected: Notion through links: (None, True, "Notion only through links (the room runs on an API key, so you can't s")

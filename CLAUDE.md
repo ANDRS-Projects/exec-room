@@ -8,7 +8,7 @@ Local web room (Node.js + Express 5, port 4179, localhost only) where the owner 
 ./setup.sh                             # first-time setup
 npm run room                           # start the room at http://127.0.0.1:4179
 npm run room:key                       # the same, paid with an Anthropic API key (ROOM_ANTHROPIC_API_KEY) instead of the Claude plan
-npm test                               # 829 checks against fakes (expects "ok: all 829 checks match")
+npm test                               # 831 checks against fakes (expects "ok: all 831 checks match")
 python3 tests/room_suite.py --update   # rewrite tests/expected.txt (only for intended output changes)
 ```
 
