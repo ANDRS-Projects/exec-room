@@ -45,6 +45,7 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "mcp-calls.ndjson"), "a") as
         "denied_mcp": sorted(t for t in flag("--disallowedTools") if own(t) or "Fakebooks" in t),
         "tool_search": "ToolSearch" in flag("--tools"),
         "note": note[start:note.find(" Anything else", start)] if start >= 0 else None,
+        "github_note": ["can't open GitHub yourself" in note, "through this room's GitHub server (its tools are named mcp__hub__…)" in note],
         "advisor_tools": {k: sorted(t for t in a.get("tools", []) if t.startswith("mcp__")) for k, a in agents.items() if k.startswith("room-")},
         "linked_notion": "linked Notion pages" in prompt,
         "claude_notion": "blocked" if "mcp__claude_ai_Notion" in flag("--disallowedTools") else "allowed" if any(t.startswith("mcp__claude_ai_Notion__") for t in flag("--allowedTools")) else "neither",

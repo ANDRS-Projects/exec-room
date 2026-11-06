@@ -2,11 +2,11 @@
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![Runs on Claude Code](https://img.shields.io/badge/runs%20on-Claude%20Code-D97757)](https://code.claude.com/docs)
+[![Runs on Claude Code](https://img.shields.io/badge/runs%20on-Claude%20Code-555555)](https://code.claude.com/docs)
 [![Runs locally](https://img.shields.io/badge/runs-locally-2ea44f)](SECURITY.md)
 [![Actions: approve first](https://img.shields.io/badge/actions-approve--first-6f42c1)](SECURITY.md)
 
-Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of Claude Code agents. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, jobs for other agents). They can't run commands on your computer, and nothing happens until you approve it.
+Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of agents that run on Claude Code. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, jobs for other agents). They have no tool that runs commands on your computer and write only to `drafts/`; anything that leaves the room (an issue, a Notion page, an email draft, a job for another agent) waits for your approval. These are Claude Code permission rules, not a sandbox: see [Security](#security).
 
 ![Exec Room: the chat list, a conversation with Coen with two proposals waiting for approval, and the advisors' replies](docs/screenshots/01-room.png)
 
@@ -29,7 +29,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Claude plan or API key** — runs use your Claude plan by default; start the room with `npm run room:key` to pay with an Anthropic API key instead, with a spend cap per run and per day
-- **Local and locked down** — binds to 127.0.0.1, read-only tools, writes only in `drafts/`, secret files blocked
+- **Local, with tight permissions** — binds to 127.0.0.1, read-only tools, writes only in `drafts/`, secret files blocked
 - **Keyboard and screen reader** — everything is reachable with the keyboard, and a screen reader is told when a turn ends and when a proposal is waiting (see [Accessibility](#accessibility))
 
 
@@ -67,9 +67,10 @@ Started on an API key instead (see [Running on an API key](#running-on-an-api-ke
 
 - **macOS or Linux.** Windows isn't supported.
 - **Node.js 20+**
-- **Claude Code** (`claude`), signed in to your Claude plan (tested with version 2.1.285) — see the [Claude Code docs](https://code.claude.com/docs). By default the room runs agents on your plan and never uses an Anthropic API key; to pay with a key instead, see [Running on an API key](#running-on-an-api-key) (no plan sign-in is needed for that). It starts every run with `--agents`, `--tools`, `--setting-sources` and `--disable-slash-commands`, so it needs a recent version that has all four.
+- **Claude Code** (`claude`), signed in to your Claude plan (tested with version 2.1.316) — see the [Claude Code docs](https://code.claude.com/docs). By default the room runs agents on your plan and never uses an Anthropic API key; to pay with a key instead, see [Running on an API key](#running-on-an-api-key) (no plan sign-in is needed for that). It starts every run with `--agents`, `--tools`, `--setting-sources` and `--disable-slash-commands`, so it needs a recent version that has all four.
 - **Python 3** — only to run the tests
 - Optional: **GitHub CLI** (`gh`), signed in, for GitHub actions
+- Optional: **1Password CLI** (`op`), signed in, for tokens: the settings page takes an MCP server's token only as a 1Password reference, and the API key and Notion token can be references too. Without it, use Connect, or `"tokenEnv"` in `room.config.json` (see Configuration).
 - Optional: **Notion**, connected once in Exec Room settings (Popular MCPs → Notion → Set Up → Connect), for agents reading Notion and for saving drafts and pages. Instead of connecting, a **Notion integration token** works for saving, with agents reading through the claude.ai Notion connector.
 - Optional: the **Notion** and **Microsoft 365** connectors on your claude.ai account, if agents should read Notion without connecting it in the room, or search your Outlook mail. Agents read through those connectors; the integration token is used by the server (saving drafts and pages, checking where a page sits), never by agents. So a room's Notion and Microsoft 365 switches do nothing until Notion is connected in the room or the connector is connected.
 
@@ -109,7 +110,7 @@ What is different in key mode:
 - **Until Notion is connected, Notion pages you link are read for them.** In a room with Notion reading on, put the link of a Notion page or database in your message and the room reads it with your integration token and hands it to the agents (you see a notice saying what was read). Up to three links per message, and only what is shared with your integration.
   - **A page** comes with its text and its properties, so a row of a database (a post, say) arrives with its content.
   - **A database** comes with its row count, an overview with one line per row (title and short columns, for up to its 500 most recently edited rows) and its newest rows in full, so agents can count, filter and find rows across the table. For an older row in full, link that row.
-  - Agents can't search Notion or follow links inside a page themselves, and Microsoft 365 mail is not available on a key.
+  - Agents can't search Notion or follow links inside a page themselves.
 - **Chats don't carry over.** A chat last used on the plan starts fresh on the key, and the other way round; the room says so and the history stays.
 - **The cost is spend.** The page shows an "API key" badge next to the room's name, and a run's cost reads "$0.012 API spend" instead of "~$0.012 equiv.".
 - **Key-mode runs keep their own Claude Code folder** (`data/claude-key`), without your plan sign-in. With a plan sign-in present Claude Code uses the plan and not the key, so this is what makes the key the one that pays.
@@ -142,12 +143,14 @@ Environment variables are listed in `.env.example`. The server reads them from y
 
 Exec Room settings (the room menu → Exec Room settings) list the MCP servers the room uses, for every room at once:
 
-- **Popular MCPs** — services from the room's catalog (`mcp-catalog.json`), set up with **Set Up**: Money Magician (reading your books: invoices, customers, vendors, taxes, profitability; with Connect or an API token) and Notion (with Connect).
+- **Popular MCPs** — services from the room's catalog (`mcp-catalog.json`), set up with **Set Up**: Money Magician (reading your books: invoices, customers, vendors, taxes, profitability; with Connect or an API token; made by ANDRS, the company behind Exec Room), GitHub (reading code, issues, pull requests, commits and releases; with a read-only token) and Notion (with Connect).
 - **Add custom MCP** — any server by its web address. You tick the tools agents may use; the page shows which ones the server itself says only read, as the server's own claim.
 - **Connect or a token** — Connect signs in with the service in a new browser tab; the room keeps the sign-in and renews it. A token is given as a 1Password reference, never the token itself.
 - **Per room** — a room uses a server only when it is switched on in that room's settings (Can use). The toggle on a server's card pauses it in every room.
 
-Agents only read: they get the ticked tools of a server and nothing else of it, and the room refuses to start a server whose list holds a tool that writes.
+Agents get the ticked tools of a server and nothing else of it. For a service in the catalog the room knows which tools write, and refuses those. For a custom server it can't tell: you decide when you tick its tools, and the page shows the server's own read-only claim, which the room doesn't check. What agents send to a server's tools (a search, say) goes to whoever runs that server, so add a custom server only if you trust them with what the agents in those rooms can read.
+
+**GitHub.** Set it up with a fine-grained token (GitHub: Settings → Developer settings → Fine-grained tokens), read-only, with the repos agents may read; the room uses GitHub's read-only address. The token decides which private repos agents can read, in every room that switches GitHub on; a room's own repo list only limits which repos it may propose issues for. Every fine-grained token can also read all public repos on GitHub, so agents can search text anyone wrote there.
 
 **Notion through Connect.** Set Notion up once (Popular MCPs → Notion → Set Up → Connect) and sign in with Notion. If the Notion desktop app opens instead of your browser, copy the sign-in link into the browser. Two things use that sign-in:
 
@@ -182,13 +185,13 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-821 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 821 checks match tests/expected.txt`.
+827 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 827 checks match tests/expected.txt`.
 
 ## Security
 
 See [SECURITY.md](SECURITY.md) for the full model. In short: the room binds to localhost and rejects other hosts and origins; agents get read-only tools (never Bash, the tool that runs commands), write only in `drafts/`, and can't read secret files (`.env`, keys, `.git`) or the room's own data; every action is a proposal you approve. Agents are given only what the room gives them: your own `CLAUDE.md` files and the memory Claude Code keeps for a folder are not loaded for them unless you turn that on (`agentsGetClaudeFiles`, see Configuration), and the room checks that at every start.
 
-**These are permission rules, not a sandbox.** The blocks work by name: tool names, folder paths and file-name patterns, passed to Claude Code as allow and deny rules. Nothing isolates the agents from your machine at the operating-system level, so a secret in a file with a name that isn't on the list, inside a folder you gave a room, is readable. Everything agents read can also carry prompt injection: files, web pages, Notion pages, GitHub issues and pull requests, and mail previews can contain text that tries to steer an agent. Give each room only what its job needs, and read a proposal before you approve it.
+**These are permission rules, not a sandbox.** The blocks work by name: tool names, folder paths and file-name patterns, passed to Claude Code as allow and deny rules. Nothing isolates the agents from your machine at the operating-system level, so a secret in a file with a name that isn't on the list, inside a folder you gave a room, is readable. Everything agents read can also carry prompt injection: files, web pages, Notion pages, GitHub issues and pull requests, mail previews and what the room's MCP servers return can contain text that tries to steer an agent. Give each room only what its job needs, and read a proposal before you approve it.
 
 To report a vulnerability, use **Report a vulnerability** on the repository's Security tab rather than a public issue.
 

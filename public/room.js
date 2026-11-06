@@ -2590,6 +2590,11 @@ function mcpItem(m) {
   const dot = el('span', `mcp-dot${m.usable ? ' ok' : m.paused || m.status === 'checking' || (m.status === 'ready' && !m.tools.length) ? '' : ' bad'}`);
   dot.setAttribute('aria-hidden', 'true');
   status.append(dot, m.statusText);
+  // Since when a sign-in hasn't been accepted, so it can be put next to what happened then (in the service's settings).
+  if (m.since) {
+    const when = new Date(m.since);
+    if (!Number.isNaN(when.getTime())) status.append(` · since ${when.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`);
+  }
   main.append(el('div', 'mcp-name', m.name), status);
   const details = el('div', 'mcp-details');
   details.id = `mcp-details-${m.id}`;
