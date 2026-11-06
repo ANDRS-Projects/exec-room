@@ -544,6 +544,7 @@ async function checkMcpServer(s) {
 // What the page and the terminal say about a server.
 function mcpStatusText(s) {
   if (s.status === 'ready') {
+    if (!mcpTokenFresh(s)) return 'Renewing the sign-in · trying every minute';
     if (!s.tools.length) return 'Connected · choose its tools';
     const ready = s.tools.filter((t) => s.offered.includes(t)).length;
     return mcpPaused.has(s.id) ? 'Paused · off in every room' : `Connected · ${ready} ${ready === 1 ? 'tool' : 'tools'} ready`;
@@ -580,10 +581,13 @@ try { for (const f of fs.readdirSync(MCP_RUNS_DIR)) fs.rmSync(path.join(MCP_RUNS
 // where the server signs in (its 401 names the details), registers itself there, and gives the page a sign-in link
 // with a one-time state and PKCE. The service sends the owner's browser back to this Mac with a code, which the server
 // swaps for a token and a renewal key. Tokens run out (some after an hour), so a timer renews each one
-// ten minutes before; a server whose renewal fails says "Sign in again" and no run gets it.
+// ten minutes before; a server whose renewal is refused says "Sign in again", and no run gets a token that ran out.
 const MCP_REDIRECT = `http://127.0.0.1:${PORT}/api/mcp/callback`;
 const MCP_RENEW_BEFORE_MS = 10 * 60 * 1000;
 const MCP_RENEW_EVERY_MS = Number(process.env.ROOM_TEST_MCP_RENEW_MS) || 60 * 1000;
+// After a token ran out, renewing goes on this long while it fails for a passing reason (no network after the
+// computer wakes, too many requests): the renewal key usually outlives the token by far. A refusal ends it at once.
+const MCP_RENEW_GRACE_MS = 24 * 60 * 60 * 1000;
 const MCP_SIGNIN_WAIT_MS = 10 * 60 * 1000;
 const mcpPending = new Map(); // one-time state → the sign-in it belongs to
 const isLocalHost = (host) => host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
@@ -759,7 +763,7 @@ function mcpRenew(s, before) {
       mcpRenewLog(s, 'renewed', { until: new Date(kept.expiresAt).toISOString() });
     } catch (err) {
       const reason = mcpScrub(s, err.message);
-      if (err.refused || sign.expiresAt <= Date.now()) {
+      if (err.refused || Date.now() - sign.expiresAt > MCP_RENEW_GRACE_MS) {
         s.status = 'signin-expired';
         s.since = new Date().toISOString();
         s.problem = `the sign-in ran out and couldn't be renewed: ${reason}`;
