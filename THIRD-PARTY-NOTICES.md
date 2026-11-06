@@ -5,14 +5,14 @@ Exec Room ships the following third-party works in `public/vendor/`. Each keeps 
 ## marked
 
 - File: `public/vendor/marked.umd.js`
-- Version: 18.1.1
+- Version: 18.1.3
 - License: MIT
 
 Notice in the file:
 
 ```text
 /**
- * marked v18.1.1 - a markdown parser
+ * marked v18.1.3 - a markdown parser
  * Copyright (c) 2018-2026, MarkedJS. (MIT License)
  * Copyright (c) 2011-2018, Christopher Jeffrey. (MIT License)
  * https://github.com/markedjs/marked
