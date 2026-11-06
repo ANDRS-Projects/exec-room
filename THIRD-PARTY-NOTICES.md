@@ -5,14 +5,14 @@ Exec Room ships the following third-party works in `public/vendor/`. Each keeps 
 ## marked
 
 - File: `public/vendor/marked.umd.js`
-- Version: 18.1.0
+- Version: 18.1.1
 - License: MIT
 
 Notice in the file:
 
 ```text
 /**
- * marked v18.1.0 - a markdown parser
+ * marked v18.1.1 - a markdown parser
  * Copyright (c) 2018-2026, MarkedJS. (MIT License)
  * Copyright (c) 2011-2018, Christopher Jeffrey. (MIT License)
  * https://github.com/markedjs/marked
@@ -71,13 +71,13 @@ This software is provided by the copyright holders and contributors “as is” 
 ## DOMPurify
 
 - File: `public/vendor/purify.min.js`
-- Version: 3.4.16
+- Version: 3.4.17
 - License: MPL-2.0 OR Apache-2.0
 
 Notice in the file:
 
 ```text
-/*! @license DOMPurify 3.4.16 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.16/LICENSE */
+/*! @license DOMPurify 3.4.17 | (c) Cure53 and other contributors | Released under the Apache license 2.0 and Mozilla Public License 2.0 | github.com/cure53/DOMPurify/blob/3.4.17/LICENSE */
 ```
 
 License file of the package (`LICENSE`):

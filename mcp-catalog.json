@@ -1,7 +1,7 @@
 {
   "money-magician": {
     "name": "Money Magician",
-    "by": "Money Magician",
+    "by": "ANDRS, the makers of Exec Room",
     "description": "Read invoices, customers, vendors, taxes, profitability and reconciliation from your books.",
     "token": {
       "url": "https://kmgdglfbdryffywahnri.supabase.co/functions/v1/mcp-server-bundle",
@@ -47,6 +47,39 @@
       "notion-search": "reads",
       "notion-fetch": "reads",
       "notion-query-data-sources": "reads"
+    }
+  },
+  "github": {
+    "name": "GitHub",
+    "by": "GitHub",
+    "description": "Read code, issues, pull requests, commits and releases in the repos your token allows, and in every public repo on GitHub, in every room that switches it on. Read-only: GitHub's read-only address, and a read-only token.",
+    "token": {
+      "url": "https://api.githubcopilot.com/mcp/readonly",
+      "where": "GitHub: Settings, Developer settings, Fine-grained tokens. Resource owner: the organisation (or you); only the repos agents may read; Contents, Issues, Pull requests and Metadata read-only"
+    },
+    "check": { "tool": "get_me", "arguments": {} },
+    "tools": {
+      "get_file_contents": "reads",
+      "get_commit": "reads",
+      "list_commits": "reads",
+      "list_branches": "reads",
+      "list_tags": "reads",
+      "get_tag": "reads",
+      "list_releases": "reads",
+      "get_latest_release": "reads",
+      "get_release_by_tag": "reads",
+      "issue_read": "reads",
+      "list_issues": "reads",
+      "list_issue_fields": "reads",
+      "list_issue_types": "reads",
+      "get_label": "reads",
+      "pull_request_read": "reads",
+      "list_pull_requests": "reads",
+      "search_code": "reads",
+      "search_commits": "reads",
+      "search_issues": "reads",
+      "search_pull_requests": "reads",
+      "search_repositories": "reads"
     }
   }
 }

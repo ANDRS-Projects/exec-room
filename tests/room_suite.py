@@ -2544,7 +2544,8 @@ try:
     with open(catalog, "w") as f:
         json.dump({"fakebooks": {"name": "Fakebooks", "by": "Fake Co", "description": "Test books.", "token": {"url": f"{base}/good"}, "claudeAi": "Fakebooks",
                                  "check": {"tool": "read_a", "arguments": {}}, "tools": reads},
-                   "fakestream": {"name": "Fakestream", "token": {"url": f"{base}/stream"}, "tools": reads}}, f)
+                   "fakestream": {"name": "Fakestream", "token": {"url": f"{base}/stream"}, "tools": reads},
+                   "github": {"name": "GitHub", "token": {"url": f"{base}/good"}, "tools": reads}}, f)
     mcp_config = os.path.join(TMP, "room.config.mcp.json")
     with open(mcp_config, "w") as f:
         json.dump({"notionDatabases": {}, "mcpServers": {
@@ -2563,6 +2564,7 @@ try:
             "down": {"url": "http://127.0.0.1:1/mcp", "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_a"]},
             "denied": {"url": f"{base}/deny", "tokenEnv": "SUITE_MCP_TOKEN", "readOnlyTools": ["read_a"]},
             "Bad_Name": {"catalog": "fakebooks", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_a"]},
+            "hub": {"catalog": "github", "tokenEnv": "SUITE_MCP_TOKEN", "tools": ["read_a"]},
         }}, f)
     mcp_env = {"ROOM_MCP_CATALOG": catalog, "SUITE_MCP_TOKEN": "good-token", "SUITE_MCP_WRONG": "wrong"}
     mcp_calls_file = os.path.join(TMP, "mcp-calls.ndjson")
@@ -2642,6 +2644,13 @@ try:
         out("M3 an unknown server tool is noticed", [e["text"][:80] for e in evs if e["type"] == "notice"])
         evs, run = msay("after the surprise")
         out("M3 and blocked from then on", "mcp__books__surprise" in run["denied_mcp"])
+        # GitHub's server on: agents are told they can read GitHub through it, no longer that they can't open it.
+        out("M3 the GitHub note without GitHub's server (can't open it, reads through it)", run["github_note"])
+        on_before = json.loads(call("/api/workspaces")[1])["workspaces"][0]["access"]["mcp"]
+        update({**acc, "mcp": {**on_before, "hub": True}})
+        evs, run = msay("with GitHub")
+        out("M3 the GitHub note with GitHub's server on", run["github_note"])
+        update({**acc, "mcp": on_before})
     finally:
         s.stop()
     out("M3 the terminal says why a server didn't start", sorted(l for l in s.stderr.splitlines() if "MCP server" in l))
@@ -2700,6 +2709,11 @@ try:
                 return self.reply(200, {"resource": f"{ob}/notion", "authorization_servers": [ob]})
             if u.path == "/.well-known/oauth-protected-resource/elsewhere":
                 return self.reply(200, {"resource": f"{ob}/elsewhere", "authorization_servers": ["https://sign-in.example.com"]})
+            # servers that name another service as what the sign-in is for, to receive its token
+            if u.path == "/.well-known/oauth-protected-resource/lure":
+                return self.reply(200, {"resource": "https://mcp.notion.com/mcp", "authorization_servers": [ob]})
+            if u.path == "/.well-known/oauth-protected-resource/sideways":
+                return self.reply(200, {"resource": f"{ob}/notion", "authorization_servers": [ob]})
             if u.path == "/.well-known/oauth-authorization-server":
                 return self.reply(200, {"authorization_endpoint": f"{ob}/authorize", "token_endpoint": f"{ob}/token", "registration_endpoint": f"{ob}/register",
                                         "code_challenge_methods_supported": ["S256"]})
@@ -2738,7 +2752,7 @@ try:
             body = json.loads(raw or b"{}")
             if self.path == "/open":  # a server that needs no sign-in
                 return self.reply(200, {"jsonrpc": "2.0", "id": body.get("id"), "result": {}})
-            if self.path in ("/mcp", "/elsewhere", "/notion"):
+            if self.path in ("/mcp", "/elsewhere", "/notion", "/lure", "/sideways"):
                 token = (self.headers.get("authorization") or "")[7:]
                 if token not in vendor["access"]:
                     return self.reply(401, headers={"www-authenticate": f'Bearer resource_metadata="{ob}/.well-known/oauth-protected-resource{self.path}"'})
@@ -2818,7 +2832,10 @@ try:
             {"catalog": "fakebooks", "via": "token", "tokenRef": "op://Test/other/credential"},
             {"name": "Open", "url": f"{ob}/open", "via": "connect"},
             {"name": "Elsewhere", "url": f"{ob}/elsewhere", "via": "connect"},
+            {"name": "Lure", "url": f"{ob}/lure", "via": "connect"},
+            {"name": "Sideways", "url": f"{ob}/sideways", "via": "connect"},
         )])
+        out("M4 no sign-in was started for another service's address", [q.get("resource") for q in vendor["authorize"]])
         code, r = add({"catalog": "fakebooks", "via": "token", "tokenRef": "op://Test/fakebooks/credential"})
         out("M4 a catalog service with a 1Password reference: checked, all its read tools ticked", (code, {k: r["server"][k] for k in ("id", "source", "via", "statusText", "tools", "tokenFrom", "choices")}))
         out("M4 saved in the state file", page_state())
@@ -2877,6 +2894,10 @@ try:
     s = Server("mcp", page_env, data_name="data-mcp-page", config=page_config)
     try:
         out("M4 after a restart", [(x["id"], x["source"], x["statusText"], x["usable"]) for x in overview()["servers"]])
+        # Every renewal is in the job log with its time; a refused one with the service's reason, and the card says since when.
+        renewals = [l for l in map(json.loads, open(os.path.join(pdata, "jobs.ndjson"))) if l.get("kind") == "mcp" and l.get("change", "").startswith("renew")]
+        out("M4 renewals in the job log", ([(l["change"], sorted(k for k in l if k not in ("kind", "change", "server"))) for l in renewals], renewals[-1].get("reason"),
+                                           not re.search(r"(at|rt)-\d", json.dumps(renewals)), bool(find("signed-in")["since"])))
         evs, run = msay("after the restart")
         out("M4 a sign-in that needs renewing is in no run", sorted(run["mcp"]["servers"]))
         vendor["refuse_renewal"] = False
@@ -2972,6 +2993,17 @@ try:
         out("M5 on the plan, not connected: the claude.ai connector", (spaces()["notionConnection"], run["mcp"], run["claude_notion"], notion_said(run)))
     finally:
         s.stop()
+
+    # M6: the catalog's GitHub entry. GitHub's sign-in can't be used by the Exec Room (no self-registration), so it is
+    # set up with a token only, at GitHub's read-only address, where its server offers only reading tools (28 on
+    # 2026-11-04; the full address adds 18 that write). Checked here, without the network, so that the entry can't
+    # drift to the full address or list a writing tool.
+    gh_entry = json.load(open(os.path.join(opts.root, "mcp-catalog.json")))["github"]
+    GH_WRITES = {"add_comment_to_pending_review", "add_issue_comment", "add_reply_to_pull_request_comment", "create_branch", "create_or_update_file",
+                 "create_pull_request", "create_repository", "delete_file", "fork_repository", "issue_write", "merge_pull_request", "pull_request_review_write",
+                 "push_files", "request_copilot_review", "sub_issue_write", "update_issue_comment", "update_pull_request", "update_pull_request_branch"}
+    out("M6 GitHub: a token at the read-only address, no Connect", (gh_entry["token"]["url"], "connect" in gh_entry, gh_entry["check"]))
+    out("M6 GitHub: only reading tools, none of its writing ones", (len(gh_entry["tools"]), sorted(set(gh_entry["tools"].values())), sorted(GH_WRITES & set(gh_entry["tools"]))))
     fake_vendor.shutdown()
     fake_mcp.shutdown()
 finally:
