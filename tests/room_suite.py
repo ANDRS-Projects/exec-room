@@ -2675,7 +2675,7 @@ try:
     # `op` in tests/fakes/mcp. The token path uses M3's pretend server.
     OAUTH_PORT = int(os.environ.get("ROOM_TEST_OAUTH_PORT", "4198"))
     ob = f"http://127.0.0.1:{OAUTH_PORT}"
-    vendor = {"expires_in": 3600, "refuse_renewal": False, "codes": {}, "access": set(), "refresh": set(), "grants": [], "registered": [], "authorize": [], "notion": []}
+    vendor = {"expires_in": 3600, "refuse_renewal": False, "busy": False, "codes": {}, "access": set(), "refresh": set(), "grants": [], "registered": [], "authorize": [], "notion": []}
     # The same vendor also plays Notion's hosted server at /notion (M5): the tools agents may read with, the write tools
     # the Exec Room's own server saves with, and one it never uses. What each call asked for is kept in vendor["notion"].
     NOTION_TOOLS = ["notion-search", "notion-fetch", "notion-query-data-sources", "notion-get-self", "notion-create-pages", "notion-update-page", "notion-move-pages"]
@@ -2745,6 +2745,8 @@ try:
                     if not q or not pkce or f.get("redirect_uri") != q["redirect_uri"]:
                         return self.reply(400, {"error": "invalid_grant"})
                 elif f.get("grant_type") == "refresh_token":
+                    if vendor["busy"]:  # a rate limit, as Money Magician's sign-in has
+                        return self.reply(429, {"error": "Too many requests, wait a minute."})
                     if vendor["refuse_renewal"] or f.get("refresh_token") not in vendor["refresh"]:
                         return self.reply(400, {"error": "invalid_grant"})
                     vendor["refresh"].discard(f["refresh_token"])
@@ -2894,6 +2896,17 @@ try:
     si["signed-in"]["expiresAt"] = int(time.time() * 1000) + 60000
     with open(os.path.join(pdata, "mcp-signins.json"), "w") as f:
         json.dump(si, f)
+    # The sign-in service says "too many requests": the sign-in isn't given up, the renewal is tried again.
+    vendor["busy"] = True
+    s = Server("mcp", page_env, data_name="data-mcp-page", config=page_config)
+    try:
+        overview()
+        time.sleep(0.5)
+        busy = [l for l in map(json.loads, open(os.path.join(pdata, "jobs.ndjson"))) if l.get("kind") == "mcp" and l.get("change", "").startswith("renewal failed")]
+        out("M4 a rate-limited renewal is tried again, the sign-in kept", (find("signed-in")["statusText"], [(l["change"], l.get("reason")) for l in busy][:1]))
+    finally:
+        s.stop()
+    vendor["busy"] = False
     vendor["refuse_renewal"] = True
     s = Server("mcp", page_env, data_name="data-mcp-page", config=page_config)
     try:
