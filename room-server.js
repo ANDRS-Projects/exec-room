@@ -691,7 +691,9 @@ async function mcpTokenRequest(sign, params) {
   const { res, body } = await mcpJson(sign.tokenEndpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
     body: new URLSearchParams({ client_id: sign.clientId, resource: sign.resource, ...params }) });
   if (body && typeof body.access_token === 'string' && body.access_token) return body;
-  throw Object.assign(new Error(`its sign-in service answered ${res.status}${body && body.error ? ` (${String(body.error).slice(0, 60)})` : ''}`), { refused: res.status >= 400 && res.status < 500 });
+  // A 4xx is a refusal (the sign-in is gone), except "too many requests" and a timeout: those pass, so renewing tries again.
+  const refused = res.status >= 400 && res.status < 500 && res.status !== 429 && res.status !== 408;
+  throw Object.assign(new Error(`its sign-in service answered ${res.status}${body && body.error ? ` (${String(body.error).slice(0, 60)})` : ''}`), { refused });
 }
 
 function mcpKeepSignin(id, sign, t, previous) {
