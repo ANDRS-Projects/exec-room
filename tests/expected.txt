@@ -105,7 +105,7 @@ F stopped proposal: ['stopped']
 C history: (None, True)
 C error shows Claude's reason: [('error', "You've hit your session limit · resets 12pm (Europe/Amsterdam)"), ('end', None)]
 C job log keeps the reason: ('error', "You've hit your session limit · resets 12pm (Europe/Amsterdam)", ['error'])
-server stderr: SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+server stderr: SyntaxError: Expected property name or '}' in JSON at position 1
 D proposals: [('dispatch', 'wren'), ('github_issue', 'Example-Org/demo-app')]
 D notices: 1
 D issue: (200, [('decision', None), ('rec_result', 'https://github.com/Example-Org/demo-app/issues/999')])

@@ -134,7 +134,8 @@ class Server:
         err = self.p.communicate()[1].strip()
         self.stderr = err  # kept, so a check can read everything the server wrote, not just the first line
         if err:  # first line only: the stack trace below it contains machine-specific paths
-            out("server stderr", err.splitlines()[0])
+            # Node 22 adds "(line 1 column 2)" to a JSON error, Node 20 doesn't
+            out("server stderr", re.sub(r" \(line \d+ column \d+\)", "", err.splitlines()[0]))
 
 
 try:
@@ -1093,7 +1094,10 @@ try:
         run = runs()[-1]
         out("K sent", code)
         out("K user event", [e.get("files") for e in evs if e["type"] == "user"])
-        out("K extra read rules", [tidy(a) for a in run["allowed"] if a not in plain["allowed"]])
+        extra = [tidy(a) for a in run["allowed"] if a not in plain["allowed"]]
+        if os.path.realpath(ATT) == ATT:  # Linux: the folder as typed is its real path, so one rule covers both
+            extra = sorted(extra + [r.replace("<attach>", "<attach as typed>") for r in extra])
+        out("K extra read rules", extra)
         out("K tools unchanged", (run["tools"] == plain["tools"], [a for a in plain["allowed"] if a not in run["allowed"]]))
         out("K files during the run", [(tidy(f["path"]), f["exists"], f["bytes"]) for f in run["files"]])
         prompt = run["prompt"]
@@ -1169,7 +1173,7 @@ try:
         os.chmod(ATT, 0o500)
         evs = stop(job)
         os.chmod(ATT, 0o700)
-        out("K delete failure", (ends(evs), [tidy(x) for x in notices(evs)]))
+        out("K delete failure", (ends(evs), [tidy(x.replace(ATT, "<attach as typed>")) for x in notices(evs)]))  # the folder as typed
         for d in job_dirs():
             shutil.rmtree(os.path.join(ATT, d))
         # One run's files stay its own: a run in another chat at the same time gets no rule for them, and neither do
