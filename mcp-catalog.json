@@ -4,7 +4,7 @@
     "by": "ANDRS, the makers of Exec Room",
     "description": "Read invoices, customers, vendors, taxes, profitability and reconciliation from your books.",
     "token": {
-      "url": "https://kmgdglfbdryffywahnri.supabase.co/functions/v1/mcp-server-bundle",
+      "url": "https://mcp.moneymagician.eu/",
       "where": "Money Magician: Settings, API Tokens"
     },
     "connect": {
