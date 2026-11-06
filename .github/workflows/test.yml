@@ -25,6 +25,8 @@ jobs:
           cache: npm
 
       # The suite runs the server against the fakes in tests/fakes (no network, accounts or credits);
-      # python3 comes with the runner.
+      # python3 comes with the runner. Its rooms read ~/Dev and it checks the blocks on ~/.claude and
+      # ~/Library, so the runner's home gets the folders a Claude Code user's Mac has.
+      - run: mkdir -p ~/Dev ~/Library ~/.claude/agents ~/.claude/skills ~/.claude/knowledge ~/.claude/projects
       - run: npm ci
       - run: npm test

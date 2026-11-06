@@ -774,7 +774,7 @@ try:
         claude = os.path.join(home, ".claude")
         links = [os.path.realpath(os.path.join(home, d, n)) for d in (".ssh", ".aws", ".gnupg", ".config", "Library")
                  if os.path.isdir(os.path.join(home, d)) for n in os.listdir(os.path.join(home, d)) if os.path.islink(os.path.join(home, d, n))]
-        others = [os.path.join(claude, n) for n in os.listdir(claude) if n not in ("agents", "skills", "knowledge")]
+        others = [os.path.join(claude, n) for n in (os.listdir(claude) if os.path.isdir(claude) else []) if n not in ("agents", "skills", "knowledge")]
         instructions = [p for n in ("agents", "skills", "knowledge") if os.path.exists(os.path.join(claude, n)) for p in (os.path.join(claude, n), os.path.realpath(os.path.join(claude, n)))]
         raw = [json.loads(l) for l in open(os.path.join(TMP, "access-calls.ndjson"))]
         covers = lambda rules, p: any(r == f"Read(/{p})" or (r.endswith("/**)") and (p + "/").startswith(r[6:-4] + "/")) for r in rules)
