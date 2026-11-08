@@ -306,9 +306,9 @@ T invalid unknown db: (400, '{"error":"\\"nope\\" isn\'t one of the Output DBs"}
 T invalid place without name: (400, '{"error":"each place needs a name (up to 80 characters)"}')
 T invalid place is an output db: (400, '{"error":"x is an Output DB, not a page: pick it under \\"databases for posts\\""}')
 T invalid bad place: (400, '{"error":"\\"https://example.com/page\\" isn\'t a Notion page URL or id"}')
-T new room proposes nothing: {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''}
+T new room proposes nothing: {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []}
 T empty room note: {'issues': False, 'demo_app': False, 'private_app': False, 'drafts': False, 'log1': False, 'log2': False, 'gone_db': False, 'pages': False, 'exec_meetings': False, 'product_notes': False, 'public_rule': False, 'reads_issues': False, 'comments': False, 'told_settings': False, 'told_private_app': False, 'told_starts': ''}
-T set targets: (200, {'repos': ['Example-Org/private-app', 'Example-Org/public-site', 'other-org/tool'], 'publicRepos': [], 'notionDbs': ['output-log-2'], 'notionPlaces': [{'id': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'name': 'Product notes', 'for': 'specs'}], 'allowedRecipients': [], 'sendFrom': ''})
+T set targets: (200, {'repos': ['Example-Org/private-app', 'Example-Org/public-site', 'other-org/tool'], 'publicRepos': [], 'notionDbs': ['output-log-2'], 'notionPlaces': [{'id': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'name': 'Product notes', 'for': 'specs'}], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})
 T room note offers only its targets: {'issues': True, 'demo_app': False, 'private_app': True, 'drafts': True, 'log1': False, 'log2': True, 'gone_db': False, 'pages': True, 'exec_meetings': False, 'product_notes': True, 'public_rule': False, 'reads_issues': True, 'comments': True, 'told_settings': True, 'told_private_app': True, 'told_starts': "[Room note for Coen, not part of the owner's message: this r"}
 T settings told once, and not shown: ({'told_settings': False, 'told_private_app': False}, ['and once more'])
 T the chat remembers which settings Coen has: True
@@ -438,7 +438,7 @@ M invalid at-domain: (400, '{"error":"\\"@client.example\\" isn\'t an email addr
 M invalid wildcard: (400, '{"error":"\\"*.client.example\\" isn\'t an email address or a domain: use e.g. name@client.com or client.com (no wildcards, links or lists)"}')
 M invalid two in one entry: (400, '{"error":"\\"a@client.example, b@client.example\\" isn\'t an email address or a domain: use e.g. name@client.com or client.com (no wildcards, links or lists)"}')
 M invalid send from: (400, '{"error":"\\"not an address\\" isn\'t an email address for \\"Send from\\""}')
-M set recipients: (200, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': ['client.example', 'bob@partner.test'], 'sendFrom': 'Owner@consulting.example'})
+M set recipients: (200, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': ['client.example', 'bob@partner.test'], 'sendFrom': 'Owner@consulting.example', 'saveFolders': []})
 M room note: {'email': True, 'never_sends': True, 'nothing_sends': True, 'listed': True, 'needs_recipients': False}
 M proposals: [('Good', ['anna@client.example'], ['bob@partner.test'], 'Next steps after our call', 'Owner@consulting.example'), ('Two', ['Anna@client.example', 'ceo@client.example'], [], 'Two', 'Owner@consulting.example'), ('Bob', ['bob@partner.test'], [], 'For Bob', 'Owner@consulting.example')]
 M approve sends nothing: (200, ['decision'])
@@ -472,7 +472,7 @@ M not plain 3: "body" has characters that can't go into a mail link
 M caps 1: "body" is longer than 8000 characters
 M caps 2: "subject" is longer than 200 characters
 M caps accepted: [('Max body', 8000)]
-M settings log: [('created', {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'recipientCount': 2, 'recipientDomains': ['client.example', 'partner.test'], 'sendFromDomain': 'consulting.example'}), ('updated', {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'recipientCount': 1, 'recipientDomains': ['client.example'], 'sendFromDomain': 'consulting.example'})]
+M settings log: [('created', {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'saveFolders': [], 'recipientCount': 2, 'recipientDomains': ['client.example', 'partner.test'], 'sendFromDomain': 'consulting.example'}), ('updated', {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'saveFolders': [], 'recipientCount': 1, 'recipientDomains': ['client.example'], 'sendFromDomain': 'consulting.example'})]
 M settings log has no addresses: False
 M recipient removed before approval (to): (409, '{"error":"bob@partner.test is no longer on this room\'s recipient list. Ask Coen to propose it again, or change the room\'s settings."}')
 M recipient removed before approval (cc): (409, '{"error":"bob@partner.test is no longer on this room\'s recipient list. Ask Coen to propose it again, or change the room\'s settings."}')
@@ -487,7 +487,7 @@ M static email-links.js: 200
 M2 stored after start-up: {'rec-before': ['domains'], 'rec-due': ['domains'], 'rec-undated': ['domains'], 'rec-kept': ['body', 'keepUntil', 'to']}
 M2 chat after start-up: {'rec-before': (False, False, ['client.example']), 'rec-due': (False, False, ['client.example']), 'rec-undated': (False, False, ['client.example']), 'rec-kept': (True, True, None)}
 M2 remove from the old shape: (200, '{"ok":true,"domains":["client.example"]}')
-Z fresh install default room: ('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})
+Z fresh install default room: ('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})
 Y start-up folder check: [('risky', 'Risky', ['~/.claude'])]
 Y settings unchanged: [1, 2, 0]
 Y server started despite a broken room: 200
@@ -495,18 +495,18 @@ Y bad folder entry dropped: [('broken', 'Broken', 1)]
 Y bad folder entry saved: []
 Y run in the cleaned room: What this room lets agents use: reading files in drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.
 server stderr: Room "Broken": removed 1 folder entry that wasn't text from workspaces.json.
-V unreadable rooms file, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})]
+V unreadable rooms file, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})]
 V original kept aside: (1, True, True)
 V rooms file rewritten: (['exec'], [])
 V logged: [('unreadable rooms file', True, 'workspaces.json could not be parsed')]
 server stderr: Couldn't use the rooms file (workspaces.json could not be parsed), so the default room starts empty.
-V leftover set-aside file, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})]
+V leftover set-aside file, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})]
 V leftover kept: ['workspaces.json', 'workspaces.json.broken-x']
-V old chats and no rooms file, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})]
+V old chats and no rooms file, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})]
 V old chats, rooms file saved: ('old-chat', True, True)
-V room without settings, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})]
+V room without settings, default room: [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})]
 V room without settings, its run: (['Read', 'Grep', 'Glob', 'Agent', 'Write', 'Edit'], ['Read(/<root>/drafts/**)', 'Agent', 'Write(drafts/**)', 'Edit(drafts/**)'], "What this room lets agents use: reading files in drafts/, and the agents' instructions (~/.claude/agents, skills and knowledge); no web search; no web pages (opening sites is off); no Notion; no Microsoft 365; writing only in drafts/.")
-S example config starts the room: (200, [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': ''})], [])
+S example config starts the room: (200, [('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDbs': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})], [])
 S hidden connectors, room starts: 200
 S hidden connectors blocked: ['mcp__claude_ai_Claude_Docs', 'mcp__claude_ai_Gmail', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Google_Drive', 'mcp__claude_ai_Google_Calendar', 'mcp__claude_ai_My_Connector', 'mcp__claude_ai_Notion', 'mcp__claude_ai_Microsoft_365']
 server stderr: room.config.json: skipped "hiddenConnectors" entry "Notion": the Notion and Microsoft 365 connectors are switched per room, not hidden here.
@@ -827,5 +827,53 @@ M5 updating a page the room made: ([('rec_result', 'done', 'https://www.notion.s
 M5 on the plan: agents read through the connection, not the claude.ai connector: ('Connected · 3 tools ready', {'reading': True, 'saving': True}, {'notion': 'notion'}, ['mcp__notion__notion-fetch', 'mcp__notion__notion-query-data-sources', 'mcp__notion__notion-search'], 'blocked', False, 'Notion, read-only (search, open pages and query databases')
 M5 paused on the plan: no Notion at all: ({'reading': False, 'saving': True}, 'off', None, [], ['mcp__notion'], 'blocked', "no Notion right now (it is switched on, but the Exec Room's Notion connection is paused or needs signing in again)")
 M5 on the plan, not connected: the claude.ai connector: (None, None, 'allowed', 'Notion, read-only')
+F2 old rooms have no save folders: ('exec', [])
+F2 no save folders: refused: ["this room has no save folders, so it can't save files", "this room has no save folders, so it can't save files", "this room has no save folders, so it can't save files"]
+F2 note without save folders: {'save_file': False, 'folder_listed': False, 'word': False, 'never_overwrites': False}
+F2 save folder refused: the repo: [400, '"<root>" is part of the Exec Room itself (its code, drafts/ or data): pick a save folder outside it']
+F2 save folder refused: drafts: [400, '"<root>/drafts" is part of the Exec Room itself (its code, drafts/ or data): pick a save folder outside it']
+F2 save folder refused: data: [400, '"<tmp>/data-save" is part of the Exec Room itself (its code, drafts/ or data): pick a save folder outside it']
+F2 save folder refused: inside .git: [400, '"<tmp>/not-saves/.git" is inside a .git or .claude folder, which holds settings and hooks: pick another save folder']
+F2 save folder refused: missing: [400, '"<tmp>/nope" doesn\'t exist']
+F2 save folder refused: a file: [400, '"<root>/drafts/2099-01-01-suite-save.md" isn\'t a folder']
+F2 save folder refused: relative: [400, '"saves": use a full path, e.g. ~/Dev/my-repo']
+F2 save folder set: [200, ['<saves>']]
+F2 an older page keeps them: [200, ['<saves>']]
+F2 stored as real paths: ['<saves>']
+F2 note: {'save_file': True, 'folder_listed': True, 'word': True, 'never_overwrites': True}
+F2 web refused: []
+F2 web cards: [['PDF', 'Q3 report.pdf', 'pdf', 'report.pdf', '<saves>', False], ['Page as PDF', 'Fake.pdf', 'pdf', 'page.pdf', '<saves>', False], ['JSON', 'data.json', 'json', 'data.json', '<saves>', False]]
+F2 approve PDF: [200, 'done', {'shown': '<saves>/Q3 report.pdf', 'name': 'Q3 report.pdf', 'size': 280}]
+F2 approve Page as PDF: [200, 'failed', {'error': "what the link gave isn't a .pdf file (often a web page, such as a sign-in page, instead of the file), so nothing was saved"}]
+F2 approve JSON: [200, 'done', {'shown': '<saves>/data.json', 'name': 'data.json', 'size': 8}]
+F2 the PDF as sent: True
+F2 web-b refused: []
+F2 approve Bad JSON: [200, 'failed', {'error': "what the link gave isn't a .json file (often a web page, such as a sign-in page, instead of the file), so nothing was saved"}]
+F2 approve Word from web: [200, 'done', {'shown': '<saves>/Notes.docx', 'name': 'Notes.docx', 'size': 48}]
+F2 approve Too big: [200, 'failed', {'error': 'the file is larger than 25 MB'}]
+F2 web-c refused: []
+F2 approve Missing: [200, 'failed', {'error': 'the site answered 404 (Not Found) instead of the file'}]
+F2 approve Redirect home: [200, 'failed', {'error': "the link redirected to https://127.0.0.1/report.pdf, which the room won't download from: 127.0.0.1 is on this computer or the home network, which the room never downloads from"}]
+F2 approve Localhost dot: (200, 'failed', True)
+F2 refuse-a: ['"url" must start with https://', '"url": 127.0.0.1 is on this computer or the home network, which the room never downloads from', '"url": 192.168.1.10 is on this computer or the home network, which the room never downloads from']
+F2 refuse-b: ['"url": [::1] is on this computer or the home network, which the room never downloads from', '"url": 127.0.0.1 is on this computer or the home network, which the room never downloads from', '"url": nas.local is on this computer or the home network, which the room never downloads from']
+F2 refuse-c: ['"url" must use the standard https port', '"url" may not hold a user name or password', '"name": from a link only .pdf, .png, .jpg, .jpeg, .gif, .webp, .txt, .md, .csv, .json, .docx, .xlsx, .pptx files can be saved']
+F2 refuse-d: ['"name": "report" needs a name and an extension, e.g. Report.pdf', '"name": "CLAUDE.md" is a name that tools act on by themselves: pick another', '"name": "env.pdf" is a name that tools act on by themselves: pick another']
+F2 refuse-e: ['"folder" must be one of this room\'s save folders: <saves>', 'give either "url" (a link to download) or "draft" (a file in drafts/), not both', 'give either "url" (a link to download) or "draft" (a file in drafts/), not both']
+F2 nothing else in the folder: ['Notes.docx', 'Q3 report.pdf', 'data.json']
+F2 draft refusals: ['"name": a draft is saved as .md or .docx', '"draft": "2099-01-01-suite-none.md" isn\'t a file in drafts/', '"draft": "../room-server.js" isn\'t a file in drafts/', '"draft": "2099-01-01-suite-link.md" isn\'t a file in drafts/']
+F2 draft cards: [['Draft as md', 'Pricing review.md', '2099-01-01-suite-save.md'], ['Draft as Word', 'Pricing review.docx', '2099-01-01-suite-save.md'], ['Draft again', 'Pricing review.md', '2099-01-01-suite-save.md']]
+F2 approve draft as md: [200, 'done', {'shown': '<saves>/Pricing review.md', 'name': 'Pricing review.md', 'size': 188}]
+F2 approve draft again: [200, 'done', {'shown': '<saves>/Pricing review (2).md', 'name': 'Pricing review (2).md', 'size': 188}]
+F2 copies are the draft: [True, True]
+F2 approve draft as Word: (200, 'done', {'shown': '<saves>/Pricing review.docx', 'name': 'Pricing review.docx'}, True)
+F2 Word parts: (None, ['[Content_Types].xml', '_rels/.rels', 'docProps/core.xml', 'word/_rels/document.xml.rels', 'word/document.xml', 'word/numbering.xml', 'word/styles.xml'])
+F2 Word content: {'heading': True, 'bullets': 3, 'numbered': 2, 'nested': True, 'link': True, 'table': 2, 'right-aligned cell': True, 'raw html as text': True, 'image as its description': True}
+F2 the draft stays: True
+F2 folder no longer in the room: [409, {'error': "<saves> is no longer one of this room's save folders. Ask Coen to propose it again, or change the room's settings."}]
+F2 folder now a link: [200, 'failed', {'error': '<saves> now leads somewhere else (<saves>-real), so nothing was saved'}]
+F2 decisions rows: [['save_file', 'JSON', 'failed', None, True], ['save_file', 'Draft as Word', 'done', '<saves>/Pricing review.docx', False], ['save_file', 'Draft again', 'done', '<saves>/Pricing review (2).md', False], ['save_file', 'Draft as md', 'done', '<saves>/Pricing review.md', False]]
+F2 the folder at the end: ['Notes.docx', 'Pricing review (2).md', 'Pricing review.docx', 'Pricing review.md', 'Q3 report.pdf', 'data.json']
+F2 job log keeps no file contents: True
 M6 GitHub: a token at the read-only address, no Connect: ('https://api.githubcopilot.com/mcp/readonly', False, {'tool': 'get_me', 'arguments': {}})
 M6 GitHub: only reading tools, none of its writing ones: (21, ['reads'], [])

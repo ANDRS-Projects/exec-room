@@ -6,7 +6,7 @@
 [![Runs locally](https://img.shields.io/badge/runs-locally-2ea44f)](SECURITY.md)
 [![Actions: approve first](https://img.shields.io/badge/actions-approve--first-6f42c1)](SECURITY.md)
 
-Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of agents that run on Claude Code. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, jobs for other agents). They have no tool that runs commands on your computer and write only to `drafts/`; anything that leaves the room (an issue, a Notion page, an email draft, a job for another agent) waits for your approval. These are Claude Code permission rules, not a sandbox: see [Security](#security).
+Exec Room is an open-source agent room for running a business: a local web room where you, the exec, work with a team of agents that run on Claude Code. They research, draft and propose actions (GitHub issues, Notion pages, email drafts, files to save, jobs for other agents). They have no tool that runs commands on your computer and write only to `drafts/`; anything that leaves the room (an issue, a Notion page, an email draft, a saved file, a job for another agent) waits for your approval. These are Claude Code permission rules, not a sandbox: see [Security](#security).
 
 ![Exec Room: the chat list, a conversation with Coen with two proposals waiting for approval, and the advisors' replies](docs/screenshots/01-room.png)
 
@@ -27,6 +27,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Notion** — posts saved as drafts in databases you configure, and long-form pages under pages you allow; a page the room made can later be updated in place, with the previous version kept under the new one. Connect Notion once in Exec Room settings and agents read it and the room saves through that sign-in (see [MCP servers and Notion](#mcp-servers-and-notion)); a Notion integration token works too
 - **MCP servers** — give agents read tools of other services: from the Popular list in Exec Room settings, or any server by its web address, signed in with Connect or with a token from 1Password; each room switches a server on for itself
 - **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
+- **Saving files** — into folders you choose per room: a document, spreadsheet, data file or image from an https link (checked to be that kind of file, at most 25 MB, never from your own computer or network), or an agent's draft as Markdown or as a Word file with its headings, lists, links and tables. The room saves only after you approve and never overwrites a file
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Claude plan or API key** — runs use your Claude plan by default; start the room with `npm run room:key` to pay with an Anthropic API key instead, with a spend cap per run and per day
 - **Local, with tight permissions** — binds to 127.0.0.1, read-only tools, writes only in `drafts/`, secret files blocked

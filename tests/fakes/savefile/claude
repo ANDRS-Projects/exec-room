@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+# Test double for `claude -p` with save_file proposals: logs what Coen's note says about saving files to
+# $ROOM_TEST_TMP/save-calls.ndjson and, by keyword, proposes saves from the suite's pretend file server
+# (plain http, allowed for the suite only through ROOM_TEST_SAVE_HOST), from links the room must refuse, and from drafts.
+# Emits stream-json. Nothing here touches the network.
+import json, os, sys
+
+args = sys.argv[1:]
+prompt = args[args.index("-p") + 1]
+prompt = prompt.split("(End of the room note on settings.)]\n\n", 1)[-1]  # the room's own note on changed settings is not the message
+note = args[args.index("--append-system-prompt") + 1]
+out = lambda o: print(json.dumps(o), flush=True)
+# Where the suite keeps its save folder and pretend file server: a run gets only a short list of environment variables.
+SUITE = json.load(open(os.path.join(os.environ["ROOM_TEST_TMP"], "save-suite.json")))
+FOLDER = SUITE["folder"]
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "save-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"save_file": '"save_file"' in note, "folder_listed": bool(FOLDER) and FOLDER in note,
+                          "word": "Word file" in note, "never_overwrites": "never over an existing file" in note}) + "\n")
+
+BASE = "http://" + SUITE["host"]
+
+
+def save(summary, name, folder=None, **source):
+    obj = {"action": "save_file", "summary": summary, "folder": FOLDER if folder is None else folder, "name": name, **source}
+    return "\n```recommendation\n" + json.dumps(obj) + "\n```\n"
+
+
+# At most three proposals count per message, so they come in threes, each under its own message.
+PROPOSALS = {
+    "web-a": [save("PDF", "Q3 report.pdf", url=BASE + "/report.pdf"), save("Page as PDF", "Fake.pdf", url=BASE + "/page.pdf"),
+              save("JSON", "data.JSON", url=BASE + "/data.json")],
+    "web-b": [save("Bad JSON", "bad.json", url=BASE + "/bad.json"), save("Word from web", "Notes.docx", url=BASE + "/notes.docx"),
+              save("Too big", "big.pdf", url=BASE + "/big.pdf")],
+    "web-c": [save("Missing", "gone.pdf", url=BASE + "/missing.pdf"), save("Redirect home", "r.pdf", url=BASE + "/to-localhost"),
+              save("Localhost dot", "l.pdf", url="https://localhost./x.pdf")],
+    "refuse-a": [save("Plain http", "a.pdf", url="http://example.com/a.pdf"), save("Loopback", "a.pdf", url="https://127.0.0.1/a.pdf"),
+                 save("LAN", "a.pdf", url="https://192.168.1.10/a.pdf")],
+    "refuse-b": [save("IPv6 loopback", "a.pdf", url="https://[::1]/a.pdf"), save("Hex loopback", "a.pdf", url="https://0x7f000001/a.pdf"),
+                 save("Local name", "a.pdf", url="https://nas.local/a.pdf")],
+    "refuse-c": [save("Port", "a.pdf", url="https://example.com:8443/a.pdf"), save("Password", "a.pdf", url="https://u:p@example.com/a.pdf"),
+                 save("Program", "setup.exe", url="https://example.com/setup.exe")],
+    "refuse-d": [save("No extension", "report", url="https://example.com/r"), save("Claude file", "CLAUDE.md", draft="2099-01-01-suite-save.md"),
+                 save("Hidden", ".env.pdf", url="https://example.com/e.pdf")],
+    "refuse-e": [save("Other folder", "a.pdf", folder="/tmp", url="https://example.com/a.pdf"),
+                 save("Both", "a.md", url="https://example.com/a.md", draft="2099-01-01-suite-save.md"), save("Neither", "a.pdf")],
+    "draft-a": [save("Draft as md", "Pricing review.md", draft="2099-01-01-suite-save.md"),
+                save("Draft as Word", "Pricing review.docx", draft="drafts/2099-01-01-suite-save.md"),
+                save("Draft again", "Pricing review.md", draft="2099-01-01-suite-save.md")],
+    "draft-b": [save("Draft as pdf", "Pricing review.pdf", draft="2099-01-01-suite-save.md"),
+                save("No such draft", "x.md", draft="2099-01-01-suite-none.md"), save("Outside drafts", "x.md", draft="../room-server.js")],
+    "draft-c": [save("Linked draft", "x.md", draft="2099-01-01-suite-link.md")],
+}
+text = "Proposals." + "".join(next((recs for key, recs in PROPOSALS.items() if key in prompt), []))
+out({"type": "system", "subtype": "init", "session_id": "coen-session"})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "x"})
