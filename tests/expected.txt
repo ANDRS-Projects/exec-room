@@ -866,7 +866,7 @@ F2 draft cards: [['Draft as md', 'Pricing review.md', '2099-01-01-suite-save.md'
 F2 approve draft as md: [200, 'done', {'shown': '<saves>/Pricing review.md', 'name': 'Pricing review.md', 'size': 188}]
 F2 approve draft again: [200, 'done', {'shown': '<saves>/Pricing review (2).md', 'name': 'Pricing review (2).md', 'size': 188}]
 F2 copies are the draft: [True, True]
-F2 approve draft as Word: [200, 'done', {'shown': '<saves>/Pricing review.docx', 'name': 'Pricing review.docx', 'size': 3809}]
+F2 approve draft as Word: (200, 'done', {'shown': '<saves>/Pricing review.docx', 'name': 'Pricing review.docx'}, True)
 F2 Word parts: (None, ['[Content_Types].xml', '_rels/.rels', 'docProps/core.xml', 'word/_rels/document.xml.rels', 'word/document.xml', 'word/numbering.xml', 'word/styles.xml'])
 F2 Word content: {'heading': True, 'bullets': 3, 'numbered': 2, 'nested': True, 'link': True, 'table': 2, 'right-aligned cell': True, 'raw html as text': True, 'image as its description': True}
 F2 the draft stays: True

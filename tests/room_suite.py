@@ -3142,7 +3142,9 @@ try:
         # The Word file is built by the room itself, the same on every system: a zip of well-formed parts, with Word's own
         # heading style, real bullet and numbered lists (nested a level down), a clickable link, a table, raw HTML kept
         # as text and the image as its description (its address isn't in the file, so nothing is loaded from it).
-        out("F2 approve draft as Word", approve(cards["Draft as Word"]))
+        # Its size isn't compared: the compression library packs the same parts a few bytes differently per system.
+        res = approve(cards["Draft as Word"])
+        out("F2 approve draft as Word", (res[0], res[1], {k: v for k, v in res[2].items() if k != "size"}, res[2].get("size", 0) > 1000))
         import xml.dom.minidom, zipfile
         word = zipfile.ZipFile(os.path.join(saves, "Pricing review.docx"))
         parts = {n: word.read(n).decode() for n in word.namelist()}
