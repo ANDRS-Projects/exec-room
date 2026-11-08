@@ -3026,6 +3026,157 @@ try:
     finally:
         s.stop()
 
+    # F2: saving files into a room's save folder (save_file). Agents propose, the server downloads or copies the file
+    # only after approval. A pretend file server plays the web; it is plain http on this computer, which a real room
+    # refuses (ROOM_TEST_SAVE_HOST lets the suite use exactly this one address). The rooms file is the old shape, from
+    # before save folders.
+    SAVE_PORT = int(os.environ.get("ROOM_TEST_SAVE_PORT", "4195"))
+    PDF = b"%PDF-1.4\n% suite\n" + bytes(range(256)) + b"\n%%EOF\n"
+
+    class FileSite(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            files = {"/report.pdf": PDF, "/page.pdf": b"<!DOCTYPE html><html><body>Sign in</body></html>", "/data.json": b'{"a": 1}',
+                     "/bad.json": b"{not json", "/notes.docx": b"PK\x03\x04" + b"[Content_Types].xml" + b"\x00" * 8 + b"word/document.xml"}
+            if self.path == "/big.pdf":
+                self.send_response(200)
+                self.send_header("Content-Length", str(30 * 1024 * 1024))
+                self.end_headers()
+                self.wfile.write(b"%PDF-")
+                return
+            if self.path == "/to-localhost":
+                self.send_response(302)
+                self.send_header("Location", "https://127.0.0.1/report.pdf")
+                self.end_headers()
+                return
+            body = files.get(self.path)
+            self.send_response(200 if body is not None else 404)
+            self.send_header("Content-Length", str(len(body or b"")))
+            self.end_headers()
+            self.wfile.write(body or b"")
+
+    file_site = ThreadingHTTPServer(("127.0.0.1", SAVE_PORT), FileSite)
+    threading.Thread(target=file_site.serve_forever, daemon=True).start()
+    saves = os.path.realpath(os.path.join(TMP, "saves"))
+    os.makedirs(saves)
+    os.makedirs(os.path.join(TMP, "not-saves", ".git"))
+    draft_dir = os.path.join(opts.root, "drafts")
+    os.makedirs(draft_dir, exist_ok=True)
+    draft = os.path.join(draft_dir, "2099-01-01-suite-save.md")
+    linked = os.path.join(draft_dir, "2099-01-01-suite-link.md")
+    with open(draft, "w") as f:
+        f.write("# Pricing review\n\n- one\n  - nested\n- two\n\n1. first\n2. second\n\nSee [the site](https://example.com). <b>raw</b> ![chart](https://example.com/c.png)\n\n| Plan | Seats |\n|---|---:|\n| Team | 5 |\n")
+    os.symlink(os.path.join(opts.root, "room-server.js"), linked)
+    def shown(v):  # paths of this run made the same on every computer
+        text = json.dumps(v)
+        for path, name in [(saves, "<saves>"), (os.path.realpath(TMP), "<tmp>"), (TMP, "<tmp>"), (os.path.realpath(opts.root), "<root>"), (opts.root, "<root>")]:
+            text = text.replace(path, name)
+        return json.loads(text)
+    with open(os.path.join(TMP, "save-suite.json"), "w") as f:
+        json.dump({"folder": saves, "host": f"127.0.0.1:{SAVE_PORT}"}, f)
+    s = Server("savefile", {"ROOM_TEST_SAVE_HOST": f"127.0.0.1:{SAVE_PORT}"}, data_name="data-save")
+    try:
+        note = lambda: [json.loads(l) for l in open(os.path.join(TMP, "save-calls.ndjson"))][-1]
+
+        def ask(text):
+            job = json.loads(call("/api/coen", {"text": text})[1]).get("jobId")
+            evs = events(call("/api/stream")[1])
+            return evs or [e for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId") == job]
+
+        def asked(text):  # the proposals that became cards, by summary, and the refusal reasons by order
+            evs = ask(text)
+            cards = {e["rec"]["summary"]: e["rec"] for e in evs if e["type"] == "recommendation"}
+            refused = [e["text"].split(" couldn't be used (", 1)[1].rsplit("). Ask ", 1)[0] for e in evs if e["type"] == "notice" and " couldn't be used (" in e["text"]]
+            return cards, refused
+
+        def approve(rec):
+            code, body, _ = call(f"/api/recs/{rec['recId']}/approve", {})
+            res = [e for e in json.loads(body).get("events", []) if e["type"] == "rec_result"]
+            return shown((code, res[0]["state"], {k: v for k, v in res[0].items() if k in ("name", "shown", "size", "error")}) if res else (code, json.loads(body)))
+
+        room = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+        out("F2 old rooms have no save folders", (room["id"], room["targets"]["saveFolders"]))
+        out("F2 no save folders: refused", asked("web-a")[1])
+        out("F2 note without save folders", note())
+        base = {"name": "Exec room", "members": None}
+        keep = {k: v for k, v in room["targets"].items() if k != "saveFolders"}
+        for label, folder in [("the repo", opts.root), ("drafts", draft_dir), ("data", os.path.join(TMP, "data-save")), ("inside .git", os.path.join(TMP, "not-saves", ".git")),
+                              ("missing", os.path.join(TMP, "nope")), ("a file", draft), ("relative", "saves")]:
+            code, body, _ = call("/api/workspaces/exec", {**base, "targets": {**keep, "saveFolders": [folder]}})
+            out(f"F2 save folder refused: {label}", shown((code, json.loads(body)["error"])))
+        code, body, _ = call("/api/workspaces/exec", {**base, "targets": {**keep, "saveFolders": [saves, saves + "/"]}})
+        out("F2 save folder set", shown((code, json.loads(body)["workspace"]["targets"]["saveFolders"])))
+        # A page from before save folders sends targets without them: the room keeps its own.
+        code, body, _ = call("/api/workspaces/exec", {**base, "targets": keep})
+        out("F2 an older page keeps them", shown((code, json.loads(body)["workspace"]["targets"]["saveFolders"])))
+        out("F2 stored as real paths", shown(json.load(open(os.path.join(TMP, "data-save", "workspaces.json")))["workspaces"]["exec"]["targets"]["saveFolders"]))
+
+        cards, refused = asked("web-a")
+        out("F2 note", note())
+        out("F2 web refused", shown(refused))
+        out("F2 web cards", shown([(k, r["name"], r["ext"], r["url"].split("/")[-1], r["where"], "draft" in r) for k, r in cards.items()]))
+        for k in ("PDF", "Page as PDF", "JSON"):
+            out(f"F2 approve {k}", approve(cards[k]))
+        out("F2 the PDF as sent", open(os.path.join(saves, "Q3 report.pdf"), "rb").read() == PDF)
+        for batch in ("web-b", "web-c"):
+            cards, refused = asked(batch)
+            out(f"F2 {batch} refused", refused)
+            for k in cards:
+                res = approve(cards[k])
+                # A name that is this computer's own address: refused when it is looked up, or not found at all.
+                if k == "Localhost dot":
+                    res = (res[0], res[1], "home network" in res[2].get("error", "") or "couldn't reach" in res[2].get("error", ""))
+                out(f"F2 approve {k}", res)
+        for batch in ("refuse-a", "refuse-b", "refuse-c", "refuse-d", "refuse-e"):
+            out(f"F2 {batch}", shown(asked(batch)[1]))
+        out("F2 nothing else in the folder", sorted(os.listdir(saves)))
+
+        out("F2 draft refusals", shown(asked("draft-b")[1] + asked("draft-c")[1]))
+        cards, refused = asked("draft-a")
+        out("F2 draft cards", shown([(k, r["name"], r.get("draft")) for k, r in cards.items()]))
+        out("F2 approve draft as md", approve(cards["Draft as md"]))
+        out("F2 approve draft again", approve(cards["Draft again"]))
+        out("F2 copies are the draft", [open(os.path.join(saves, n), "rb").read() == open(draft, "rb").read() for n in ("Pricing review.md", "Pricing review (2).md")])
+        # The Word file is built by the room itself, the same on every system: a zip of well-formed parts, with Word's own
+        # heading style, real bullet and numbered lists (nested a level down), a clickable link, a table, raw HTML kept
+        # as text and the image as its description (its address isn't in the file, so nothing is loaded from it).
+        out("F2 approve draft as Word", approve(cards["Draft as Word"]))
+        import xml.dom.minidom, zipfile
+        word = zipfile.ZipFile(os.path.join(saves, "Pricing review.docx"))
+        parts = {n: word.read(n).decode() for n in word.namelist()}
+        for text in parts.values():
+            xml.dom.minidom.parseString(text)
+        doc, rels = parts["word/document.xml"], parts["word/_rels/document.xml.rels"]
+        out("F2 Word parts", (word.testzip(), sorted(parts)))
+        out("F2 Word content", {"heading": '<w:pStyle w:val="Heading1"/>' in doc, "bullets": doc.count('<w:numId w:val="1"/>'), "numbered": doc.count('<w:numId w:val="2"/>'),
+                                "nested": '<w:ilvl w:val="1"/>' in doc, "link": 'Target="https://example.com" TargetMode="External"' in rels and "<w:hyperlink" in doc,
+                                "table": doc.count("<w:tr>"), "right-aligned cell": '<w:jc w:val="right"/>' in doc, "raw html as text": "&lt;b&gt;" in doc and "&lt;/b&gt;" in doc and "<w:b/>" not in doc.split("raw")[0][-200:],
+                                "image as its description": "chart" in doc and "c.png" not in doc + rels})
+        out("F2 the draft stays", os.path.exists(draft))
+
+        # Checked again on approval: a folder taken off the room, and one swapped for a link to somewhere else.
+        cards, _ = asked("web-a")
+        call("/api/workspaces/exec", {**base, "targets": {**keep, "saveFolders": []}})
+        out("F2 folder no longer in the room", approve(cards["PDF"]))
+        call("/api/workspaces/exec", {**base, "targets": {**keep, "saveFolders": [saves]}})
+        os.rename(saves, saves + "-real")
+        os.symlink(saves + "-real", saves)
+        out("F2 folder now a link", approve(cards["JSON"]))
+        os.remove(saves)
+        os.rename(saves + "-real", saves)
+        rows = json.loads(call("/api/workspaces/exec/decisions")[1])["decisions"]
+        out("F2 decisions rows", shown([(d["action"], d["summary"], d["state"], d.get("saved"), "error" in d) for d in rows if d["action"] == "save_file"][:4]))
+        out("F2 the folder at the end", sorted(os.listdir(saves)))
+        out("F2 job log keeps no file contents", all("bytes" not in l for l in open(os.path.join(TMP, "data-save", "jobs.ndjson"))))
+    finally:
+        s.stop()
+        file_site.shutdown()
+        for f in (draft, linked):
+            if os.path.lexists(f):
+                os.remove(f)
+
     # M6: the catalog's GitHub entry. GitHub's sign-in can't be used by the Exec Room (no self-registration), so it is
     # set up with a token only, at GitHub's read-only address, where its server offers only reading tools (28 on
     # 2026-11-04; the full address adds 18 that write). Checked here, without the network, so that the entry can't

@@ -6,10 +6,16 @@
 import express from 'express';
 import { execFile, execFileSync, spawn } from 'child_process';
 import crypto from 'crypto';
+import dns from 'dns';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
+import { Marked } from 'marked';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import zlib from 'zlib';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +64,21 @@ const ATTACH_MAX_BYTES = 5 * 1024 * 1024;
 // What the Read tool can open: text, PDFs and images. The value is how the file's first bytes are checked.
 const ATTACH_TYPES = { txt: 'text', md: 'text', csv: 'text', pdf: 'pdf', png: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp' };
 const ATTACH_JOB_DIR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Saving a file into a room's save folder (the save_file proposal). The server does it once the owner approves; agents
+// never get a download tool or write access outside drafts/. Two sources: a web link, or one of the agents' drafts.
+// Web files are kept to documents, data and images: nothing that runs. A file the server saves gets no macOS
+// "downloaded from the internet" flag, so a program saved this way would open without that warning.
+const SAVE_MAX_FOLDERS = 10;
+const SAVE_MAX_BYTES = 25 * 1024 * 1024;
+const SAVE_TIMEOUT_MS = Number(process.env.ROOM_SAVE_TIMEOUT_MS) || 60000;
+const SAVE_MAX_REDIRECTS = 5;
+// What a web file may be, by extension. The value is how its content is checked (saveLooksLike).
+const SAVE_WEB_TYPES = { pdf: 'pdf', png: 'png', jpg: 'jpeg', jpeg: 'jpeg', gif: 'gif', webp: 'webp', txt: 'text', md: 'text', csv: 'text', json: 'json', docx: 'docx', xlsx: 'xlsx', pptx: 'pptx' };
+// A draft is saved as it is (.md) or as a Word file the server builds itself (docxFromMarkdown), on any system.
+const DRAFT_FORMATS = ['md', 'docx'];
+// For the suite only: one plain-http host:port on this computer that downloads may use (a real room refuses this
+// computer and the home network). Said at start-up whenever it is set.
+const SAVE_TEST_HOST = process.env.ROOM_TEST_SAVE_HOST || '';
 const STDERR_CAP = 8 * 1024;
 // Never passed on to a run: an API key or token (pay-as-you-go billing), another endpoint, or another provider
 // (Bedrock, Vertex, Foundry). Each of them takes a run off the owner's Claude plan without anything showing it.
@@ -886,7 +907,7 @@ const NOTION_DBS = CONFIG.notionDatabases || {};
 const NOTION_PAGE_MAX = 100000;
 const MAX_REPOS = 30;
 // Every room starts with none of it, the default room included.
-const minimalTargets = () => ({ repos: [], publicRepos: [], notionDbs: [], notionPlaces: [], allowedRecipients: [], sendFrom: '' });
+const minimalTargets = () => ({ repos: [], publicRepos: [], notionDbs: [], notionPlaces: [], allowedRecipients: [], sendFrom: '', saveFolders: [] });
 const MAX_PLACES = 20;
 const NOTION_CHANNELS = CONFIG.notionChannels || ['X', 'LinkedIn', 'Substack Note', 'Substack Post', 'Instagram', 'Blog'];
 const NOTION_PAGE_URL = /^https:\/\/(app\.notion\.com|www\.notion\.so)\//;
@@ -957,7 +978,8 @@ ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {
 ` : ''}${notionSaving() && targets.notionPlaces.length ? `- Save anything else as a new Notion page (a long article, research, a strategy doc, a review, meeting notes, a digest): {"action": "notion_page", "parent": the Notion URL or id of the page to put it under, "summary": "one line", "title": "…", "content": "markdown (headings, lists, quotes, code, links), up to ${NOTION_PAGE_MAX} characters"}. You choose the place, one of this room's: ${targets.notionPlaces.map((p) => `${p.name} (${p.id})${p.for ? ` for ${p.for}` : ''}`).join('; ')}. You may also pick a more fitting sub-page inside one of these places that you find with Notion search (it's checked when the owner approves); it only works where the owner has shared the page with the room.${roomPages(space).length ? `\n- Update a Notion page this room created earlier, instead of making a new one for a new version of the same document: {"action": "notion_page_update", "page": its Notion URL or id, "summary": "one line, say what changed", "title": "…", "content": "the whole new version in markdown, up to ${NOTION_PAGE_MAX} characters"}. The new version goes on top and the previous one is kept under it. Only these pages can be updated: ${roomPages(space).map((r) => `${r.title} (${notionId(r.result.url)})`).join('; ')}.` : ''}
 ` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send by hand (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. Only a short draft opens straight in a mail app (up to about ${EMAIL_OPENS_ABOUT} characters of text); the owner copies and pastes a longer one by hand, so keep an email short where that fits the message, and don't split one email in two to get under it. This is allowed because the room never sends it: approving only records the owner's decision, then the owner opens the draft in a mail app and sends it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
 ` : `- Email drafts are off in this room because it has no email recipients. If the owner asks for an email, say that these can be turned on by adding the recipient (an address, or a domain) under Room settings → "Email recipients for drafts", and then ask again in a new chat. Don't write the email as a file instead.
-`}Nothing that publishes, schedules, posts or sends messages can be proposed${targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer the note and propose again.${targets.repos.length ? `
+`}${targets.saveFolders.length ? `- Save a file into one of this room's save folders on the owner's computer: {"action": "save_file", "summary": "one line", "folder": one of ${targets.saveFolders.map((f) => `"${tilde(f)}"`).join(', ')}, "name": "the file name the owner will see, with its extension", and either "url": "the https link of the file to download" or "draft": "the name of a file in drafts/ (one you or a maker wrote)"}. From a link: only ${Object.keys(SAVE_WEB_TYPES).map((e) => `.${e}`).join(', ')}, up to ${SAVE_MAX_BYTES / 1024 / 1024} MB, and the extension must be what the link really is (a web page isn't a PDF); give the link to the file itself, not to a page about it. A draft is saved as Markdown (name ending in .md) or as a Word file (name ending in .docx, with its headings, lists, links and tables; images become their description); the draft itself stays in drafts/. The server saves it only after the owner approves, never over an existing file (it adds " (2)" to the name). You can't open a saved file yourself unless that folder is also one this room reads. Propose this when the owner asks for a file to be saved or kept, not for every file you read.
+`: ''}Nothing that publishes, schedules, posts or sends messages can be proposed${targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer the note and propose again.${targets.repos.length ? `
 
 ${githubReading}` : ''}`;
 }
@@ -1367,7 +1389,8 @@ const targetsOf = (space) => {
   // a key without its entry (the proposal rules list each database's name and accounts), and it counts again once
   // the config has it back. The start-up says which rooms list one.
   const notionDbs = (Array.isArray(t.notionDbs) ? t.notionDbs : []).filter((k) => Object.hasOwn(NOTION_DBS, k));
-  return { ...t, notionDbs, publicRepos: t.publicRepos || [], allowedRecipients: t.allowedRecipients || [], sendFrom: t.sendFrom || '' };
+  // saveFolders: rooms saved before saving files existed have none.
+  return { ...t, notionDbs, publicRepos: t.publicRepos || [], allowedRecipients: t.allowedRecipients || [], sendFrom: t.sendFrom || '', saveFolders: Array.isArray(t.saveFolders) ? t.saveFolders.filter((f) => typeof f === 'string') : [] };
 };
 const isPublicRepo = (space, repo) => targetsOf(space).publicRepos.includes(repo);
 
@@ -1415,7 +1438,9 @@ function validateTargets(o) {
   // The consulting address the email cards show as "Send from"; the room never sends from it.
   const from = typeof o.sendFrom === 'string' ? o.sendFrom.trim() : '';
   if (from && (EMAIL_UNSAFE.test(from) || !EMAIL_ADDRESS.test(from))) throw new Error(`"${from}" isn't an email address for "Send from"`);
-  return { repos, publicRepos, notionDbs, notionPlaces, allowedRecipients, sendFrom: from && normAddress(from) };
+  // Folders approved files may be saved to (save_file), by their real path.
+  const saveFolders = [...new Set(list(o.saveFolders, 'save folders', SAVE_MAX_FOLDERS).map((f) => saveFolder(f)))];
+  return { repos, publicRepos, notionDbs, notionPlaces, allowedRecipients, sendFrom: from && normAddress(from), saveFolders };
 }
 
 // Folders with keys and credentials, and macOS's Library (Mail, Keychains, cookies, Messages): never a room folder,
@@ -1521,6 +1546,37 @@ function overlapsAttachments(folder) {
   return r === tmp || tmp.startsWith(r + '/') || r.startsWith(`${tmp}/${ATTACH_PREFIX}`);
 }
 
+// A folder a room may use, by its real path: a real directory inside the home folder, not the system's own folders, not
+// one with keys or settings, not the attachments folder. Symlinks are resolved, so the rule matches what is really used.
+// `what` names the use in the messages ("to read", "to save to").
+function roomFolder(f, what = 'to read') {
+  const home = process.env.HOME;
+  const expanded = f.startsWith('~') ? path.join(home, f.slice(1)) : f;
+  if (!path.isAbsolute(expanded)) throw new Error(`"${f}": use a full path, e.g. ~/Dev/my-repo`);
+  let real;
+  try { real = fs.realpathSync(expanded); } catch { throw new Error(`"${f}" doesn't exist`); }
+  if (!fs.statSync(real).isDirectory()) throw new Error(`"${f}" isn't a folder`);
+  if (real === '/' || home === real || home.startsWith(real + '/')) throw new Error(`"${f}" is too broad: pick a folder inside your home folder, not the home folder itself`);
+  if (SYSTEM_DIRS.some((d) => real === d || real.startsWith(d + '/'))) throw new Error(`"${f}" is a folder of the system itself (${SYSTEM_DIRS.join(', ')}), not one for agents ${what}`);
+  if (isSensitive([path.resolve(expanded), real], home)) throw new Error(`"${f}" holds keys or settings agents must never read (${[...SENSITIVE_DIRS, CLAUDE_DIR].map((d) => `~/${d}`).join(', ')}, and what they link to; in ~/.claude only ${INSTRUCTION_DIRS.join(', ')} are allowed): pick another folder`);
+  // A room folder that is, holds or sits inside the attachments folder would let every run in that room read
+  // files attached in another room.
+  if (overlapsAttachments(real)) throw new Error(`"${f}" holds the files attached to messages, which only the run they were sent to may read: pick another folder`);
+  return real;
+}
+
+// A save folder: a room folder (see roomFolder) that is also outside the Exec Room's own code and data, and not
+// inside a .git or .claude folder (settings, hooks and instructions that Claude Code and git act on by themselves).
+// Files are only ever saved directly in it, never in a folder under it.
+function saveFolder(f) {
+  const real = roomFolder(f, 'to save to');
+  const own = [__dirname, DATA_DIR].map((d) => (realOr(d) || path.resolve(d)).toLowerCase());
+  const r = real.toLowerCase();
+  if (own.some((d) => r === d || r.startsWith(d + '/'))) throw new Error(`"${f}" is part of the Exec Room itself (its code, drafts/ or data): pick a save folder outside it`);
+  if (r.split('/').some((part) => part === '.git' || part === CLAUDE_DIR)) throw new Error(`"${f}" is inside a .git or .claude folder, which holds settings and hooks: pick another save folder`);
+  return real;
+}
+
 // Folders must be real directories; the whole disk, the home folder and anything above it are too broad
 // (they'd include ~/.ssh and credentials). Symlinks are resolved, so the rule matches what is really read.
 function validateAccess(o) {
@@ -1531,21 +1587,7 @@ function validateAccess(o) {
     if (v.length > max) throw new Error(`at most ${max} ${field}`);
     return v.map((x) => x.trim()).filter(Boolean);
   };
-  const home = process.env.HOME;
-  const files = [...new Set(list(o.files, 'folders', MAX_FOLDERS).map((f) => {
-    const expanded = f.startsWith('~') ? path.join(home, f.slice(1)) : f;
-    if (!path.isAbsolute(expanded)) throw new Error(`"${f}": use a full path, e.g. ~/Dev/my-repo`);
-    let real;
-    try { real = fs.realpathSync(expanded); } catch { throw new Error(`"${f}" doesn't exist`); }
-    if (!fs.statSync(real).isDirectory()) throw new Error(`"${f}" isn't a folder`);
-    if (real === '/' || home === real || home.startsWith(real + '/')) throw new Error(`"${f}" is too broad: pick a folder inside your home folder, not the home folder itself`);
-    if (SYSTEM_DIRS.some((d) => real === d || real.startsWith(d + '/'))) throw new Error(`"${f}" is a folder of the system itself (${SYSTEM_DIRS.join(', ')}), not one for agents to read`);
-    if (isSensitive([path.resolve(expanded), real], home)) throw new Error(`"${f}" holds keys or settings agents must never read (${[...SENSITIVE_DIRS, CLAUDE_DIR].map((d) => `~/${d}`).join(', ')}, and what they link to; in ~/.claude only ${INSTRUCTION_DIRS.join(', ')} are allowed): pick another folder`);
-    // A room folder that is, holds or sits inside the attachments folder would let every run in that room read
-    // files attached in another room.
-    if (overlapsAttachments(real)) throw new Error(`"${f}" holds the files attached to messages, which only the run they were sent to may read: pick another folder`);
-    return real;
-  }))];
+  const files = [...new Set(list(o.files, 'folders', MAX_FOLDERS).map((f) => roomFolder(f)))];
   const HOST = /^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))*\.[a-z]{2,63}$/;
   const sites = [...new Set(list(o.sites, 'sites', MAX_SITES).map((h) => {
     const host = h.toLowerCase();
@@ -1851,7 +1893,63 @@ function validateRec(o, space = null) {
   if (o.action === 'create_agent') {
     return { action: 'create_agent', summary, agent: validateAgent(o) };
   }
+  if (o.action === 'save_file') {
+    const folders = targetsOf(space).saveFolders;
+    if (!folders.length) throw new Error("this room has no save folders, so it can't save files");
+    const folder = listedSaveFolder(folders, o.folder);
+    if (!folder) throw new Error(`"folder" must be one of this room's save folders: ${folders.map(tilde).join(', ')}`);
+    if ((o.url == null) === (o.draft == null)) throw new Error('give either "url" (a link to download) or "draft" (a file in drafts/), not both');
+    const { stem, ext } = saveName(o.name);
+    if (o.url != null) {
+      if (!Object.hasOwn(SAVE_WEB_TYPES, ext)) throw new Error(`"name": from a link only ${Object.keys(SAVE_WEB_TYPES).map((e) => `.${e}`).join(', ')} files can be saved`);
+      return { action: 'save_file', summary, url: saveUrl(o.url).href, folder, where: tilde(folder), name: `${stem}.${ext}`, ext };
+    }
+    const draft = typeof o.draft === 'string' ? o.draft.trim().replace(/^drafts\//, '') : '';
+    if (!DRAFT_NAME.test(draft) || !draftExists(draft)) throw new Error(`"draft": "${String(o.draft).slice(0, 100)}" isn't a file in drafts/`);
+    if (!DRAFT_FORMATS.includes(ext)) throw new Error(`"name": a draft is saved as ${DRAFT_FORMATS.map((e) => `.${e}`).join(' or ')}`);
+    return { action: 'save_file', summary, draft, folder, where: tilde(folder), name: `${stem}.${ext}`, ext };
+  }
   throw new Error(`unknown action "${o.action}"`);
+}
+
+// The save folder an agent named, as stored in the room (it may write it with ~), or null.
+function listedSaveFolder(folders, given) {
+  if (typeof given !== 'string' || !given.trim()) return null;
+  const g = given.trim().replace(/\/+$/, '');
+  const expanded = g.startsWith('~') ? path.join(process.env.HOME, g.slice(1)) : g;
+  return folders.find((f) => f === expanded || f === realOr(expanded)) || null;
+}
+
+// A file name the owner will see: its last path part, without control characters, characters macOS and Windows
+// don't allow, and a leading dot (a hidden file) or dash. The extension decides what may be saved, and is lower-cased.
+// Names Claude Code or a shell would act on (CLAUDE.md, env and key files) are refused outright.
+function saveName(v) {
+  if (typeof v !== 'string' || !v.trim()) throw new Error('"name" is missing');
+  const full = v.split(/[\\/]/).pop().replace(/[\u0000-\u001f\u007f<>:"|?*]/g, '').replace(/\s+/g, ' ').trim();
+  const dot = full.lastIndexOf('.');
+  if (dot < 1) throw new Error(`"name": "${v.slice(0, 100)}" needs a name and an extension, e.g. Report.pdf`);
+  const ext = full.slice(dot + 1).toLowerCase();
+  const stem = full.slice(0, dot).replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').slice(0, 120);
+  if (!stem) throw new Error(`"name": "${v.slice(0, 100)}" needs a name before the extension`);
+  if (/^(claude(\.local)?|agents|credentials|\.?env.*|id_(rsa|ed25519|ecdsa).*)$/i.test(stem)) throw new Error(`"name": "${stem}.${ext}" is a name that tools act on by themselves: pick another`);
+  return { stem, ext };
+}
+
+// A link the server may download from: https on the standard port, no user name or password in it, not an
+// address on this computer or the home network (checked again on every connection and redirect, see saveFetch).
+function saveUrl(v) {
+  let u;
+  try { u = new URL(String(v).trim()); } catch { throw new Error(`"url": "${String(v).slice(0, 200)}" isn't a link`); }
+  if (String(v).length > 2000) throw new Error('"url" is longer than 2000 characters');
+  const testHost = SAVE_TEST_HOST && u.protocol === 'http:' && u.host === SAVE_TEST_HOST;
+  if (u.protocol !== 'https:' && !testHost) throw new Error('"url" must start with https://');
+  if (u.username || u.password) throw new Error('"url" may not hold a user name or password');
+  if (u.port && !testHost) throw new Error('"url" must use the standard https port');
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  if (!testHost && (net.isIP(host) ? privateAddress(host) : /(^|\.)(localhost|local|internal|home\.arpa)$/i.test(host) || !host.includes('.'))) {
+    throw new Error(`"url": ${u.hostname} is on this computer or the home network, which the room never downloads from`);
+  }
+  return u;
 }
 
 // The 32-hex page id at the end of a Notion URL (after any title slug) or a bare id with or without dashes.
@@ -2167,7 +2265,7 @@ function extractRecs(text, space) {
 // A proposal in a block the room doesn't read (tagged json, or with no tag) gets no card, and the page shows it as
 // a piece of code: smaller models do this. It is only noticed here, never accepted, so that the owner can be told.
 // A block counts when its JSON names one of validateRec's actions.
-const REC_ACTIONS = ['dispatch', 'github_issue', 'github_comment', 'notion_draft', 'notion_page', 'notion_page_update', 'email_draft', 'create_agent'];
+const REC_ACTIONS = ['dispatch', 'github_issue', 'github_comment', 'notion_draft', 'notion_page', 'notion_page_update', 'email_draft', 'create_agent', 'save_file'];
 function hasMisfiledRec(text) {
   const rest = text.replace(/```recommendation[^\n]*\n[\s\S]*?\n```/g, '');
   return [...rest.matchAll(/```[^\n]*\n([\s\S]*?)\n```/g)].some((m) => {
@@ -2724,6 +2822,302 @@ function looksLike(kind, bytes) {
 }
 
 const fileSize = (n) => (n < 1024 ? `${n} bytes` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+// ---- Saving files (save_file). Everything below runs only after the owner approved the proposal.
+
+// Addresses on this computer, the home or office network, and other ranges no public site uses. A download that
+// resolves only to these is refused, so a link (or a redirect) can't reach the router, a NAS or a local server.
+const PRIVATE_NETS = new net.BlockList();
+for (const [a, p] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12],
+  ['192.0.0.0', 24], ['192.0.2.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24], ['224.0.0.0', 3]]) PRIVATE_NETS.addSubnet(a, p, 'ipv4');
+// IPv6: unspecified and loopback, IPv4 inside IPv6 (mapped, compatible, NAT64, 6to4), unique-local, link-local,
+// multicast and documentation.
+for (const [a, p] of [['::', 96], ['::ffff:0:0', 96], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['100::', 64], ['2001:db8::', 32], ['2002::', 16],
+  ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) PRIVATE_NETS.addSubnet(a, p, 'ipv6');
+function privateAddress(address) {
+  const kind = net.isIP(address);
+  return !kind || PRIVATE_NETS.check(address, kind === 4 ? 'ipv4' : 'ipv6');
+}
+
+// DNS for a download: only public addresses are used, and the connection goes to the address checked here, so a
+// name can't pass the check and then resolve somewhere else.
+function saveLookup(hostname, options, cb) {
+  dns.lookup(hostname, { ...options, all: true }, (err, addrs) => {
+    if (err) return cb(err);
+    const ok = addrs.filter((a) => !privateAddress(a.address));
+    if (!ok.length) return cb(Object.assign(new Error(`${hostname} is on this computer or the home network, which the room never downloads from`), { code: 'EPRIVATE' }));
+    return options && options.all ? cb(null, ok) : cb(null, ok[0].address, ok[0].family);
+  });
+}
+
+// Downloads a link: https only, redirects followed (each one checked again, at most SAVE_MAX_REDIRECTS), at most
+// SAVE_MAX_BYTES, SAVE_TIMEOUT_MS for the whole download. Returns the bytes and the link they finally came from.
+async function saveFetch(link) {
+  const deadline = Date.now() + SAVE_TIMEOUT_MS;
+  let url = saveUrl(link);
+  for (let hop = 0; ; hop += 1) {
+    const got = await saveGet(url, deadline);
+    if (!got.redirect) return { bytes: got.bytes, url: url.href };
+    if (hop >= SAVE_MAX_REDIRECTS) throw new Error(`the link redirected more than ${SAVE_MAX_REDIRECTS} times`);
+    let next;
+    try { next = new URL(got.redirect, url); } catch { throw new Error('the link redirected to something that isn\'t a link'); }
+    try { url = saveUrl(next.href); } catch (err) { throw new Error(`the link redirected to ${next.href.slice(0, 200)}, which the room won't download from: ${err.message.replace(/^"url":? ?/, '')}`); }
+  }
+}
+
+function saveGet(url, deadline) {
+  return new Promise((resolve, reject) => {
+    const test = SAVE_TEST_HOST && url.protocol === 'http:' && url.host === SAVE_TEST_HOST;
+    let timer = null;
+    const fail = (err) => { clearTimeout(timer); reject(err); };
+    const req = (test ? http : https).get(url, {
+      ...(test ? {} : { lookup: saveLookup }),
+      headers: { 'user-agent': 'ExecRoom/1.0 (saves a file the owner approved)', accept: '*/*', 'accept-encoding': 'identity' },
+    }, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+        res.resume();
+        clearTimeout(timer);
+        if (!res.headers.location) return reject(new Error(`the site answered ${res.statusCode} (a redirect) without saying where to`));
+        return resolve({ redirect: res.headers.location });
+      }
+      if (res.statusCode !== 200) { res.resume(); return fail(new Error(`the site answered ${res.statusCode}${res.statusMessage ? ` (${res.statusMessage})` : ''} instead of the file`)); }
+      const told = Number(res.headers['content-length']);
+      const tooBig = () => new Error(`the file is larger than ${SAVE_MAX_BYTES / 1024 / 1024} MB`);
+      if (told > SAVE_MAX_BYTES) { res.destroy(); return fail(tooBig()); }
+      const chunks = [];
+      let size = 0;
+      res.on('data', (c) => {
+        size += c.length;
+        if (size > SAVE_MAX_BYTES) { res.destroy(); fail(tooBig()); } else chunks.push(c);
+      });
+      res.on('error', fail);
+      res.on('end', () => { clearTimeout(timer); resolve({ bytes: Buffer.concat(chunks) }); });
+    });
+    timer = setTimeout(() => { req.destroy(); reject(new Error(`the download didn't finish within ${SAVE_TIMEOUT_MS / 1000}s`)); }, Math.max(1, deadline - Date.now()));
+    req.on('error', (err) => fail(err.code === 'EPRIVATE' ? err : new Error(`couldn't reach ${url.hostname}: ${err.code || err.message}`)));
+  });
+}
+
+// Whether downloaded bytes are what the file's extension says. A web page sent in place of a file (a sign-in page,
+// an error page, a page about the file) is refused under every extension.
+function saveLooksLike(ext, bytes) {
+  const kind = SAVE_WEB_TYPES[ext];
+  if (!bytes.length) return false;
+  if (['pdf', 'png', 'jpeg', 'gif', 'webp'].includes(kind)) return looksLike(kind, bytes);
+  if (['docx', 'xlsx', 'pptx'].includes(kind)) {
+    // An Office file is a zip whose list of parts names the document's own folder.
+    const head = bytes.subarray(0, 4).toString('latin1') === 'PK\x03\x04';
+    const dir = { docx: 'word/', xlsx: 'xl/', pptx: 'ppt/' }[kind];
+    return head && bytes.includes('[Content_Types].xml') && bytes.includes(dir);
+  }
+  if (!looksLike('text', bytes)) return false;
+  const text = bytes.toString('utf8');
+  if (/^\s*(<!doctype html|<html[\s>])/i.test(text.slice(0, 1024))) return false;
+  if (kind === 'json') { try { JSON.parse(text); } catch { return false; } }
+  return true;
+}
+
+// A draft's bytes as the file to save: Markdown as it is, or as a Word file (docxFromMarkdown). Only a plain file in
+// drafts/ itself (no link to somewhere else).
+function draftBytes(name, ext) {
+  const file = path.join(DRAFTS_DIR, name);
+  let st;
+  try { st = fs.lstatSync(file); } catch { throw new Error(`${name} is no longer in drafts/`); }
+  if (!st.isFile() || path.dirname(fs.realpathSync(file)) !== (realOr(DRAFTS_DIR) || DRAFTS_DIR)) throw new Error(`${name} isn't a plain file in drafts/`);
+  if (st.size > DRAFT_MAX_BYTES) throw new Error(`${name} is larger than ${DRAFT_MAX_BYTES / 1024} KB`);
+  const bytes = fs.readFileSync(file);
+  return ext === 'md' ? bytes : docxFromMarkdown(bytes.toString('utf8'), name.replace(/\.md$/, ''));
+}
+
+// ---- A Word file from Markdown, built here so it works the same on every system and needs nothing installed.
+// It keeps what drafts use: headings (Word's own Heading styles, so they show in the navigation pane), paragraphs,
+// bold, italic, strikethrough and inline code, bullet and numbered lists (nested, real Word lists), task lists,
+// links (clickable, http(s) and mailto only), tables, quotes, code blocks and lines. Images become their description
+// (a draft's image is a link to somewhere else, and nothing is fetched). Raw HTML in a draft is kept as text.
+
+const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+// Text as XML: escaped, without the control characters XML can't hold.
+const xmlText = (t) => String(t).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// marked leaves character references in text as written (&amp;, &#39;); the Word file wants the characters.
+const unEntity = (t) => String(t).replace(/&(amp|lt|gt|quot|#39|#x27|nbsp);/g, (m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'", nbsp: ' ' })[e]);
+
+function docxFromMarkdown(md, title) {
+  const tokens = new Marked({ gfm: true }).lexer(md);
+  const links = [];          // hyperlink targets; their relationship ids are rIdL1, rIdL2, …
+  const numbered = [];       // one numbering instance per numbered list, so each starts at its own number
+  const run = (text, f = {}) => {
+    const props = [f.bold && '<w:b/>', f.italic && '<w:i/>', f.strike && '<w:strike/>', f.code && '<w:rStyle w:val="InlineCode"/>', f.link && '<w:rStyle w:val="Hyperlink"/>'].filter(Boolean).join('');
+    // Line breaks inside a text run (soft breaks in a paragraph) read as spaces, as in the viewer.
+    return `<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ''}<w:t xml:space="preserve">${xmlText(unEntity(text).replace(/\n/g, ' '))}</w:t></w:r>`;
+  };
+  const inline = (list = [], f = {}) => list.map((t) => {
+    switch (t.type) {
+      case 'strong': return inline(t.tokens, { ...f, bold: true });
+      case 'em': return inline(t.tokens, { ...f, italic: true });
+      case 'del': return inline(t.tokens, { ...f, strike: true });
+      case 'codespan': return run(t.text, { ...f, code: true });
+      case 'br': return '<w:r><w:br/></w:r>';
+      case 'image': return run(t.text || t.href || '', f);
+      case 'link': {
+        if (!/^(https?:|mailto:)/i.test(t.href || '') || f.link) return inline(t.tokens, f);
+        links.push(t.href);
+        return `<w:hyperlink r:id="rIdL${links.length}" w:history="1">${inline(t.tokens, { ...f, link: true })}</w:hyperlink>`;
+      }
+      case 'text': return t.tokens ? inline(t.tokens, f) : run(t.text, f);
+      case 'escape': case 'html': default: return run(t.text ?? t.raw ?? '', f);
+    }
+  }).join('');
+  const para = (content, props = '') => `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ''}${content}</w:p>`;
+  // `style`: the paragraph style blocks inside a quote get; `list`: the numbering of the item the blocks are in.
+  const blocks = (list = [], ctx = {}) => list.map((t) => {
+    const style = ctx.style ? `<w:pStyle w:val="${ctx.style}"/>` : '';
+    switch (t.type) {
+      case 'space': return '';
+      case 'heading': return para(inline(t.tokens), `<w:pStyle w:val="Heading${Math.min(t.depth, 6)}"/>`);
+      case 'paragraph': return para(inline(t.tokens), style + (ctx.list || ''));
+      case 'text': return para(t.tokens ? inline(t.tokens) : run(t.text), style + (ctx.list || ''));
+      case 'blockquote': return blocks(t.tokens, { ...ctx, style: 'Quote' });
+      case 'hr': return para('', '<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/></w:pBdr>');
+      case 'code': return para(t.text.split('\n').map((line, i) => `${i ? '<w:r><w:br/></w:r>' : ''}${run(line)}`).join(''), '<w:pStyle w:val="CodeBlock"/>');
+      case 'html': return para(run(t.text.trim()), style);
+      case 'list': {
+        const level = ctx.level == null ? 0 : ctx.level + 1;
+        let numId = 1;
+        if (t.ordered) { numbered.push(Number(t.start) || 1); numId = numbered.length + 1; }
+        return t.items.map((item) => {
+          const numbering = `<w:numPr><w:ilvl w:val="${Math.min(level, 8)}"/><w:numId w:val="${numId}"/></w:numPr>`;
+          const box = item.task ? run(item.checked ? '☒ ' : '☐ ') : '';
+          let first = true;
+          return item.tokens.filter((x) => x.type !== 'checkbox').map((x) => {
+            if (x.type === 'list') return blocks([x], { ...ctx, level });
+            // The first paragraph of an item carries its bullet or number; the ones after it are indented under it.
+            const lead = first ? numbering : `<w:ind w:left="${720 * (level + 1)}"/>`;
+            const out = blocks([x], { ...ctx, level, list: lead }).replace(/^<w:p>(<w:pPr>.*?<\/w:pPr>)?/, (m) => (first && box ? `${m}${box}` : m));
+            first = false;
+            return out;
+          }).join('');
+        }).join('');
+      }
+      case 'table': {
+        const cell = (c, head) => `<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/></w:tcPr>${para(inline(c.tokens, head ? { bold: true } : {}), c.align ? `<w:jc w:val="${{ left: 'left', center: 'center', right: 'right' }[c.align]}"/>` : '')}</w:tc>`;
+        const row = (cells, head) => `<w:tr>${head ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${cells.map((c) => cell(c, head)).join('')}</w:tr>`;
+        // A paragraph after a table keeps two tables from merging into one.
+        // Borders on the table itself as well as in its style: some readers (Quick Look, Pages) draw only these.
+        const borders = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((side) => `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>`).join('');
+        return `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="0" w:type="auto"/><w:tblBorders>${borders}</w:tblBorders></w:tblPr><w:tblGrid>${t.header.map(() => '<w:gridCol/>').join('')}</w:tblGrid>${row(t.header, true)}${t.rows.map((r) => row(r, false)).join('')}</w:tbl>${para('')}`;
+      }
+      default: return t.text ? para(run(t.text), style) : '';
+    }
+  }).join('');
+  const body = blocks(tokens);
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const document = `${XML_HEAD}<w:document ${W}><w:body>${body || para('')}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const heading = (n, size) => `<w:style w:type="paragraph" w:styleId="Heading${n}"><w:name w:val="heading ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="${n === 1 ? 360 : 240}" w:after="120"/><w:outlineLvl w:val="${n - 1}"/></w:pPr><w:rPr><w:b/><w:sz w:val="${size}"/></w:rPr></w:style>`;
+  const styles = `${XML_HEAD}<w:styles ${W}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:lang w:val="en-GB"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`
+    + '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'
+    + [[1, 36], [2, 30], [3, 26], [4, 24], [5, 22], [6, 22]].map(([n, size]) => heading(n, size)).join('')
+    + '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:basedOn w:val="Normal"/><w:qFormat/><w:pPr><w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="BBBBBB"/></w:pBdr><w:ind w:left="360"/></w:pPr><w:rPr><w:i/><w:color w:val="555555"/></w:rPr></w:style>'
+    + '<w:style w:type="paragraph" w:styleId="CodeBlock"><w:name w:val="Code Block"/><w:basedOn w:val="Normal"/><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/><w:spacing w:after="120" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:rFonts w:ascii="Menlo" w:hAnsi="Menlo" w:cs="Consolas"/><w:sz w:val="19"/></w:rPr></w:style>'
+    + '<w:style w:type="character" w:styleId="InlineCode"><w:name w:val="Inline Code"/><w:rPr><w:rFonts w:ascii="Menlo" w:hAnsi="Menlo" w:cs="Consolas"/><w:sz w:val="19"/><w:shd w:val="clear" w:color="auto" w:fill="F2F2F2"/></w:rPr></w:style>'
+    + '<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style>'
+    + '<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:left w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:right w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/></w:tblBorders><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:pPr><w:spacing w:after="0"/></w:pPr></w:style>'
+    + '</w:styles>';
+  // Two list kinds: bullets (•, ◦, ▪ by level) and numbers (1., a., i. by level), nine levels each.
+  const BULLETS = ['•', '◦', '▪'];
+  const lvl = (i, fmt, text) => `<w:lvl w:ilvl="${i}"><w:start w:val="1"/><w:numFmt w:val="${fmt}"/><w:lvlText w:val="${text}"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="${720 * (i + 1)}" w:hanging="360"/></w:pPr></w:lvl>`;
+  const NUMBER_FMTS = ['decimal', 'lowerLetter', 'lowerRoman'];
+  const numbering = `${XML_HEAD}<w:numbering ${W}>`
+    + `<w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/>${[...Array(9).keys()].map((i) => lvl(i, 'bullet', BULLETS[i % 3])).join('')}</w:abstractNum>`
+    + `<w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/>${[...Array(9).keys()].map((i) => lvl(i, NUMBER_FMTS[i % 3], `%${i + 1}.`)).join('')}</w:abstractNum>`
+    + '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>'
+    + numbered.map((start, i) => `<w:num w:numId="${i + 2}"><w:abstractNumId w:val="1"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="${start}"/></w:lvlOverride></w:num>`).join('')
+    + '</w:numbering>';
+  const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  const docRels = `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="${REL}/styles" Target="styles.xml"/><Relationship Id="rIdNumbering" Type="${REL}/numbering" Target="numbering.xml"/>`
+    + links.map((href, i) => `<Relationship Id="rIdL${i + 1}" Type="${REL}/hyperlink" Target="${xmlText(href)}" TargetMode="External"/>`).join('') + '</Relationships>';
+  const core = `${XML_HEAD}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlText(title)}</dc:title><dc:creator>Exec Room</dc:creator></cp:coreProperties>`;
+  const WML = 'application/vnd.openxmlformats-officedocument.wordprocessingml';
+  return zipFiles([
+    ['[Content_Types].xml', `${XML_HEAD}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="${WML}.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="${WML}.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="${WML}.numbering+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`],
+    ['_rels/.rels', `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`],
+    ['word/document.xml', document], ['word/styles.xml', styles], ['word/numbering.xml', numbering],
+    ['word/_rels/document.xml.rels', docRels], ['docProps/core.xml', core],
+  ]);
+}
+
+// A zip of text files, compressed (deflate), as a .docx is. Fixed date, so the same draft gives the same file.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (buf) => { let c = 0xffffffff; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function zipFiles(files) {
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  const DOS_TIME = 0;
+  const DOS_DATE = (2026 - 1980) << 9 | 1 << 5 | 1;
+  for (const [name, text] of files) {
+    const nameBuf = Buffer.from(name, 'utf8');
+    const data = Buffer.from(text, 'utf8');
+    const packed = zlib.deflateRawSync(data);
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6); local.writeUInt16LE(8, 8);
+    local.writeUInt16LE(DOS_TIME, 10); local.writeUInt16LE(DOS_DATE, 12); local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(packed.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nameBuf.length, 26); local.writeUInt16LE(0, 28);
+    const head = Buffer.alloc(46);
+    head.writeUInt32LE(0x02014b50, 0); head.writeUInt16LE(20, 4); head.writeUInt16LE(20, 6); head.writeUInt16LE(0x0800, 8); head.writeUInt16LE(8, 10);
+    head.writeUInt16LE(DOS_TIME, 12); head.writeUInt16LE(DOS_DATE, 14); head.writeUInt32LE(crc, 16); head.writeUInt32LE(packed.length, 20);
+    head.writeUInt32LE(data.length, 24); head.writeUInt16LE(nameBuf.length, 28); head.writeUInt32LE(offset, 42);
+    parts.push(local, nameBuf, packed);
+    central.push(head, nameBuf);
+    offset += 30 + nameBuf.length + packed.length;
+  }
+  const dir = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(files.length, 8); end.writeUInt16LE(files.length, 10);
+  end.writeUInt32LE(dir.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, dir, end]);
+}
+
+// Writes a new file directly in the folder, never over an existing one or through a link there: "Name.pdf", else
+// "Name (2).pdf", and so on. Returns where it went.
+function writeNewFile(folder, name, bytes) {
+  const dot = name.lastIndexOf('.');
+  const stem = name.slice(0, dot);
+  const ext = name.slice(dot + 1);
+  const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW || 0);
+  for (let n = 1; n <= 100; n += 1) {
+    const file = n === 1 ? name : `${stem} (${n}).${ext}`;
+    const full = path.join(folder, file);
+    let fd;
+    try { fd = fs.openSync(full, flags, 0o644); } catch (err) { if (err.code === 'EEXIST') continue; throw new Error(`couldn't create ${file}: ${err.code || err.message}`); }
+    try {
+      for (let at = 0; at < bytes.length;) at += fs.writeSync(fd, bytes, at, bytes.length - at);
+    } catch (err) {
+      fs.closeSync(fd);
+      fs.rmSync(full, { force: true });
+      throw new Error(`couldn't write ${file}: ${err.code || err.message}`);
+    }
+    fs.closeSync(fd);
+    return { path: full, name: file, size: bytes.length };
+  }
+  throw new Error(`${name} and 99 numbered copies of it already exist in that folder`);
+}
+
+// Carries out an approved save_file: the folder is checked again (it may have been removed from the room, moved,
+// or swapped for a link since the card appeared), then the file is fetched or converted and written.
+async function saveApprovedFile(rec) {
+  const folder = saveFolder(rec.folder);
+  if (folder !== rec.folder) throw new Error(`${tilde(rec.folder)} now leads somewhere else (${tilde(folder)}), so nothing was saved`);
+  let bytes;
+  if (rec.url) {
+    ({ bytes } = await saveFetch(rec.url));
+    if (!saveLooksLike(rec.ext, bytes)) throw new Error(`what the link gave isn't a .${rec.ext} file (often a web page, such as a sign-in page, instead of the file), so nothing was saved`);
+  } else {
+    bytes = draftBytes(rec.draft, rec.ext);
+  }
+  const saved = writeNewFile(folder, rec.name, bytes);
+  return { path: saved.path, shown: tilde(saved.path), name: saved.name, size: saved.size };
+}
 
 // Writes a job's attached files into its own folder and returns what the agent is told about them. The folder is
 // noted on the job first, so finish() removes it even when a write fails halfway.
@@ -3492,6 +3886,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
   const targets = targetsOf(spaceOf(rec.roomId));
   const offEmail = rec.action === 'email_draft' ? notAllowed(rec, targets.allowedRecipients) : [];
   const offList = (rec.action === 'github_issue' || rec.action === 'github_comment') && !roomRepo(spaceOf(rec.roomId), rec.repo) ? `${rec.repo} is no longer one of this room's repos`
+    : rec.action === 'save_file' && !targets.saveFolders.includes(rec.folder) ? `${tilde(rec.folder)} is no longer one of this room's save folders`
     : rec.action === 'notion_draft' && !targets.notionDbs.includes(rec.database) ? `this room can no longer save posts to ${Object.hasOwn(NOTION_DBS, rec.database) ? NOTION_DBS[rec.database].name : `"${rec.database}" (room.config.json doesn't list that database)`}`
       : offEmail.length ? `${offEmail.join(' and ')} ${offEmail.length > 1 ? 'are' : 'is'} no longer on this room's recipient list`
         : null;
@@ -3527,6 +3922,18 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     }
     rec.state = error ? 'failed' : 'done';
     rec.result = error ? { urls, error } : { urls };
+    saveRecs();
+    logDecision(rec, { result: rec.result });
+    return res.json({ events: [decision, recResult(rec, rec.result)] });
+  }
+  if (rec.action === 'save_file') {
+    try {
+      rec.result = await saveApprovedFile(rec);
+      rec.state = 'done';
+    } catch (err) {
+      rec.result = { error: err.message.slice(0, 500) };
+      rec.state = 'failed';
+    }
     saveRecs();
     logDecision(rec, { result: rec.result });
     return res.json({ events: [decision, recResult(rec, rec.result)] });
@@ -3808,7 +4215,7 @@ function publicSpace(space) {
   return {
     id: space.id, name: space.name, description: space.description || '', brief: space.brief || '', members: space.members, focus: focus ? focus.key : null, isDefault: space.id === DEFAULT_SPACE,
     access: { ...access, files: access.files.map(tilde) },
-    targets: targetsOf(space),
+    targets: { ...targetsOf(space), saveFolders: targetsOf(space).saveFolders.map(tilde) },
   };
 }
 
@@ -4093,6 +4500,8 @@ app.post('/api/workspaces/:id', (req, res) => {
   } catch (err) { return res.status(400).json({ error: err.message }); }
   // A page from before the MCP servers sends access without them: the room keeps the ones it has on.
   if (fields.access && req.body.access.mcp === undefined) fields.access.mcp = { ...(accessOf(space).mcp || {}) };
+  // The same for a page from before saving files: it sends targets without save folders, and the room keeps its own.
+  if (fields.targets && req.body.targets.saveFolders === undefined) fields.targets.saveFolders = [...targetsOf(space).saveFolders];
   // When the brief's text changes, so does its stamp: chats that are already running then tell Coen (see briefStamp).
   if (fields.brief !== undefined && fields.brief !== (space.brief || '')) fields.briefAt = new Date().toISOString();
   Object.assign(space, fields, { updatedAt: new Date().toISOString() });
@@ -4305,6 +4714,8 @@ function decisionsOf(space) {
         // Every file a job saved is named, whatever its kind (a patch, a mockup); only a .md draft opens in the viewer.
         drafts: strings(result.drafts).filter((n) => DRAFT_FILE.test(n)).map((name) => ({ name, exists: draftExists(name), opens: DRAFT_NAME.test(name) })),
         ...(result.agent && typeof result.agent.name === 'string' && { agent: result.agent.name }),
+        // A file saved into a save folder: where it went, as the owner sees the path.
+        ...(r.action === 'save_file' && typeof result.shown === 'string' && { saved: result.shown }),
         ...(typeof result.error === 'string' && { error: result.error }),
       };
     });
@@ -4479,6 +4890,7 @@ function contextCheck() {
 
 app.listen(PORT, HOST, () => {
   console.log(`Exec Room (headless Claude Code) at http://127.0.0.1:${PORT}/room.html`);
+  if (SAVE_TEST_HOST) console.log(`Test setting ROOM_TEST_SAVE_HOST is on: approved downloads may use plain http from ${SAVE_TEST_HOST} on this computer. Never set it for a real room.`);
   contextCheck();
   // Said after the servers' check: how agents read Notion depends on whether the Notion sign-in works.
   checkMcpServers().then(() => { if (KEY_MODE) console.log(`Runs are paid with an API key (pay-as-you-go), at most $${RUN_CAP_USD.toFixed(2)} a run and $${DAY_CAP_USD.toFixed(2)} a day. Agents have no Microsoft 365 tools in this mode, and read Notion ${notionReader() ? 'through its Connect sign-in' : NOTION_TOKEN ? 'only through pages linked in a message (connect Notion on the Exec Room settings page to give them all of it)' : 'not at all (connect Notion on the Exec Room settings page)'}.`); });

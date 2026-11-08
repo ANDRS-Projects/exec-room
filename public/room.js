@@ -544,6 +544,7 @@ function addRecCard(rec) {
     : rec.action === 'email_draft' ? 'Proposal · email draft'
     : rec.action === 'notion_page' ? 'Proposal · Notion page'
     : rec.action === 'notion_page_update' ? 'Proposal · update a Notion page'
+    : rec.action === 'save_file' ? 'Proposal · save a file'
     : rec.action === 'github_comment' ? 'Proposal · GitHub comment' : 'Proposal · GitHub issue';
   head.append(el('span', 'rec-kind', rec.by ? title.replace(/^Proposal/, `Proposal from ${nameOf(rec.by)}`) : title), pill);
   // Under the summary, for a dismissed card only: why it was dismissed (when the owner said), and a way to read
@@ -630,6 +631,23 @@ function addRecCard(rec) {
     where.lastChild.append(page, ' · a page this room created');
     card.append(where, recField('Title', rec.title), recDetails('New version', rec.content),
       el('p', 'rec-note', 'The new version goes on top of the page. What is there now is kept under it, as "Previous version".'));
+  } else if (rec.action === 'save_file') {
+    // From a link: the full link and its site, so the owner sees where it comes from before the server fetches it.
+    // The link isn't clickable: opening it here would download it in the browser, outside the room's checks.
+    if (rec.url) {
+      let site = '';
+      try { site = new URL(rec.url).hostname; } catch { /* the server only stores links it could parse */ }
+      card.append(recField('From', site ? `${site} · ${rec.url}` : rec.url));
+      card.append(el('p', 'rec-note', 'Downloaded when you approve. Saved only if it really is that kind of file and at most 25 MB.'));
+    } else {
+      const from = recField('From', '');
+      addDraftChip({ el: from.lastChild }, rec.draft);
+      card.append(from);
+    }
+    card.append(recField('Save as', rec.name), recField('In', rec.where || rec.folder));
+    card.append(el('p', 'rec-note', rec.url ? 'If a file with that name is there already, this one gets “(2)” added; nothing is overwritten.'
+      : rec.ext === 'docx' ? 'Made into a Word file with its headings, lists, links and tables; images become their description. The draft stays in drafts/. Nothing is overwritten.'
+        : 'Copied as it is; the draft stays in drafts/. Nothing is overwritten.'));
   } else if (rec.action === 'github_comment') {
     // Link the issue so it can be checked before approving.
     const issue = el('a', null, `${rec.repo}#${rec.issue}`);
@@ -661,6 +679,7 @@ function addRecCard(rec) {
     github_issue: rec.public ? 'Approve · publish public issue' : 'Approve · create issue',
     github_comment: rec.public ? 'Approve · post public comment' : 'Approve · post comment',
     create_agent: rec.action === 'create_agent' ? `Approve · add ${rec.agent.name} to the room` : '',
+    save_file: rec.url ? 'Approve · download and save' : 'Approve · save the file',
   };
   const approve = el('button', 'approve', approveLabel[rec.action]);
   const revise = el('button', 'ghost', 'Revise');
@@ -816,6 +835,8 @@ function showRecResult(ev) {
       entry.status.append(link);
     }
     if (ev.error) entry.status.append(el('span', 'err-text', ' ' + ev.error));
+  } else if (entry.rec.action === 'save_file' && typeof ev.shown === 'string') {
+    entry.status.append(el('span', null, `Saved as ${ev.shown}${typeof ev.size === 'number' ? ` (${fileSize(ev.size)})` : ''}.`));
   } else if (isNotion || isGithubUrl(ev.url)) {
     const comment = /#issuecomment-/.test(ev.url);
     const link = el('a', null, isNotion ? 'Open in Notion' : comment ? 'Open the comment on GitHub' : 'Open the issue on GitHub');
@@ -2099,6 +2120,9 @@ function openSpaceEditor(w) {
   renderAccessList('publicRepos');
   accessLists.allowedRecipients = [...(targets.allowedRecipients || [])];
   renderAccessList('allowedRecipients');
+  // Rooms saved before saving files existed have no save folders.
+  accessLists.saveFolders = [...(targets.saveFolders || [])];
+  renderAccessList('saveFolders');
   $('targets-send-from').value = targets.sendFrom || '';
   $('targets-dbs').replaceChildren(...notionDbs.map((db) => {
     const label = el('label', 'choice');
@@ -2133,7 +2157,7 @@ function syncEveryone() {
 }
 
 // Folders and sites as editable lists; the server checks them (real folders, not too broad; exact site names).
-const accessLists = { files: [], sites: [], repos: [], publicRepos: [], allowedRecipients: [] };   // repos: the private ones
+const accessLists = { files: [], sites: [], repos: [], publicRepos: [], allowedRecipients: [], saveFolders: [] };   // repos: the private ones
 let places = [];   // Notion places: { id or url, name, for }
 let editingPlace = null;   // index of the place open for editing in its row
 let editingFolder = null;  // the same for "Folders it can read"
@@ -2144,6 +2168,7 @@ const ACCESS_UI = {
   repos: { list: 'targets-repos', input: 'targets-repo-input', add: 'targets-repo-add', error: 'targets-repo-error', label: 'Private repos for issues', empty: 'None' },
   publicRepos: { list: 'targets-public-repos', input: 'targets-public-repo-input', add: 'targets-public-repo-add', error: 'targets-public-repo-error', label: 'Public repos for issues', empty: 'None: no public issues from this room' },
   allowedRecipients: { list: 'targets-recipients', input: 'targets-recipient-input', add: 'targets-recipient-add', error: 'targets-recipient-error', label: 'Email recipients for drafts', empty: 'None: no email drafts from this room' },
+  saveFolders: { list: 'targets-save-folders', input: 'targets-save-folder-input', add: 'targets-save-folder-add', error: 'targets-save-folder-error', label: 'Folders for saved files', empty: 'None: no saving files from this room' },
 };
 
 // Error boxes per section, keyed like ACCESS_UI plus Notion places; and every add box that can hold unadded text.
@@ -2207,7 +2232,8 @@ function sectionForServerError(message) {
 function keywordSection(text) {
   const named = (kind) => accessLists[kind].some((v) => text.includes(v));
   const found = [];
-  if (/\bfolders?\b/i.test(text)) found.push('files');
+  if (/\bsave folders?\b/i.test(text)) found.push('saveFolders');
+  else if (/\bfolders?\b/i.test(text)) found.push('files');
   if (/\bsites?\b/i.test(text)) found.push('sites');
   if (/\brepos?\b|\brepositor(?:y|ies)\b/i.test(text)) found.push(named('publicRepos') || (!named('repos') && /\bpublic\b/i.test(text)) ? 'publicRepos' : 'repos');
   if (/\brecipients?\b/i.test(text)) found.push('allowedRecipients');
@@ -2474,11 +2500,12 @@ function updateSpaceSummary() {
   setCount('targets-repo-count', String(len('repos')), len('repos') > 0);
   setCount('targets-public-repo-count', String(len('publicRepos')), len('publicRepos') > 0);
   setCount('targets-recipient-count', len('allowedRecipients') ? String(len('allowedRecipients')) : 'off', len('allowedRecipients') > 0);
+  setCount('targets-save-folder-count', len('saveFolders') ? String(len('saveFolders')) : 'off', len('saveFolders') > 0);
   setCount('targets-db-count', String(dbs), dbs > 0);
   setCount('targets-place-count', String(places.length), places.length > 0);
   // Tab labels: how many sections there are switched on, and an amber dot when something there reaches outside.
   const useOn = [len('files'), len('sites'), webSearch, notionRead, m365Read, mcpOn].filter(Boolean).length;
-  const proposeOn = [len('repos'), len('publicRepos'), len('allowedRecipients'), notionOn && dbs, notionOn && places.length].filter(Boolean).length;
+  const proposeOn = [len('repos'), len('publicRepos'), len('allowedRecipients'), len('saveFolders'), notionOn && dbs, notionOn && places.length].filter(Boolean).length;
   setCount('space-tab-use-count', String(useOn), useOn > 0);
   setCount('space-tab-propose-count', String(proposeOn), proposeOn > 0);
   $('space-tab-use-dot').hidden = !(webSearch || mcpOn);
@@ -2494,6 +2521,7 @@ function updateSpaceSummary() {
   if (len('publicRepos')) proposes.push([plural(len('publicRepos'), 'public repo'), true]);
   if (notionOn && dbs) proposes.push([plural(dbs, 'Notion DB')]);
   if (notionOn && places.length) proposes.push([plural(places.length, 'Notion place')]);
+  if (len('saveFolders')) proposes.push([plural(len('saveFolders'), 'save folder')]);
   if (!proposes.length) proposes.push(['nothing']);
   proposes.push(len('allowedRecipients') ? [plural(len('allowedRecipients'), 'email recipient'), true] : ['email off']);
   const parts = (items) => items.flatMap(([text, out], i) => [...(i ? [' · '] : []), out ? el('span', 'out', text) : text]);
@@ -2512,6 +2540,7 @@ function spaceAdditions() {
     ['site', accessLists.sites, before.access.sites],
     ['public repo', accessLists.publicRepos, before.targets.publicRepos],
     ['email recipient', accessLists.allowedRecipients, before.targets.allowedRecipients],
+    ['save folder', accessLists.saveFolders, before.targets.saveFolders || []],
   ].flatMap(([label, now, was]) => now.filter((v) => !was.includes(v)).map((v) => `${label} ${v}`))];
 }
 
@@ -2861,7 +2890,7 @@ function mcpSignInStarted(url, name) {
 
 const ACTION_LABELS = {
   dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft',
-  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', create_agent: 'New agent',
+  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', create_agent: 'New agent', save_file: 'Saved file',
 };
 const DECISION_WORDS = { approved: 'approved', revised: 'asked for a revision', dismissed: 'dismissed' };
 const DECISIONS_ABOUT = 'Every proposal you approve, send back for a revision or dismiss in this room is listed here, across all its chats: who decided, what it was, when, and what came of it.';
@@ -2935,6 +2964,7 @@ function decisionRow(d) {
     outcome.append(link);
   });
   if (d.agent) outcome.append(el('span', null, `Added ${d.agent} to the room.`));
+  if (d.saved) outcome.append(el('span', null, `Saved as ${d.saved}`));
   // A draft that is gone is said so in words; it gets no chip, as there is nothing to open. A patch or a mockup is
   // named without a chip too: the viewer opens .md drafts only.
   for (const f of Array.isArray(d.drafts) ? d.drafts : []) {
@@ -3023,6 +3053,7 @@ function spaceBody() {
       notionPlaces: places.map((p) => ({ ...(p.id ? { id: p.id } : { url: p.url }), name: p.name, for: p.for || '' })),
       allowedRecipients: accessLists.allowedRecipients,
       sendFrom: $('targets-send-from').value.trim(),
+      saveFolders: accessLists.saveFolders,
     },
   };
 }
