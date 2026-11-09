@@ -37,6 +37,9 @@ elif "notion" in prompt:
     text = ("Notion." + rec({"action": "notion_draft", "database": "output-log-2", "summary": "Draft", "posts": [{"channel": "X", "title": "t", "content": "c"}]})
             + rec({"action": "notion_page", "parent": SUB, "summary": "Under the place", "title": "In", "content": "c"})
             + rec({"action": "notion_page", "parent": OUTSIDE, "summary": "Outside", "title": "Out", "content": "c"}))
+elif "rows please" in prompt:
+    text = "Rows." + rec({"action": "notion_row", "database": "db-eeeeeeee", "summary": "A task",
+                          "rows": [{"Task": "Ship it", "Due": "2026-12-24", "Points": 3, "Urgent": True, "Labels": ["ops", "web"], "Link": "https://example.com/t"}]})
 elif "bad comment" in prompt:
     text = ("Bad." + rec({"action": "github_comment", "repo": "private-app", "issue": "#5", "summary": "Bad number", "body": "b"})
             + rec({"action": "github_comment", "repo": "private-app", "issue": 78, "summary": "On a PR", "body": "Review."}))

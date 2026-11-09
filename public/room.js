@@ -541,6 +541,7 @@ function addRecCard(rec) {
   const title = rec.action === 'dispatch' ? `Proposal · send to ${makers}`
     : rec.action === 'create_agent' ? `Proposal · new ${rec.agent.role}`
     : rec.action === 'notion_draft' ? `Proposal · Notion draft${posts.length > 1 ? `s (${posts.length} posts)` : ''}`
+    : rec.action === 'notion_row' ? `Proposal · Notion row${(rec.rows || []).length > 1 ? `s (${rec.rows.length})` : ''}`
     : rec.action === 'email_draft' ? 'Proposal · email draft'
     : rec.action === 'notion_page' ? 'Proposal · Notion page'
     : rec.action === 'notion_page_update' ? 'Proposal · update a Notion page'
@@ -581,7 +582,8 @@ function addRecCard(rec) {
       recDetails('Instructions, rules and script', a.instructions),
     );
   } else if (rec.action === 'notion_draft') {
-    card.append(recField('Database', (notionDbs.find((db) => db.key === rec.database) || {}).name || rec.database), recField('Status', 'draft (you schedule it yourself)'));
+    // Proposals from before the room's own databases carry no name or draft value: the key and Status = draft.
+    card.append(recField('Database', rec.databaseName || rec.database), recField('Saved as', `${rec.draftLabel || 'Status = draft'} (you schedule it yourself)`));
     for (const post of posts) {
       const details = el('details', 'rec-details');
       const account = post.account ? ` · ${post.account}` : '';
@@ -589,6 +591,21 @@ function addRecCard(rec) {
       card.append(details);
     }
     if (rec.image_prompt) card.append(recDetails('Image prompt (on every row)', rec.image_prompt));
+  } else if (rec.action === 'notion_row') {
+    // Every value the agent proposed, per row; then what the Exec Room sets on every row besides (the draft value first).
+    card.append(recField('Database', rec.databaseName || rec.database));
+    (rec.rows || []).forEach((row, i) => {
+      const details = el('details', 'rec-details');
+      details.open = (rec.rows || []).length === 1;
+      const values = Object.entries(row);
+      const first = values.length ? String(values[0][1]) : `Row ${i + 1}`;
+      details.append(el('summary', null, first.length > 80 ? `${first.slice(0, 77)}…` : first));
+      for (const [col, v] of values) details.append(recField(col, Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v)));
+      card.append(details);
+    });
+    const fixed = (rec.fixed || []).map((f) => `${f.column} = ${Array.isArray(f.value) ? f.value.join(', ') : typeof f.value === 'boolean' ? (f.value ? 'yes' : 'no') : f.value}${f.draft ? ' (the draft value)' : ''}`);
+    if (fixed.length) card.append(recField('Set by the room', fixed.join(' · ')));
+    card.append(el('p', 'rec-note', 'Checked again against the database in Notion when you approve. Other columns stay empty.'));
   } else if (rec.action === 'email_draft') {
     // A preview only: approving records the decision, and the links to open the draft appear after that.
     // After a decision the server removes addresses and text from the transcript: a reload shows domains only.
@@ -673,6 +690,7 @@ function addRecCard(rec) {
   const approveLabel = {
     dispatch: `Approve · send to ${makers}`,
     notion_draft: posts.length > 1 ? `Approve · save ${posts.length} Notion drafts` : 'Approve · save as Notion draft',
+    notion_row: (rec.rows || []).length > 1 ? `Approve · save ${rec.rows.length} rows as drafts` : 'Approve · save the row as a draft',
     notion_page: 'Approve · create Notion page',
     notion_page_update: 'Approve · update the page, keep the old version',
     email_draft: 'Approve · nothing is sent',
@@ -799,10 +817,11 @@ function showRecResult(ev) {
   if (entry.rec.action === 'create_agent' && ev.agent) {
     entry.status.append(el('span', null, `${ev.agent.name} is in the room now.`));
     refreshAgents();
-  } else if (entry.rec.action === 'notion_draft' && (ev.urls || ev.state === 'done')) {
+  } else if ((entry.rec.action === 'notion_draft' || entry.rec.action === 'notion_row') && (ev.urls || ev.state === 'done')) {
     const urls = ev.urls || (ev.url ? [ev.url] : []);
     const saved = urls.length || (ev.state === 'done' ? 1 : 0);
-    entry.status.append(el('span', null, `Saved ${saved} Notion draft${saved === 1 ? '' : 's'}.`));
+    const what = entry.rec.action === 'notion_row' ? 'Notion row' : 'Notion draft';
+    entry.status.append(el('span', null, saved || ev.state === 'done' ? `Saved ${saved} ${what}${saved === 1 ? '' : 's'}.` : ''));
     urls.filter(isNotionUrl).forEach((u, i) => {
       const link = el('a', null, urls.length > 1 ? `Open ${i + 1}` : 'Open in Notion');
       link.href = u;
@@ -1641,7 +1660,7 @@ $('add-agent-top').addEventListener('click', openAddAgent);
 let space = null;       // the current room: { id, name, members (null = everyone), isDefault }
 let spaceList = [];
 let catalogue = [];     // every agent a room can have: { key, name, role, builtIn }
-let notionDbs = [];     // the Output DBs the server knows: { key, name }
+let notionCanAddColumns = false;   // whether "Add a Status column with Draft" can work (Notion's Connect sign-in)
 // The notes under Notion as the page has them (Notion not connected).
 const NOTION_VIA_NOTE = document.getElementById('access-notion-via').textContent;
 const NOTION_KEY_NOTE = document.getElementById('access-notion-key').textContent;
@@ -1658,7 +1677,7 @@ async function loadSpaces() {
     const data = await res.json();
     spaceList = data.workspaces;
     catalogue = data.agents;
-    notionDbs = data.notionDbs || [];
+    notionCanAddColumns = Boolean(data.notionCanAddColumns);
     notionOn = Boolean(data.notion);
     mcpServers = data.mcpServers || [];
     // On an API key the connectors don't exist: the settings say so next to the two choices (which are kept).
@@ -2112,7 +2131,7 @@ function openSpaceEditor(w) {
   $('access-m365').checked = access.m365 === true;
   renderMcpChoices(access.mcp || {});
   // What the room can propose; a new room starts with nothing (the server's default too).
-  const targets = (w && w.targets) || { repos: [], notionDbs: [], notionPlaces: [] };
+  const targets = (w && w.targets) || { repos: [], notionDatabases: [], notionPlaces: [] };
   // Public repos (e.g. open-source ones) are a separate list; the private list is the rest.
   accessLists.publicRepos = [...(targets.publicRepos || [])];
   accessLists.repos = targets.repos.filter((r) => !accessLists.publicRepos.includes(r));
@@ -2124,15 +2143,9 @@ function openSpaceEditor(w) {
   accessLists.saveFolders = [...(targets.saveFolders || [])];
   renderAccessList('saveFolders');
   $('targets-send-from').value = targets.sendFrom || '';
-  $('targets-dbs').replaceChildren(...notionDbs.map((db) => {
-    const label = el('label', 'choice');
-    const box = el('input');
-    box.type = 'checkbox';
-    box.dataset.db = db.key;
-    box.checked = targets.notionDbs.includes(db.key);
-    label.append(box, el('span', null, db.name));
-    return label;
-  }));
+  // A page from before the room's own databases has none to show; the server keeps the room's when it saves.
+  roomDbs = (targets.notionDatabases || []).map((d) => ({ ...d }));
+  renderRoomDbs();
   places = targets.notionPlaces.map((p) => ({ ...p }));
   editingPlace = null;
   renderPlaces();
@@ -2147,6 +2160,25 @@ function openSpaceEditor(w) {
   spaceSnapshot = JSON.stringify(spaceBody());
   spaceEditor.showModal();
   $('space-name').focus();
+  if (w && w.id && notionOn && roomDbs.some((d) => !d.columns || !d.draft)) refreshRoomDbs(w.id);
+}
+
+// Databases whose columns haven't been read yet (moved over from the old setup): read now, and their rows show what
+// Notion said. Only what was read changes; names, purposes and draft choices made since opening stay.
+async function refreshRoomDbs(roomId) {
+  try {
+    const res = await fetch(`/api/workspaces/${encodeURIComponent(roomId)}/notion-databases/refresh`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    if (!res.ok) return;
+    const fresh = ((await res.json()).workspace.targets.notionDatabases) || [];
+    for (const d of roomDbs) {
+      const f = fresh.find((x) => x.id === d.id);
+      // A draft value Notion now suggests is taken when none was chosen yet.
+      if (f) Object.assign(d, { columns: f.columns, cols: f.cols, draftChoices: f.draftChoices, postsReady: f.postsReady, readError: f.readError });
+      const suggested = f && !d.draft && (f.draftChoices || []).find((c) => c.suggested);
+      if (suggested) d.draft = { column: suggested.column, value: suggested.suggested };
+    }
+    if (spaceEditor.open) renderRoomDbs();
+  } catch { /* the rows keep saying what they said */ }
 }
 
 // "Everyone" keeps the room open to agents added later, so the individual boxes don't apply.
@@ -2159,6 +2191,7 @@ function syncEveryone() {
 // Folders and sites as editable lists; the server checks them (real folders, not too broad; exact site names).
 const accessLists = { files: [], sites: [], repos: [], publicRepos: [], allowedRecipients: [], saveFolders: [] };   // repos: the private ones
 let places = [];   // Notion places: { id or url, name, for }
+let roomDbs = [];   // { id, name, for, draft: { column, value } | null, columns (a count), draftChoices, postsReady, readError }
 let editingPlace = null;   // index of the place open for editing in its row
 let editingFolder = null;  // the same for "Folders it can read"
 let dragPlace = null;      // index of the place being dragged
@@ -2173,8 +2206,9 @@ const ACCESS_UI = {
 
 // Error boxes per section, keyed like ACCESS_UI plus Notion places; and every add box that can hold unadded text.
 const PLACE_INPUTS = ['targets-place-url', 'targets-place-name', 'targets-place-for'];
-const PENDING_INPUTS = [...Object.values(ACCESS_UI).map((ui) => ui.input), ...PLACE_INPUTS];
-const SECTION_ERRORS = { ...Object.fromEntries(Object.entries(ACCESS_UI).map(([kind, ui]) => [kind, ui.error])), places: 'targets-place-error' };
+const DB_INPUTS = ['targets-db-url', 'targets-db-name', 'targets-db-for'];
+const PENDING_INPUTS = [...Object.values(ACCESS_UI).map((ui) => ui.input), ...PLACE_INPUTS, ...DB_INPUTS];
+const SECTION_ERRORS = { ...Object.fromEntries(Object.entries(ACCESS_UI).map(([kind, ui]) => [kind, ui.error])), places: 'targets-place-error', dbs: 'targets-db-error' };
 
 function clearSpaceErrors() {
   spaceError.textContent = '';
@@ -2206,6 +2240,8 @@ function unaddedValue() {
   if ($('targets-notion').hidden) return null;
   // A place left open for editing counts too: its boxes aren't in the form until Done.
   if (editingPlace !== null) return { section: 'places', input: 'targets-place-edit-name', message: `“${quote(places[editingPlace].name)}” under “Notion places for pages” is still open for editing. Click Done or Cancel on it, then save.` };
+  const dbInput = DB_INPUTS.find((id) => $(id).value.trim());
+  if (dbInput) return { section: 'dbs', input: dbInput, message: `“${quote($(dbInput).value.trim())}” under “Notion databases” isn't added yet. Click Add database, or clear the boxes, then save.` };
   const input = PLACE_INPUTS.find((id) => $(id).value.trim());
   if (!input) return null;
   return { section: 'places', input, message: `“${quote($(input).value.trim())}” under “Notion places for pages” isn't added yet. Click Add place, or clear the boxes, then save.` };
@@ -2220,6 +2256,7 @@ function sectionForServerError(message) {
   const isPlace = (v) => quoted(v) || (Boolean(v) && text.startsWith(`${v} is `));
   const holders = Object.keys(ACCESS_UI).filter((kind) => accessLists[kind].some(quoted));
   if (places.some((p) => [p.url, p.id, p.name].some(isPlace))) holders.push('places');
+  if (roomDbs.some((d) => [d.id, d.name].some(quoted))) holders.push('dbs');
   // Public repos are sent inside repos too, so a value in both lists belongs to Public repos.
   const sections = holders.includes('publicRepos') ? holders.filter((kind) => kind !== 'repos') : holders;
   const byKeyword = keywordSection(text);
@@ -2489,7 +2526,7 @@ function updateSpaceSummary() {
   const notionRead = $('access-notion').checked;
   const m365Read = $('access-m365').checked;
   const mcpOn = mcpChecked().length;
-  const dbs = $('targets-dbs').querySelectorAll('input:checked').length;
+  const dbs = roomDbs.length;
   setCount('space-count-general', everyone ? 'all' : plural(members, 'member'), everyone || members > 0);
   setCount('access-file-count', String(len('files')), len('files') > 0);
   setCount('access-site-count', String(len('sites')), len('sites') > 0);
@@ -2519,7 +2556,7 @@ function updateSpaceSummary() {
   const proposes = [];
   if (len('repos')) proposes.push([plural(len('repos'), 'private repo')]);
   if (len('publicRepos')) proposes.push([plural(len('publicRepos'), 'public repo'), true]);
-  if (notionOn && dbs) proposes.push([plural(dbs, 'Notion DB')]);
+  if (notionOn && dbs) proposes.push([plural(dbs, 'Notion database')]);
   if (notionOn && places.length) proposes.push([plural(places.length, 'Notion place')]);
   if (len('saveFolders')) proposes.push([plural(len('saveFolders'), 'save folder')]);
   if (!proposes.length) proposes.push(['nothing']);
@@ -2889,7 +2926,7 @@ function mcpSignInStarted(url, name) {
 // It is no part of the form: it has no fields, so Save, the tab counts and the summary line never see it.
 
 const ACTION_LABELS = {
-  dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft',
+  dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft', notion_row: 'Notion row',
   notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', create_agent: 'New agent', save_file: 'Saved file',
 };
 const DECISION_WORDS = { approved: 'approved', revised: 'asked for a revision', dismissed: 'dismissed' };
@@ -3002,6 +3039,199 @@ async function loadDecisions() {
   }
 }
 
+// ---- Notion databases (Room settings → Can propose). Each row: its name and purpose, how many columns Notion listed,
+// and its draft column, which is chosen here once. A database without a status or select column can't take rows until
+// one is added: with the Connect sign-in the button below adds "Status" with a "Draft" option, only when clicked.
+
+function renderRoomDbs() {
+  const list = $('targets-dbs');
+  list.replaceChildren();
+  if (!roomDbs.length) list.appendChild(el('li', 'access-empty', 'None: no Notion rows from this room'));
+  roomDbs.forEach((d, i) => list.appendChild(roomDbRow(d, i)));
+  updateSpaceSummary();
+}
+
+function roomDbRow(d, i) {
+  const item = el('li', 'place-row db-row');
+  const text = el('div', 'place-text');
+  text.append(el('span', null, d.for ? `${d.name} · ${d.for}` : d.name));
+  const info = el('div', 'db-info');
+  const choices = Array.isArray(d.draftChoices) ? d.draftChoices : [];
+  if (d.readError) info.append(el('span', 'err-text', `Couldn't read its columns: ${d.readError}`));
+  else if (d.columns) info.append(`${d.columns} column${d.columns === 1 ? '' : 's'} · `);
+  if (d.draft && !choices.length) {
+    info.append(`drafts: ${d.draft.column} = ${d.draft.value}`);
+  } else if (choices.length) {
+    // One choice per option of every status or select column: "Status = Draft".
+    const pick = el('select', 'db-draft');
+    pick.setAttribute('aria-label', `Draft value for ${d.name}`);
+    const none = el('option', null, 'Choose the draft value…');
+    none.value = '';
+    pick.append(none);
+    for (const c of choices) for (const o of c.options) {
+      const opt = el('option', null, `${c.column} = ${o}`);
+      opt.value = JSON.stringify({ column: c.column, value: o });
+      opt.selected = Boolean(d.draft && d.draft.column === c.column && d.draft.value === o);
+      pick.append(opt);
+    }
+    pick.addEventListener('change', () => { d.draft = pick.value ? JSON.parse(pick.value) : null; updateSpaceSummary(); });
+    info.append('drafts: ', pick);
+  }
+  // No column has a draft value yet (a database without status or select columns, or one whose options are all
+  // something else): the room can add one, only when clicked.
+  if (!d.readError && d.columns && !d.draft && !choices.some((c) => c.suggested)) {
+    if (!choices.length) info.append(el('span', 'err-text', 'No draft column. '));
+    if (notionCanAddColumns) {
+      const add = el('button', 'ghost db-add-column', 'Add a Status column with Draft');
+      add.type = 'button';
+      add.addEventListener('click', () => addDbDraftColumn(d, add));
+      info.append(add);
+    } else {
+      info.append('Add a Status column with a Draft option to it in Notion, then open Room settings again.');
+    }
+  }
+  text.append(info);
+  if ((d.cols || []).length) text.append(dbColumnsBlock(d));
+  const remove = el('button', 'access-remove', '×');
+  remove.type = 'button';
+  remove.setAttribute('aria-label', `Remove ${d.name}`);
+  remove.addEventListener('click', () => { roomDbs.splice(i, 1); renderRoomDbs(); });
+  item.append(text, remove);
+  return item;
+}
+
+// What the room does with each column of a database: "Agent fills" (the agent proposes a value, shown on the card),
+// "Always this value" (the room sets it on every row) or "Leave empty". The draft column is always its draft value,
+// the title always the agent's, and a status column never the agent's.
+const RULE_LABELS = { agent: 'Agent fills', fixed: 'Always this value', empty: 'Leave empty' };
+const TYPE_LABELS = { title: 'title', rich_text: 'text', url: 'link', email: 'email', phone_number: 'phone', number: 'number', checkbox: 'checkbox',
+  select: 'select', multi_select: 'multi-select', status: 'status', date: 'date' };
+
+// The rule a column has now: a column that was the draft column before the choice changed falls back to empty.
+const ruleOf = (d, c) => (d.draft && c.name === d.draft.column ? { mode: 'fixed', value: d.draft.value, draft: true }
+  : c.rule && c.rule.draft ? { mode: 'empty' } : c.rule || { mode: 'empty' });
+
+function dbRules(d) {
+  if (!(d.cols || []).length) return null;
+  return Object.fromEntries(d.cols.filter((c) => !(d.draft && c.name === d.draft.column)).map((c) => {
+    const r = ruleOf(d, c);
+    return [c.name, r.mode === 'fixed' ? { mode: 'fixed', value: r.value } : { mode: r.mode }];
+  }));
+}
+
+function dbColumnsBlock(d) {
+  const block = el('details', 'db-columns');
+  const agent = d.cols.filter((c) => ruleOf(d, c).mode === 'agent').length;
+  block.append(el('summary', null, `Columns · ${agent} filled by agents`));
+  const list = el('ul', 'db-col-list');
+  for (const c of d.cols) {
+    const row = el('li', 'db-col');
+    row.append(el('span', 'db-col-name', c.name), el('span', 'db-col-type', TYPE_LABELS[c.type] || c.type.replace(/_/g, ' ')));
+    const r = ruleOf(d, c);
+    if (r.draft) row.append(el('span', 'db-col-fixed', `Always ${r.value} (draft column)`));
+    else if (c.type === 'title') row.append(el('span', 'db-col-fixed', 'Agent fills (the title)'));
+    else if (!c.canAgent && !c.canFix) row.append(el('span', 'db-col-fixed', "Left empty (the room can't fill this type)"));
+    else {
+      const pick = el('select', 'db-col-rule');
+      pick.setAttribute('aria-label', `What happens to ${c.name} in ${d.name}`);
+      for (const mode of ['agent', 'fixed', 'empty']) {
+        if ((mode === 'agent' && !c.canAgent) || (mode === 'fixed' && !c.canFix)) continue;
+        const opt = el('option', null, RULE_LABELS[mode]);
+        opt.value = mode;
+        opt.selected = r.mode === mode;
+        pick.append(opt);
+      }
+      pick.addEventListener('change', () => {
+        c.rule = pick.value === 'fixed' ? { mode: 'fixed', value: defaultFixed(c) } : { mode: pick.value };
+        renderRoomDbs();
+      });
+      row.append(pick);
+      if (r.mode === 'fixed') row.append(fixedInput(c, r));
+    }
+    list.append(row);
+  }
+  block.append(list);
+  // Open again after a change redraws the list.
+  block.open = Boolean(d.colsOpen);
+  block.addEventListener('toggle', () => { d.colsOpen = block.open; });
+  return block;
+}
+
+const defaultFixed = (c) => (c.type === 'checkbox' ? false : (c.type === 'select' || c.type === 'status') && (c.options || []).length ? c.options[0] : c.type === 'number' ? 0 : '');
+
+function fixedInput(c, r) {
+  let input;
+  if (c.type === 'select' || c.type === 'status') {
+    input = el('select', 'db-col-value');
+    for (const o of c.options || []) {
+      const opt = el('option', null, o);
+      opt.value = o;
+      opt.selected = r.value === o;
+      input.append(opt);
+    }
+    input.addEventListener('change', () => { c.rule = { mode: 'fixed', value: input.value }; });
+  } else if (c.type === 'checkbox') {
+    input = el('input', 'db-col-value');
+    input.type = 'checkbox';
+    input.checked = r.value === true;
+    input.addEventListener('change', () => { c.rule = { mode: 'fixed', value: input.checked }; });
+  } else {
+    input = el('input', 'db-col-value');
+    input.type = c.type === 'number' ? 'number' : c.type === 'date' ? 'date' : 'text';
+    input.value = r.value == null ? '' : String(r.value);
+    input.addEventListener('input', () => { c.rule = { mode: 'fixed', value: c.type === 'number' && input.value !== '' ? Number(input.value) : input.value }; });
+  }
+  input.setAttribute('aria-label', `Value of ${c.name} on every row`);
+  return input;
+}
+
+async function addDbDraftColumn(d, button) {
+  button.disabled = true;
+  button.textContent = 'Adding…';
+  try {
+    const res = await fetch('/api/notion/database/draft-column', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ link: d.id }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    // The new column comes with its rule; the others keep what was chosen here.
+    const kept = new Map((d.cols || []).map((c) => [c.name, c.rule]));
+    Object.assign(d, { columns: data.columns.length, draftChoices: data.draftChoices, cols: data.cols.map((c) => (kept.has(c.name) ? { ...c, rule: kept.get(c.name) } : c)) });
+    const added = data.draftChoices.find((c) => c.suggested);
+    if (added) d.draft = { column: added.column, value: added.suggested };
+    renderRoomDbs();
+  } catch (err) {
+    showSpaceError(`“${d.name}”: ${err.message}`, 'dbs');
+    button.disabled = false;
+    button.textContent = 'Add a Status column with Draft';
+  }
+}
+
+$('targets-db-add').addEventListener('click', async () => {
+  const link = $('targets-db-url').value.trim();
+  if (!link) { showSpaceError('A database needs its Notion link.', 'dbs'); return; }
+  const button = $('targets-db-add');
+  button.disabled = true;
+  button.textContent = 'Reading…';
+  try {
+    const res = await fetch('/api/notion/database', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ link }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (roomDbs.some((x) => x.id === data.id)) throw new Error('that database is in this room already');
+    const suggested = data.draftChoices.find((c) => c.suggested);
+    const names = data.columns.map((c) => c.name);
+    roomDbs.push({ id: data.id, name: $('targets-db-name').value.trim() || data.title || 'Notion database', for: $('targets-db-for').value.trim(),
+      draft: suggested ? { column: suggested.column, value: suggested.suggested } : null, columns: data.columns.length, cols: data.cols, draftChoices: data.draftChoices,
+      postsReady: names.includes('Channel') && names.includes('Post Content') });
+    for (const id of DB_INPUTS) $(id).value = '';
+    $('targets-db-error').hidden = true;
+    renderRoomDbs();
+  } catch (err) {
+    showSpaceError(`That database couldn't be added: ${err.message}`, 'dbs');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Add database';
+  }
+});
+
 $('targets-place-add').addEventListener('click', () => {
   const url = $('targets-place-url').value.trim();
   const name = $('targets-place-name').value.trim();
@@ -3049,7 +3279,7 @@ function spaceBody() {
     targets: {
       repos: [...accessLists.repos, ...accessLists.publicRepos],
       publicRepos: accessLists.publicRepos,
-      notionDbs: [...$('targets-dbs').querySelectorAll('input:checked')].map((b) => b.dataset.db),
+      notionDatabases: roomDbs.map((d) => ({ id: d.id, name: d.name, for: d.for || '', draft: d.draft || null, ...(dbRules(d) && { rules: dbRules(d) }) })),
       notionPlaces: places.map((p) => ({ ...(p.id ? { id: p.id } : { url: p.url }), name: p.name, for: p.for || '' })),
       allowedRecipients: accessLists.allowedRecipients,
       sendFrom: $('targets-send-from').value.trim(),

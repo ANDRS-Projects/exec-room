@@ -817,11 +817,29 @@ try:
             self.end_headers()
             self.wfile.write(body)
 
+        # Two databases: Output log 2 with the post columns, and a reading list without a status or select column.
+        databases = {"11111111111141118111111111111102": {"title": [{"plain_text": "Output log 2 · Product B"}], "properties": {
+                         "Name": {"type": "title"}, "Status": {"type": "status", "status": {"options": [{"name": "draft"}, {"name": "approved"}]}},
+                         "Channel": {"type": "rich_text"}, "Post Content": {"type": "rich_text"}, "Account": {"type": "select", "select": {"options": [{"name": "ProductB"}]}},
+                         # Columns a posting automation reads: never the agent's by default in a post database.
+                         "Image File": {"type": "rich_text"}, "Posted": {"type": "rich_text"}, "Link URL": {"type": "url"}}},
+                     "d" * 32: {"title": [{"plain_text": "Reading list"}], "properties": {"Name": {"type": "title"}, "Notes": {"type": "rich_text"}}},
+                     # A task list with one column of each type the room can fill.
+                     "e" * 32: {"title": [{"plain_text": "Tasks"}], "properties": {"Task": {"type": "title"}, "Status": {"type": "status", "status": {"options": [{"name": "Draft"}, {"name": "Done"}]}},
+                                "Due": {"type": "date"}, "Points": {"type": "number"}, "Urgent": {"type": "checkbox"}, "Labels": {"type": "multi_select", "multi_select": {"options": [{"name": "ops"}, {"name": "web"}]}},
+                                "Link": {"type": "url"}, "Area": {"type": "select", "select": {"options": [{"name": "Sales"}, {"name": "Product"}]}}}}}
+        posted = []  # the properties of each row written with the token
+
         def do_GET(self):
-            self.reply({"object": "page", "id": self.path.rsplit("/", 1)[-1], "parent": self.parents.get(self.path.rsplit("/", 1)[-1], {"type": "workspace"})})
+            last = self.path.rsplit("/", 1)[-1]
+            if "/databases/" in self.path and last in self.databases:
+                return self.reply({"object": "database", "id": last, **self.databases[last]})
+            self.reply({"object": "page", "id": last, "parent": self.parents.get(last, {"type": "workspace"})})
 
         def do_POST(self):
-            self.rfile.read(int(self.headers["Content-Length"]))
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
+            if self.path.endswith("/pages") and body.get("parent", {}).get("database_id") == "e" * 32:
+                self.posted.append(body["properties"])
             self.reply({"object": "page", "id": "p1", "url": "https://app.notion.com/p/x"})
 
         def log_message(self, *a):
@@ -834,10 +852,18 @@ try:
         offered = lambda: [json.loads(l) for l in open(os.path.join(TMP, "targets-calls.ndjson"))][-1]
         spaces = json.loads(call("/api/workspaces")[1])
         t = spaces["workspaces"][0]["targets"]
-        out("T default room targets", (len(t["repos"]), t["repos"][:2], t["notionDbs"], [p["name"] for p in t["notionPlaces"]]))
-        out("T known output dbs", [(d["key"], d["name"]) for d in spaces["notionDbs"]])
+        # The rooms file is from before the room's own databases: the Output DBs it ticked moved into the room, with
+        # "Status = draft" and their columns not read yet.
+        out("T default room targets", (len(t["repos"]), t["repos"][:2], [(d["key"], d["draft"], d["columns"]) for d in t["notionDatabases"]], [p["name"] for p in t["notionPlaces"]]))
+        out("T moved into the room's file", [(d["key"], d["id"], d["name"], d["draft"], d.get("accounts")) for d in json.load(open(os.path.join(TMP, "data-targets", "workspaces.json")))["workspaces"]["exec"]["targets"]["notionDatabases"]][:2])
+        # Opening Room settings reads the columns it can: Output log 2 is known to this pretend Notion, the rest aren't.
+        fresh = json.loads(call("/api/workspaces/exec/notion-databases/refresh", {})[1])["workspace"]["targets"]["notionDatabases"]
+        out("T columns read when the settings open", [(d["key"], d["columns"], d["postsReady"], d.get("readError", "")[:60]) for d in fresh][:3])
         base = {"name": "Product", "members": None}
-        for label, targets in [("bad repo", {"repos": ["not a repo"]}), ("unknown db", {"notionDbs": ["nope"]}),
+        for label, targets in [("bad repo", {"repos": ["not a repo"]}), ("database link that isn't one", {"notionDatabases": [{"url": "https://example.com/x", "name": "x"}]}),
+                               ("a page given as a database", {"notionDatabases": [{"id": "c" * 32, "name": "x"}]}),
+                               ("draft value that isn't an option", {"notionDatabases": [{"id": "11111111111141118111111111111102", "name": "x", "draft": {"column": "Status", "value": "posted"}}]}),
+                               ("draft column that isn't status or select", {"notionDatabases": [{"id": "d" * 32, "name": "x", "draft": {"column": "Notes", "value": "a"}}]}),
                                ("place without name", {"notionPlaces": [{"id": "a" * 32}]}), ("place is an output db", {"notionPlaces": [{"id": "11111111-1111-4111-8111-111111111105", "name": "x"}]}),
                                ("bad place", {"notionPlaces": [{"url": "https://example.com/page", "name": "x"}]})]:
             out(f"T invalid {label}", call("/api/workspaces", {**base, "targets": targets})[:2])
@@ -848,9 +874,16 @@ try:
         out("T empty room note", offered())
         room = json.loads(body)["workspace"]["id"]
         targets = {"repos": ["https://github.com/Example-Org/private-app", "Example-Org/public-site", "other-org/tool", "other-org/tool"],
-                   "notionDbs": ["output-log-2"], "notionPlaces": [{"url": "https://app.notion.com/p/Product-notes-" + "a" * 32, "name": "Product notes", "for": "specs"}]}
+                   "notionDatabases": [{"url": "https://app.notion.com/p/Product-B-11111111111141118111111111111102", "name": "Product B posts", "for": "product posts", "draft": {"column": "Status", "value": "draft"}},
+                                       {"id": "d" * 32, "name": "Reading list"}], "notionPlaces": [{"url": "https://app.notion.com/p/Product-notes-" + "a" * 32, "name": "Product notes", "for": "specs"}]}
         code, body, _ = call(f"/api/workspaces/{room}", {"name": "Product", "members": None, "targets": targets})
         out("T set targets", (code, json.loads(body)["workspace"]["targets"]))
+        # A page from before the room's own databases sends targets without them: the room keeps its own.
+        code, body, _ = call(f"/api/workspaces/{room}", {"name": "Product", "members": None, "targets": {k: v for k, v in targets.items() if k != "notionDatabases"}})
+        out("T an older page keeps the room's databases", (code, [d["name"] for d in json.loads(body)["workspace"]["targets"]["notionDatabases"]]))
+        out("T a post database's defaults: only the post columns are the agent's", [(c["name"], c["rule"]["mode"]) for d in json.loads(body)["workspace"]["targets"]["notionDatabases"] if d["name"] == "Product B posts" for c in d["cols"]])
+        out("T adding a draft column needs Connect", call("/api/notion/database/draft-column", {"link": "d" * 32})[:2])
+        out("T what Room settings shows when adding one", json.loads(call("/api/notion/database", {"link": "https://app.notion.com/p/" + "d" * 32})[1]))
         call("/api/coen", {"text": "hello again"})
         events(call("/api/stream")[1])
         out("T room note offers only its targets", offered())
@@ -916,6 +949,22 @@ try:
         for name in ["Draft", "Under the place", "Outside"]:
             code, body, _ = call(f"/api/recs/{notion[name]['recId']}/approve", {})
             out(f"T approve {name.lower()}", (code, [(e["type"], e.get("state"), e.get("error")) for e in json.loads(body)["events"] if e["type"] == "rec_result"]))
+        # Rows with the token: each column type as Notion's API wants it, the fixed value and the draft value added.
+        tasks = {"id": "e" * 32, "name": "Tasks", "draft": {"column": "Status", "value": "Draft"},
+                 "rules": {"Due": {"mode": "agent"}, "Points": {"mode": "agent"}, "Urgent": {"mode": "agent"}, "Labels": {"mode": "agent"}, "Link": {"mode": "agent"}, "Area": {"mode": "fixed", "value": "Product"}}}
+        cur = json.loads(call(f"/api/workspaces")[1])["workspaces"]
+        cur = [w for w in cur if w["id"] == room][0]
+        code, body, _ = call(f"/api/workspaces/{room}", {"name": "Product", "members": None, "targets": {**cur["targets"], "notionDatabases": [*cur["targets"]["notionDatabases"], tasks]}})
+        out("T a task list with column settings", (code, [(c["name"], c["rule"]["mode"]) for d in json.loads(body)["workspace"]["targets"]["notionDatabases"] if d["name"] == "Tasks" for c in d["cols"]]))
+        call("/api/coen", {"text": "rows please"})
+        row = [e["rec"] for e in events(call("/api/stream")[1]) if e["type"] == "recommendation"][0]
+        code, body, _ = call(f"/api/recs/{row['recId']}/approve", {})
+        out("T a row saved with the token", ([(e.get("state"), e.get("error")) for e in json.loads(body)["events"] if e["type"] == "rec_result"], ParentsNotion.posted))
+        # A page from before the column settings sends the databases without them: the room keeps its own.
+        cur = [w for w in json.loads(call("/api/workspaces")[1])["workspaces"] if w["id"] == room][0]
+        old_page = [{k: d[k] for k in ("id", "name", "for", "draft")} for d in cur["targets"]["notionDatabases"]]
+        code, body, _ = call(f"/api/workspaces/{room}", {"name": "Product", "members": None, "targets": {**cur["targets"], "notionDatabases": old_page}})
+        out("T an older page keeps the column settings", (code, [(c["name"], c["rule"]["mode"]) for d in json.loads(body)["workspace"]["targets"]["notionDatabases"] if d["name"] == "Tasks" for c in d["cols"]]))
     finally:
         s.stop()
         fake.shutdown()
@@ -942,9 +991,9 @@ try:
         offered_now = [json.loads(l) for l in open(os.path.join(TMP, "targets-calls.ndjson"))][-1]
         out("T a database the config lacks: the message is answered", [e["status"] for e in evs if e["type"] == "end"])
         out("T it is not offered, the room's other database is", (offered_now["log1"], offered_now["gone_db"]))
-        out("T the page gets only databases that exist", json.loads(call("/api/workspaces")[1])["workspaces"][0]["targets"]["notionDbs"])
+        out("T the page gets only databases that exist", [d["key"] for d in json.loads(call("/api/workspaces")[1])["workspaces"][0]["targets"]["notionDatabases"]])
         out("T a waiting draft for it can't be approved", call("/api/recs/rec-gone-db/approve", {})[:2])
-        out("T the room's file still lists it", json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]["exec"]["targets"]["notionDbs"])
+        out("T the room's file has its databases, without it", [d["key"] for d in json.load(open(os.path.join(data, "workspaces.json")))["workspaces"]["exec"]["targets"]["notionDatabases"]])
     finally:
         s.stop()
     out("T the start-up names the room and the database", [l for l in s.stderr.splitlines() if "Notion databases" in l])
@@ -1514,7 +1563,7 @@ try:
     s = Server("access", fresh=True, data_name="data-example-config", seed=False, config=os.path.join(opts.root, "room.config.example.json"))
     try:
         listing = json.loads(call("/api/workspaces")[1])
-        out("S example config starts the room", (call("/room.html")[0], [(w["id"], w["access"], w["targets"]) for w in listing["workspaces"]], listing["notionDbs"]))
+        out("S example config starts the room", (call("/room.html")[0], [(w["id"], w["access"], w["targets"]) for w in listing["workspaces"]], [d for w in listing["workspaces"] for d in w["targets"]["notionDatabases"]]))
     finally:
         s.stop()
     # S: "hiddenConnectors" in the config. A listed connector is blocked on every run, next to the built-in ones.
@@ -2681,10 +2730,24 @@ try:
     NOTION_TOOLS = ["notion-search", "notion-fetch", "notion-query-data-sources", "notion-get-self", "notion-create-pages", "notion-update-page", "notion-move-pages"]
     PLACE = "2" * 12 + "4222" + "8222" + "2" * 10 + "01"  # Exec Team Meetings, one of the default room's places
 
+    # A database read through Connect: its columns are in the data source's state. Adding a column changes them.
+    leads = {"Name": {"name": "Name", "type": "title"}, "Company": {"name": "Company", "type": "text"}, "Website": {"name": "Website", "type": "url"},
+             "Stage": {"name": "Stage", "type": "select", "options": [{"name": "Lead"}, {"name": "Won"}]}, "Size": {"name": "Size", "type": "number"},
+             "Contacted": {"name": "Contacted", "type": "checkbox"}, "Next": {"name": "Next", "type": "date"},
+             "Tags": {"name": "Tags", "type": "multi_select", "options": [{"name": "warm"}, {"name": "cold"}]}, "Owner": {"name": "Owner", "type": "person"},
+             "Phase": {"name": "Phase", "type": "status", "groups": {"to_do": [{"name": "New"}], "complete": [{"name": "Closed"}]}},
+             # Notion lists a column named "url" (or "id") under a prefixed key, with its own name inside.
+             "userDefined:URL": {"name": "URL", "type": "url"}}
+
     def notion_fetch(i):
-        if i == "11111111-1111-4111-8111-111111111101":  # Output log 1
+        i = (i or "").replace("-", "")  # Notion takes an id with or without dashes
+        if i == "c0ffee00" * 4:  # a leads database without a status or select column (until one is added)
+            state = json.dumps({"name": "Leads", "schema": leads})
+            return ('<database url="{{https://app.notion.com/p/' + "c0ffee00" * 4 + '}}" inline="true">\nThe title of this Database is: Leads\n<data-sources>'
+                    '<data-source url="{{collection://33333333-4444-5555-6666-777777777777}}">\n<data-source-state>\n' + state + '\n</data-source-state>\n</data-source></data-sources></database>')
+        if i == "11111111111141118111111111111101":  # Output log 1
             return '<database url="https://app.notion.com/p/11111111111141118111111111111101"><data-sources><data-source url="collection://11111111-2222-3333-4444-555555555555">Output log 1</data-source></data-sources></database>'
-        if i == "11111111-1111-4111-8111-111111111102":  # Output log 2, answered the way Notion has since November 2026: addresses in {{ }}
+        if i == "11111111111141118111111111111102":  # Output log 2, answered the way Notion has since November 2026: addresses in {{ }}
             return '<database url="{{https://app.notion.com/p/11111111111141118111111111111102}}"><data-sources><data-source url="{{collection://22222222-3333-4444-5555-666666666666}}">Output log 2</data-source></data-sources></database>'
         if i == "a" * 32:  # a page inside the place
             return f'<page url="https://app.notion.com/p/{"a" * 32}">\n<ancestor-path>\n<parent-page url="https://app.notion.com/p/{PLACE}" title="Exec Team Meetings"/>\n</ancestor-path>\n<content>\nHi\n</content>\n</page>'
@@ -2777,7 +2840,9 @@ try:
                     made = f"{len(vendor['notion']):032x}"
                     answer = ({"text": notion_fetch(a.get("id"))} if name == "notion-fetch"
                               else {"pages": [{"id": made, "url": f"https://app.notion.com/p/{made}?pvs=1"}]} if name == "notion-create-pages"
-                              else {"page_id": a.get("page_id")} if name == "notion-update-page" else {"name": "Owner"})
+                              else {"page_id": a.get("page_id")} if name == "notion-update-page"
+                              else leads.update({"Status": {"name": "Status", "type": "status", "groups": {"to_do": [{"name": "Draft"}], "complete": [{"name": "Done"}]}}}) or {"ok": True}
+                              if name == "notion-update-data-source" and "ADD COLUMN \"Status\"" in a.get("statements", "") else {"name": "Owner"})
                     result = {"content": [{"type": "text", "text": json.dumps(answer)}]}
                 elif method == "tools/list":
                     result = {"tools": [{"name": "look_up", "annotations": {"readOnlyHint": True}, "inputSchema": {"type": "object"}},
@@ -3010,6 +3075,54 @@ try:
         before = len(vendor["notion"])
         evs, run = msay("update REC:" + json.dumps({"action": "notion_page_update", "summary": "Second version", "page": page_id, "title": "Notes v2", "content": "New <text>."}))
         out("M5 updating a page the room made", ([approve(r) for r in proposed(evs)], masked(vendor["notion"][before:])))
+        link = "https://app.notion.com/p/Leads-" + "c0ffee00" * 4
+        out("M5 a database read through Connect", call("/api/notion/database", {"link": link})[:2])
+        out("M5 a page is not a database", call("/api/notion/database", {"link": "a" * 32})[:2])
+        before = len(vendor["notion"])
+        code, body, _ = call("/api/notion/database/draft-column", {"link": link})
+        out("M5 adding the draft column, on request", (code, json.loads(body)["draftChoices"], [a.get("statements") for n, a in vendor["notion"][before:] if n == "notion-update-data-source"]))
+        cur = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+        targets = {**cur["targets"], "notionDatabases": [*cur["targets"]["notionDatabases"], {"url": link, "name": "Leads", "draft": {"column": "Status", "value": "Draft"}}]}
+        code, body, _ = call(f"/api/workspaces/{cur['id']}", {"name": cur["name"], "members": cur["members"], "targets": targets})
+        out("M5 the room saves it, without posts", (code, [(d["name"], d["draft"], d["columns"], d["postsReady"]) for d in json.loads(body)["workspace"]["targets"]["notionDatabases"] if d["name"] == "Leads"]))
+        # What happens to each column: the defaults the page shows, then the room's own choice. A status column is never
+        # the agent's, the title always is, and a fixed value must fit its column.
+        saved = [d for d in json.loads(body)["workspace"]["targets"]["notionDatabases"] if d["name"] == "Leads"][0]
+        out("M5 the column defaults", [(c["name"], c["rule"]["mode"], c["canAgent"], c["canFix"]) for c in saved["cols"]])
+        def with_rules(rules):
+            cur = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+            dbs = [{**d, **({"rules": rules} if d["name"] == "Leads" else {})} for d in cur["targets"]["notionDatabases"]]
+            return call(f"/api/workspaces/{cur['id']}", {"name": cur["name"], "members": cur["members"], "targets": {**cur["targets"], "notionDatabases": dbs}})
+        for label, rules in [("a status column for the agent", {"Phase": {"mode": "agent"}}), ("the title left empty", {"Name": {"mode": "empty"}}),
+                             ("a people column for the agent", {"Owner": {"mode": "agent"}}), ("a fixed value that isn't an option", {"Stage": {"mode": "fixed", "value": "Maybe"}})]:
+            out(f"M5 column setting refused: {label}", with_rules(rules)[:2])
+        rules = {"Stage": {"mode": "agent"}, "Size": {"mode": "agent"}, "Contacted": {"mode": "fixed", "value": True}, "Next": {"mode": "agent"}, "Tags": {"mode": "agent"}, "URL": {"mode": "agent"},
+                 "Phase": {"mode": "fixed", "value": "New"}, "Website": {"mode": "empty"}}
+        code, body, _ = with_rules(rules)
+        saved = [d for d in json.loads(body)["workspace"]["targets"]["notionDatabases"] if d["name"] == "Leads"][0]
+        out("M5 the column settings saved", (code, [(c["name"], c["rule"]) for c in saved["cols"]]))
+        key = saved["key"]
+        row = {"Name": "Acme", "Company": "Acme B.V.", "Stage": "Lead", "Size": "12", "Next": "2026-12-01", "Tags": ["warm"], "URL": "https://acme.example"}
+        evs, run = msay("rows REC:" + json.dumps({"action": "notion_row", "database": key, "summary": "Two leads", "rows": [row, {"Name": "Beta", "Next": "2026-12-02T09:30:00+01:00"}]}))
+        rows = proposed(evs)
+        out("M5 the agent is told the columns it fills", run["rows_rule"].split(" = Leads, columns: ")[1].split("; ")[0] if run["rows_rule"] else None)
+        out("M5 a rows card", [(r["databaseName"], r["rows"], r["fixed"]) for r in rows])
+        before = len(vendor["notion"])
+        out("M5 rows saved", approve(rows[0])[:2])
+        out("M5 what Notion got for the rows", [a["pages"][0]["properties"] for n, a in vendor["notion"][before:] if n == "notion-create-pages"])
+        bad = [{"Name": "x", "Owner": "someone"}, {"Name": "x", "Stage": "Maybe"}, {"Name": "x", "Next": "next week"}]
+        evs, run = msay("bad rows " + " ".join("REC:" + json.dumps({"action": "notion_row", "database": key, "summary": f"Bad {i}", "rows": [r]}) for i, r in enumerate(bad)))
+        out("M5 rows refused", [n.split(" couldn't be used (", 1)[1].rsplit("). Ask ", 1)[0] for n in (e["text"] for e in evs if e["type"] == "notice")])
+        bad = [{"Name": "x", "Nope": "y"}, {"Company": "no title"}, {"Name": "x", "Website": "https://acme.example"}]
+        evs, run = msay("more bad rows " + " ".join("REC:" + json.dumps({"action": "notion_row", "database": key, "summary": f"Worse {i}", "rows": [r]}) for i, r in enumerate(bad)))
+        out("M5 more rows refused", [n.split(" couldn't be used (", 1)[1].rsplit("). Ask ", 1)[0] for n in (e["text"] for e in evs if e["type"] == "notice")])
+        # Notion changes after the card appeared: the option is gone, so approving saves nothing.
+        evs, run = msay("won REC:" + json.dumps({"action": "notion_row", "database": key, "summary": "A won lead", "rows": [{"Name": "Gamma", "Stage": "Won"}]}))
+        won = proposed(evs)[0]
+        leads["Stage"]["options"] = [{"name": "Lead"}]
+        before = len(vendor["notion"])
+        res = approve(won)
+        out("M5 an option gone before approval", (res[1], res[3], [n for n, a in vendor["notion"][before:]]))
     finally:
         s.stop()
     s = Server("mcp", notion_env, data_name="data-mcp-notion")
