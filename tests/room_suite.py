@@ -2684,6 +2684,8 @@ try:
     def notion_fetch(i):
         if i == "11111111-1111-4111-8111-111111111101":  # Output log 1
             return '<database url="https://app.notion.com/p/11111111111141118111111111111101"><data-sources><data-source url="collection://11111111-2222-3333-4444-555555555555">Output log 1</data-source></data-sources></database>'
+        if i == "11111111-1111-4111-8111-111111111102":  # Output log 2, answered the way Notion has since November 2026: addresses in {{ }}
+            return '<database url="{{https://app.notion.com/p/11111111111141118111111111111102}}"><data-sources><data-source url="{{collection://22222222-3333-4444-5555-666666666666}}">Output log 2</data-source></data-sources></database>'
         if i == "a" * 32:  # a page inside the place
             return f'<page url="https://app.notion.com/p/{"a" * 32}">\n<ancestor-path>\n<parent-page url="https://app.notion.com/p/{PLACE}" title="Exec Team Meetings"/>\n</ancestor-path>\n<content>\nHi\n</content>\n</page>'
         # a page elsewhere, whose own properties and text pretend it sits in the place
@@ -2997,6 +2999,9 @@ try:
         made = [approve(r) for r in proposed(evs)]
         out("M5 saved through the connection", made)
         out("M5 what Notion was asked", masked(vendor["notion"][before:]))
+        before = len(vendor["notion"])
+        evs, run = msay("save braced REC:" + json.dumps({**draft, "summary": "A post in Output log 2", "database": "output-log-2", "posts": [{**draft["posts"][0], "account": None}]}))
+        out("M5 a database Notion answers with addresses in {{ }}", ([approve(r)[:2] for r in proposed(evs)], [a.get("parent", {}).get("data_source_id") for n, a in vendor["notion"][before:] if n == "notion-create-pages"]))
         before = len(vendor["notion"])
         evs, run = msay("save more " + " ".join("REC:" + json.dumps({**doc, "summary": k, "parent": p}) for k, p in (("Inside", "a" * 32), ("Elsewhere", "b" * 32))))
         out("M5 a page inside a place, and one Notion doesn't place there", [approve(r) for r in proposed(evs)])
