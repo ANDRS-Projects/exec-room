@@ -130,6 +130,18 @@ button.workspace:hover, button.workspace[aria-expanded="true"] { border-color: v
 .place-grip { flex: none; width: 20px; height: 28px; margin-left: -6px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); font-size: 14px; line-height: 1; cursor: grab; user-select: none; }
 .place-grip:focus-visible { outline: 2px solid var(--coen); outline-offset: 1px; }
 .place-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* Notion databases: a second line with the columns and the draft value (or the choice of it), then what happens to each column. */
+.db-columns { margin-top: 6px; font-size: 12px; }
+.db-columns > summary { cursor: pointer; color: var(--muted); }
+.db-col-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.db-col { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.db-col-name { font-weight: 600; color: var(--text); }
+.db-col-type { color: var(--muted); }
+.db-col-fixed { color: var(--muted); }
+.db-col select, .db-col input:not([type="checkbox"]) { font: inherit; font-size: 12px; padding: 2px 4px; max-width: 100%; }
+.db-info { margin-top: 3px; font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.db-info select.db-draft { font: inherit; font-size: 12px; padding: 2px 4px; max-width: 100%; }
+.db-info .db-add-column { font-size: 12px; padding: 2px 8px; }
 /* The pencil and the boxes a row opens into are shared with "Folders it can read". */
 .access-list .row-change { font-size: 14px; }
 .access-list .row-change:hover { color: var(--text); }

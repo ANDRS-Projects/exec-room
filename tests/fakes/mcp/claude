@@ -48,6 +48,8 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "mcp-calls.ndjson"), "a") as
         "github_note": ["can't open GitHub yourself" in note, "through this room's GitHub server (its tools are named mcp__hub__…)" in note],
         "advisor_tools": {k: sorted(t for t in a.get("tools", []) if t.startswith("mcp__")) for k, a in agents.items() if k.startswith("room-")},
         "linked_notion": "linked Notion pages" in prompt,
+        # The rule for Notion rows, as Coen is told it (the room's databases and the columns agents fill).
+        "rows_rule": note[note.find('"notion_row"'):note.find("\n", note.find('"notion_row"'))] if '"notion_row"' in note else None,
         "claude_notion": "blocked" if "mcp__claude_ai_Notion" in flag("--disallowedTools") else "allowed" if any(t.startswith("mcp__claude_ai_Notion__") for t in flag("--allowedTools")) else "neither",
     }) + "\n")
 

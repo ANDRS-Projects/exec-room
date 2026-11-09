@@ -894,21 +894,24 @@ const AGENT_NAME = /^[A-Za-z][A-Za-z0-9 -]{0,22}[A-Za-z0-9]$/;
 // Risograph avatar presets for room-built agents, one SVG per animal in public/avatars/presets/.
 const AVATARS = fs.readdirSync(path.join(__dirname, 'public', 'avatars', 'presets'))
   .filter((f) => /^[a-z]+\.svg$/.test(f)).map((f) => f.slice(0, -4)).sort();
-// Notion drafts only in the databases listed in room.config.json that the room allows. The server always sets Status=draft
-// and only creates pages (a long page's remaining content is appended to the page it just created); what the
-// integration could write beyond that is decided by what the owner shares with it in Notion.
+// Notion rows only in a room's own Notion databases (Room settings → Can propose), always with the draft value chosen
+// for that database. The server only creates pages (a long page's remaining content is appended to the page it just
+// created); what the integration could write beyond that is decided by what the owner shares with it in Notion.
 const NOTION_TOKEN_REF = process.env.ROOM_NOTION_TOKEN_REF || CONFIG.notionTokenRef || '';
 const NOTION_API = process.env.ROOM_NOTION_API || 'https://api.notion.com/v1';
+// room.config.json's Output DBs: only read to move rooms from before their own Notion databases (see the rooms
+// migration), and to give an Output DB that is added again its old key.
 const NOTION_DBS = CONFIG.notionDatabases || {};
 // What a room may propose is set per room too (Room settings → "What this room can propose"): its GitHub repos,
-// which Output DBs it may save posts to and the Notion places it may create pages under. Sharing in Notion still
-// decides what the integration can actually write to.
+// its Notion databases and the Notion places it may create pages under. Sharing in Notion still decides what the
+// integration can actually write to.
 // New pages only ever go under a page, never into a database, so the Output DBs and the CRM can't gain rows this way.
 const NOTION_PAGE_MAX = 100000;
 const MAX_REPOS = 30;
 // Every room starts with none of it, the default room included.
-const minimalTargets = () => ({ repos: [], publicRepos: [], notionDbs: [], notionPlaces: [], allowedRecipients: [], sendFrom: '', saveFolders: [] });
+const minimalTargets = () => ({ repos: [], publicRepos: [], notionDatabases: [], notionPlaces: [], allowedRecipients: [], sendFrom: '', saveFolders: [] });
 const MAX_PLACES = 20;
+const MAX_ROOM_DBS = 20;
 const NOTION_CHANNELS = CONFIG.notionChannels || ['X', 'LinkedIn', 'Substack Note', 'Substack Post', 'Instagram', 'Blog'];
 const NOTION_PAGE_URL = /^https:\/\/(app\.notion\.com|www\.notion\.so)\//;
 // email_draft (issue #45): the room never sends mail. Approving records the owner's decision; the draft is then opened in
@@ -974,7 +977,8 @@ A block with any other tag is shown to the owner as plain text, without buttons.
 - Dispatch to a maker, who writes the output into drafts/: {"action": "dispatch", "agent": one of ${Object.keys(all).map((k) => `"${k}"`).join(', ')}, "summary": "one line", "brief": "what it's about, the source, account, audience and links", optional "then": a second maker who runs right after with the first maker's draft (e.g. an image maker for the header image), optional "then_brief": extra context for that second maker}. One approval covers the whole chain. Makers: ${Object.entries(all).map(([k, m]) => `${k} = ${m.name}, ${m.does}`).join('; ')}.` : ''}
 ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {"action": "github_issue", "repo": one of ${targets.repos.map((r) => `"${r}"`).join(', ')}, "summary": "one line", "title": "…", "body": "markdown"}.${targets.publicRepos.length ? ` These repos are public, so an issue there is visible to everyone: ${targets.publicRepos.join(', ')}. Write those issues for outsiders and leave out anything internal (Notion content, private repos, costs, clients, plans, the room itself); the others are private.` : ' All of them are private.'}
 - Comment on an existing issue in one of this room's repos (e.g. your review of it, or an update): {"action": "github_comment", "repo": one of the repos above, "issue": its number, "summary": "one line", "body": "markdown"}.${targets.publicRepos.length ? ' Comments on the public repos are visible to everyone too; write them the same way.' : ''}
-` : ''}${notionSaving() && targets.notionDbs.length ? `- Save social posts as Notion drafts, one row per post (Status is always draft; scheduling stays with the owner): {"action": "notion_draft", "database": one of ${targets.notionDbs.map((k) => [k, NOTION_DBS[k]]).map(([k, db]) => `"${k}" (${db.name}, accounts: ${db.accounts.join(' / ')})`).join(', ')}, "summary": "one line", "posts": [up to 5 of {"channel": one of ${NOTION_CHANNELS.map((c) => `"${c}"`).join(', ')}, "title": "…", "content": "the post text, copied verbatim from the maker's draft (keep X thread 'Tweet N:' markers)", optional "account"}], optional "account" for all posts, "image_prompt", "source_insight"}. Put a whole package (e.g. LinkedIn + X + Notes, with an image maker's prompt as image_prompt) in one proposal. Output DBs are only for posts meant for delivery.
+` : ''}${notionSaving() && postDatabases(space).length ? `- Save social posts as Notion drafts, one row per post (the row is always saved as a draft; scheduling stays with the owner): {"action": "notion_draft", "database": one of ${postDatabases(space).map((db) => `"${db.key}" (${db.name}${db.for ? `, for ${db.for}` : ''}${dbAccounts(db).length ? `, accounts: ${dbAccounts(db).join(' / ')}` : ''})`).join(', ')}, "summary": "one line", "posts": [up to 5 of {"channel": one of ${NOTION_CHANNELS.map((c) => `"${c}"`).join(', ')}, "title": "…", "content": "the post text, copied verbatim from the maker's draft (keep X thread 'Tweet N:' markers)", optional "account"}], optional "account" for all posts, "image_prompt", "source_insight"}. Put a whole package (e.g. LinkedIn + X + Notes, with an image maker's prompt as image_prompt) in one proposal. These databases are only for posts meant for delivery.
+` : ''}${notionSaving() && rowDatabases(space).length ? `- Add rows to one of this room's Notion databases (e.g. a lead, a task, a reading-list item), up to 5 per proposal: {"action": "notion_row", "database": its key, "summary": "one line", "rows": [{"<column>": value, …}]}. Fill only the columns listed for it; the room sets the others (every row is saved as a draft) or leaves them empty. Values: text as a string, a link as https://…, a number as a number, true/false, a date as "YYYY-MM-DD", one option for a select, a list of options for a multi-select. ${rowDatabases(space).map((db) => `"${db.key}" = ${db.name}${db.for ? ` (for ${db.for})` : ''}, columns: ${agentColumns(db).map((c) => `"${c.name}" (${columnHint(c)})`).join(', ')}`).join('; ')}.${postDatabases(space).length ? ' For a post in a post database, use notion_draft instead.' : ''}
 ` : ''}${notionSaving() && targets.notionPlaces.length ? `- Save anything else as a new Notion page (a long article, research, a strategy doc, a review, meeting notes, a digest): {"action": "notion_page", "parent": the Notion URL or id of the page to put it under, "summary": "one line", "title": "…", "content": "markdown (headings, lists, quotes, code, links), up to ${NOTION_PAGE_MAX} characters"}. You choose the place, one of this room's: ${targets.notionPlaces.map((p) => `${p.name} (${p.id})${p.for ? ` for ${p.for}` : ''}`).join('; ')}. You may also pick a more fitting sub-page inside one of these places that you find with Notion search (it's checked when the owner approves); it only works where the owner has shared the page with the room.${roomPages(space).length ? `\n- Update a Notion page this room created earlier, instead of making a new one for a new version of the same document: {"action": "notion_page_update", "page": its Notion URL or id, "summary": "one line, say what changed", "title": "…", "content": "the whole new version in markdown, up to ${NOTION_PAGE_MAX} characters"}. The new version goes on top and the previous one is kept under it. Only these pages can be updated: ${roomPages(space).map((r) => `${r.title} (${notionId(r.result.url)})`).join('; ')}.` : ''}
 ` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send by hand (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. Only a short draft opens straight in a mail app (up to about ${EMAIL_OPENS_ABOUT} characters of text); the owner copies and pastes a longer one by hand, so keep an email short where that fits the message, and don't split one email in two to get under it. This is allowed because the room never sends it: approving only records the owner's decision, then the owner opens the draft in a mail app and sends it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
 ` : `- Email drafts are off in this room because it has no email recipients. If the owner asks for an email, say that these can be turned on by adding the recipient (an address, or a domain) under Room settings → "Email recipients for drafts", and then ask again in a new chat. Don't write the email as a file instead.
@@ -1353,6 +1357,24 @@ for (const space of Object.values(spaces.workspaces)) {
   if (space.access.m365 === undefined) { space.access.m365 = false; migrated = true; }
   // The Exec Room's own MCP servers came later still: rooms from before have none switched on.
   if (space.access.mcp === undefined) { space.access.mcp = {}; migrated = true; }
+  // Notion databases used to be the Output DBs in room.config.json, ticked per room by key. They are the room's own list
+  // now: each ticked one moves into it with what the config says (its id, name and accounts) and "Status = draft" as its
+  // draft column, as before. Its columns are read from Notion once the Exec Room is up (refreshRoomDatabases).
+  if (!Array.isArray(space.targets.notionDatabases)) {
+    const keys = Array.isArray(space.targets.notionDbs) ? space.targets.notionDbs.filter((k) => typeof k === 'string') : [];
+    const gone = keys.filter((k) => !Object.hasOwn(NOTION_DBS, k) || !notionId(NOTION_DBS[k].id));
+    if (gone.length) {
+      console.warn(`Room "${space.name}" listed Notion databases that room.config.json doesn't have: ${gone.map((k) => JSON.stringify(k)).join(', ')}. They were left out when its databases moved into the room; add them again under Room settings → Can propose.`);
+      fs.appendFileSync(JOBS_FILE, JSON.stringify({ kind: 'warning', check: 'room lists a Notion database the config lacks', room: space.id, name: space.name, databases: gone, at: new Date().toISOString() }) + '\n');
+    }
+    space.targets.notionDatabases = keys.filter((k) => !gone.includes(k)).map((k) => {
+      const db = NOTION_DBS[k];
+      return { key: k, id: notionId(db.id), name: String(db.name || k).slice(0, 80), for: '', dataSource: typeof db.dataSource === 'string' ? db.dataSource : '',
+        columns: [], draft: { column: 'Status', type: 'status', value: 'draft' }, ...(Array.isArray(db.accounts) && { accounts: db.accounts.filter((a) => typeof a === 'string') }) };
+    });
+    delete space.targets.notionDbs;
+    migrated = true;
+  }
   // A folder entry that isn't text (only possible by editing workspaces.json by hand) would break the room list and
   // every run in the room: dropped once here, logged, and saved.
   const files = space.access.files;
@@ -1388,9 +1410,9 @@ const targetsOf = (space) => {
   // A database room.config.json no longer has is left out here, not taken off the room: nothing downstream may meet
   // a key without its entry (the proposal rules list each database's name and accounts), and it counts again once
   // the config has it back. The start-up says which rooms list one.
-  const notionDbs = (Array.isArray(t.notionDbs) ? t.notionDbs : []).filter((k) => Object.hasOwn(NOTION_DBS, k));
+  const notionDatabases = Array.isArray(t.notionDatabases) ? t.notionDatabases.filter((d) => d && typeof d.key === 'string' && typeof d.id === 'string') : [];
   // saveFolders: rooms saved before saving files existed have none.
-  return { ...t, notionDbs, publicRepos: t.publicRepos || [], allowedRecipients: t.allowedRecipients || [], sendFrom: t.sendFrom || '', saveFolders: Array.isArray(t.saveFolders) ? t.saveFolders.filter((f) => typeof f === 'string') : [] };
+  return { ...t, notionDatabases, publicRepos: t.publicRepos || [], allowedRecipients: t.allowedRecipients || [], sendFrom: t.sendFrom || '', saveFolders: Array.isArray(t.saveFolders) ? t.saveFolders.filter((f) => typeof f === 'string') : [] };
 };
 const isPublicRepo = (space, repo) => targetsOf(space).publicRepos.includes(repo);
 
@@ -1408,16 +1430,12 @@ function validateTargets(o) {
     if (!/^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/.test(repo)) throw new Error(`"${r}" isn't a repo: use owner/repo, e.g. your-github-org/my-repo`);
     return repo;
   }))];
-  const notionDbs = [...new Set(list(o.notionDbs, 'databases', Object.keys(NOTION_DBS).length).map((k) => {
-    if (!Object.hasOwn(NOTION_DBS, k)) throw new Error(`"${k}" isn't one of the Output DBs`);
-    return k;
-  }))];
   const seen = new Set();
   const notionPlaces = list(o.notionPlaces, 'places', MAX_PLACES).map((p) => {
     if (!p || typeof p !== 'object') throw new Error('each place needs a page and a name');
     const id = notionId(p.id || p.url);
     if (!id) throw new Error(`"${p.id || p.url || ''}" isn't a Notion page URL or id`);
-    if (Object.values(NOTION_DBS).some((db) => db.id.replace(/-/g, '') === id)) throw new Error(`${p.name || id} is an Output DB, not a page: pick it under "databases for posts"`);
+    if (Object.values(NOTION_DBS).some((db) => db.id.replace(/-/g, '') === id) || (Array.isArray(o.notionDatabases) && o.notionDatabases.some((d) => d && notionId(d.id || d.url) === id))) throw new Error(`${p.name || id} is a Notion database, not a page: add it under "Notion databases"`);
     const name = typeof p.name === 'string' ? p.name.trim().replace(/\s+/g, ' ') : '';
     if (!name || name.length > 80) throw new Error('each place needs a name (up to 80 characters)');
     const what = typeof p.for === 'string' ? p.for.trim().slice(0, 200) : '';
@@ -1440,7 +1458,28 @@ function validateTargets(o) {
   if (from && (EMAIL_UNSAFE.test(from) || !EMAIL_ADDRESS.test(from))) throw new Error(`"${from}" isn't an email address for "Send from"`);
   // Folders approved files may be saved to (save_file), by their real path.
   const saveFolders = [...new Set(list(o.saveFolders, 'save folders', SAVE_MAX_FOLDERS).map((f) => saveFolder(f)))];
-  return { repos, publicRepos, notionDbs, notionPlaces, allowedRecipients, sendFrom: from && normAddress(from), saveFolders };
+  // Notion databases: checked here for shape only; settleRoomDatabases reads new ones from Notion before the room is saved.
+  const notionDatabases = list(o.notionDatabases, 'Notion databases', MAX_ROOM_DBS).map((d) => {
+    if (!d || typeof d !== 'object') throw new Error('each Notion database needs a link and a name');
+    const id = notionId(d.id || d.url);
+    if (!id) throw new Error(`"${String(d.id || d.url || '').slice(0, 200)}" isn't a Notion database link or id`);
+    const name = typeof d.name === 'string' ? d.name.trim().replace(/\s+/g, ' ') : '';
+    if (name.length > 80) throw new Error(`"${name.slice(0, 40)}…": a database name has at most 80 characters`);
+    const what = typeof d.for === 'string' ? d.for.trim().slice(0, 200) : '';
+    const draft = d.draft && typeof d.draft === 'object' && typeof d.draft.column === 'string' && typeof d.draft.value === 'string' ? { column: d.draft.column, value: d.draft.value } : null;
+    // Per column: { mode: "agent" | "fixed" | "empty", value for fixed }. Left out by a page from before the rules.
+    let rules;
+    if (d.rules != null) {
+      if (typeof d.rules !== 'object' || Array.isArray(d.rules) || Object.keys(d.rules).length > 200) throw new Error(`"${name || id}": the column settings aren't readable`);
+      rules = {};
+      for (const [col, r] of Object.entries(d.rules)) {
+        if (!r || !['agent', 'fixed', 'empty'].includes(r.mode)) throw new Error(`"${name || id}": "${String(col).slice(0, 60)}" has no valid setting (agent fills, always this value or leave empty)`);
+        rules[col] = r.mode === 'fixed' ? { mode: 'fixed', value: r.value } : { mode: r.mode };
+      }
+    }
+    return { id, name, for: what, draft, ...(rules && { rules }) };
+  }).filter((d, i, all) => all.findIndex((x) => x.id === d.id) === i);
+  return { repos, publicRepos, notionDatabases, notionPlaces, allowedRecipients, sendFrom: from && normAddress(from), saveFolders };
 }
 
 // Folders with keys and credentials, and macOS's Library (Mail, Keychains, cookies, Messages): never a room folder,
@@ -1836,11 +1875,13 @@ function validateRec(o, space = null) {
     return { action: 'github_comment', summary, repo, issue, public: isPublicRepo(space, repo), body: str(o.body, 'body', 20000) };
   }
   if (o.action === 'notion_draft' && notionSaving()) {
-    if (!Object.hasOwn(NOTION_DBS, o.database)) throw new Error(`database "${o.database}" isn't one of the Output DBs`);
-    if (!targetsOf(space).notionDbs.includes(o.database)) throw new Error(`this room can't save posts to ${NOTION_DBS[o.database].name}`);
-    const db = NOTION_DBS[o.database];
+    const db = roomDatabase(space, o.database);
+    if (!db) throw new Error(`database "${o.database}" isn't one of this room's Notion databases`);
+    const notReady = postsNotReady(db);
+    if (notReady) throw new Error(notReady);
+    const accounts = dbAccounts(db);
     const account = (v) => {
-      if (v != null && !db.accounts.includes(v)) throw new Error(`account "${v}" isn't an option in ${db.name}`);
+      if (v != null && accounts.length && !accounts.includes(v)) throw new Error(`account "${v}" isn't an option in ${db.name}`);
       return v ?? undefined;
     };
     const optional = (v, field, max) => (v == null || v === '' ? undefined : str(v, field, max));
@@ -1856,9 +1897,21 @@ function validateRec(o, space = null) {
       };
     });
     return {
-      action: 'notion_draft', summary, database: o.database, posts,
+      action: 'notion_draft', summary, database: o.database, databaseName: db.name, draftLabel: `${db.draft.column} = ${db.draft.value}`, posts,
       image_prompt: optional(o.image_prompt, 'image_prompt', 2000), source_insight: optional(o.source_insight, 'source_insight', 2000),
     };
+  }
+  if (o.action === 'notion_row' && notionSaving()) {
+    const db = roomDatabase(space, o.database);
+    if (!db) throw new Error(`database "${o.database}" isn't one of this room's Notion databases`);
+    if (!db.draft) throw new Error(`${db.name} has no draft column yet: choose or add one under Room settings → Can propose`);
+    if (!(db.columns || []).length) throw new Error(`${db.name}'s columns haven't been read yet: open its room's settings once`);
+    const raw = Array.isArray(o.rows) ? o.rows : [o.values];
+    if (raw.length < 1 || raw.length > 5) throw new Error('"rows" needs 1 to 5 rows');
+    const rows = raw.map((r, i) => checkRow(db, r, `row ${i + 1}`));
+    // What the room sets besides the agent's values, for the card.
+    const fixed = [{ column: db.draft.column, value: db.draft.value, draft: true }, ...fixedColumns(db).map(({ col, rule }) => ({ column: col.name, value: rule.value }))];
+    return { action: 'notion_row', summary, database: db.key, databaseName: db.name, rows, fixed };
   }
   if (o.action === 'notion_page' && notionSaving()) {
     const id = notionId(o.parent);
@@ -1952,6 +2005,304 @@ function saveUrl(v) {
   return u;
 }
 
+// ---- Notion databases a room may save rows to (Room settings → Can propose → "Notion databases"). Each is the room's
+// own entry: the database's id and data source, the name and purpose the owner gave it, its columns as Notion last
+// described them, and its draft column: the status or select column, and the value in it, that every row the room
+// saves gets. The Exec Room sets that value itself; an agent never chooses it. A database without one can't be saved to.
+const roomDatabase = (space, key) => targetsOf(space).notionDatabases.find((d) => d.key === key) || null;
+// The title column (Notion's "Name" unless renamed); databases whose columns haven't been read yet use "Name".
+const titleColumn = (db) => ((db.columns || []).find((c) => c.type === 'title') || { name: 'Name' }).name;
+const dbColumn = (db, name) => (db.columns || []).find((c) => c.name === name) || null;
+// The accounts a post may name: the options of its Account column, or, before its columns were read, what
+// room.config.json listed for it.
+const dbAccounts = (db) => {
+  const col = dbColumn(db, 'Account');
+  return col && Array.isArray(col.options) ? col.options : Array.isArray(db.accounts) ? db.accounts : [];
+};
+// Posts go into the columns they always went into (Channel and Post Content, besides the title): why a database
+// can't take them, or null. A database whose columns haven't been read yet is taken at its word.
+function postsNotReady(db) {
+  if (!db.draft) return `${db.name} has no draft column yet: choose or add one under Room settings → Can propose`;
+  if (!(db.columns || []).length) return null;
+  const missing = ['Channel', 'Post Content'].filter((c) => !dbColumn(db, c));
+  if (missing.length) return `${db.name} has no ${missing.join(' or ')} column, which posts need`;
+  const notAgent = ['Channel', 'Post Content'].filter((c) => columnRule(db, c).mode !== 'agent');
+  return notAgent.length ? `in ${db.name}, ${notAgent.join(' and ')} ${notAgent.length > 1 ? "aren't" : "isn't"} set to "Agent fills"` : null;
+}
+const postDatabases = (space) => targetsOf(space).notionDatabases.filter((d) => !postsNotReady(d));
+
+// ---- What happens to each column of a room's database when a row is saved there, chosen per column in Room
+// settings: "agent" (an agent proposes the value; the card shows it), "fixed" (the Exec Room sets the value chosen
+// there, on every row) or "empty" (nobody fills it). The draft column is always fixed to the draft value. A status
+// column is never "agent": status columns are what automations watch. Types the Exec Room can't fill (people,
+// relations, files, formulas and the like) are always empty.
+const FILLABLE_TYPES = new Set(['title', 'rich_text', 'url', 'email', 'phone_number', 'number', 'checkbox', 'select', 'multi_select', 'date']);
+const FIXABLE_TYPES = new Set(['rich_text', 'url', 'email', 'phone_number', 'number', 'checkbox', 'select', 'status', 'date']);
+// The columns posts go into, by name; their types before a database's columns were read.
+const POST_TYPES = { Channel: 'rich_text', 'Post Content': 'rich_text', Account: 'select', 'Image Prompt': 'rich_text', 'Source Insight': 'rich_text' };
+const colType = (db, name) => (dbColumn(db, name) || {}).type || (name === titleColumn(db) ? 'title' : POST_TYPES[name]) || 'rich_text';
+// Before the owner chose: the title is the agent's. In a post database (one with Channel and Post Content) only the
+// post columns are too, as every other column there may be one a posting automation reads (Image File, Posted). In
+// any other database, text and links are the agent's. The rest is left empty, and so is a column added in Notion
+// after she chose, until she chooses.
+function defaultMode(db, col) {
+  if (col.type === 'title') return 'agent';
+  if (dbColumn(db, 'Channel') && dbColumn(db, 'Post Content')) return Object.hasOwn(POST_TYPES, col.name) && FILLABLE_TYPES.has(col.type) ? 'agent' : 'empty';
+  return ['rich_text', 'url'].includes(col.type) ? 'agent' : 'empty';
+}
+function columnRule(db, name) {
+  if (db.draft && name === db.draft.column) return { mode: 'fixed', value: db.draft.value, draft: true };
+  const col = dbColumn(db, name);
+  // Columns not read yet: a post database moved over from room.config.json takes posts as before.
+  if (!col) return !(db.columns || []).length && (Object.hasOwn(POST_TYPES, name) || name === titleColumn(db)) ? { mode: 'agent' } : { mode: 'empty' };
+  if (db.rules && Object.hasOwn(db.rules, name)) return db.rules[name];
+  return { mode: db.rules ? 'empty' : defaultMode(db, col) };
+}
+// Databases agents can propose rows for: a draft column, columns read, and something for the agent to fill.
+const rowDatabases = (space) => targetsOf(space).notionDatabases.filter((d) => d.draft && (d.columns || []).length && agentColumns(d).length);
+const columnHint = (c) => (c.type === 'title' ? 'the title, required' : c.type === 'rich_text' ? 'text' : c.type === 'url' ? 'link' : c.type === 'phone_number' ? 'phone'
+  : c.type === 'checkbox' ? 'true/false' : c.type === 'date' ? 'date' : c.type === 'select' ? `one of ${(c.options || []).map((o) => `"${o}"`).join(', ')}`
+    : c.type === 'multi_select' ? `a list from ${(c.options || []).map((o) => `"${o}"`).join(', ')}` : c.type);
+const fixedColumns = (db) => (db.columns || []).filter((c) => !(db.draft && c.name === db.draft.column)).map((c) => ({ col: c, rule: columnRule(db, c.name) })).filter((x) => x.rule.mode === 'fixed');
+const agentColumns = (db) => (db.columns || []).filter((c) => columnRule(db, c.name).mode === 'agent');
+
+// A value for a column, as its type wants it; throws in words an agent (and the owner, on a failed card) can use.
+function checkValue(col, v, where) {
+  const t = col.type;
+  const opts = Array.isArray(col.options) ? col.options : null;
+  const fail = (what) => { throw new Error(`${where}: ${what}`); };
+  const choices = () => (opts ? opts.map((o) => `"${o}"`).join(', ') : 'its options');
+  if (t === 'title' || t === 'rich_text') {
+    if (typeof v !== 'string') fail('must be text');
+    if (v.length > 2000) fail('is longer than 2000 characters');
+    return v;
+  }
+  if (t === 'url') { if (typeof v !== 'string' || v.length > 2000 || !/^https?:\/\/\S+$/i.test(v)) fail('must be an http(s) link'); return v; }
+  if (t === 'email') { if (typeof v !== 'string' || !/^[^\s@,;<>"]+@[^\s@,;<>"]+\.[a-z]{2,}$/i.test(v)) fail('must be an email address'); return v; }
+  if (t === 'phone_number') { if (typeof v !== 'string' || !/^[+\d(][\d\s().-]{2,30}$/.test(v)) fail('must be a phone number'); return v; }
+  if (t === 'number') {
+    const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+    if (!Number.isFinite(n)) fail('must be a number');
+    return n;
+  }
+  if (t === 'checkbox') { if (typeof v !== 'boolean') fail('must be true or false'); return v; }
+  if (t === 'select' || t === 'status') { if (typeof v !== 'string' || (opts && !opts.includes(v))) fail(`must be one of ${choices()}`); return v; }
+  if (t === 'multi_select') {
+    if (!Array.isArray(v) || v.length > 20 || v.some((x) => typeof x !== 'string' || (opts && !opts.includes(x)))) fail(`must be a list of up to 20 of ${choices()}`);
+    return [...new Set(v)];
+  }
+  if (t === 'date') {
+    if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?$/.test(v) || Number.isNaN(Date.parse(v.length === 10 ? `${v}T00:00:00Z` : v))) fail('must be a date, as YYYY-MM-DD (or with a time)');
+    return v;
+  }
+  return fail(`is a ${t} column, which the Exec Room can't fill`);
+}
+
+// A proposed row: only columns the agent may fill, each value as its type wants it, and a title.
+function checkRow(db, values, where) {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) throw new Error(`${where} isn't an object of column: value`);
+  const out = {};
+  for (const [name, v] of Object.entries(values)) {
+    if (v === null || v === '') continue;
+    const col = dbColumn(db, name);
+    if (!col) throw new Error(`${where}: "${name}" isn't a column of ${db.name}`);
+    const rule = columnRule(db, name);
+    if (rule.mode !== 'agent') throw new Error(`${where}: agents don't fill "${name}" in ${db.name} (${rule.mode === 'fixed' ? 'the Exec Room sets it' : 'it stays empty'})`);
+    out[name] = checkValue(col, v, `${where}, "${name}"`);
+  }
+  const title = titleColumn(db);
+  if (columnRule(db, title).mode === 'agent' && !(typeof out[title] === 'string' && out[title].trim())) throw new Error(`${where}: "${title}" (the row's title) is missing`);
+  return out;
+}
+
+// Everything a row holds: the agent's values, the fixed values and the draft value, as [name, type, value].
+function rowPairs(db, values) {
+  const pairs = Object.entries(values).filter(([name]) => columnRule(db, name).mode === 'agent').map(([name, v]) => [name, colType(db, name), v]);
+  for (const { col, rule } of fixedColumns(db)) pairs.push([col.name, col.type, rule.value]);
+  pairs.push([db.draft.column, db.draft.type === 'select' ? 'select' : 'status', db.draft.value]);
+  return pairs;
+}
+
+// One row into a room's database, through Connect, or else with the token. Returns the new row's link.
+async function writeNotionRow(db, pairs) {
+  const conn = notionWriter();
+  if (conn) {
+    const properties = {};
+    for (const [name, type, v] of pairs) {
+      // Notion's Connect service: dates in parts, checkboxes as __YES__/__NO__, and columns named id or url prefixed.
+      const key = /^(id|url)$/i.test(name) ? `userDefined:${name}` : name;
+      if (type === 'date') { properties[`date:${name}:start`] = v; properties[`date:${name}:is_datetime`] = v.includes('T') ? 1 : 0; }
+      else if (type === 'checkbox') properties[key] = v ? '__YES__' : '__NO__';
+      else properties[key] = v;
+    }
+    const text = await mcpCallTool(conn, 'notion-create-pages', { parent: { type: 'data_source_id', data_source_id: await notionSource(conn, db) }, pages: [{ properties }], allow_async: false });
+    return notionMadeUrl(text);
+  }
+  const prop = (type, v) => ({
+    title: { title: richText(v) }, rich_text: { rich_text: richText(v) }, url: { url: v }, email: { email: v }, phone_number: { phone_number: v },
+    number: { number: v }, checkbox: { checkbox: v }, select: { select: { name: v } }, status: { status: { name: v } },
+    multi_select: { multi_select: Array.isArray(v) ? v.map((name) => ({ name })) : [] }, date: { date: { start: v } },
+  })[type];
+  const res = await fetch(`${NOTION_API}/pages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${NOTION_TOKEN}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent: { database_id: db.id }, properties: Object.fromEntries(pairs.map(([name, type, v]) => [name, prop(type, v)])) }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Notion ${res.status}: ${data.message || 'request failed'}`);
+  // The page exists once Notion returns its id; the link format varies (app.notion.com or www.notion.so).
+  if (!data.id) throw new Error('Notion did not confirm the page');
+  return NOTION_PAGE_URL.test(data.url || '') ? data.url : '';
+}
+
+// The columns as the settings page shows them: type, options, the rule and which rules the type allows.
+const publicColumns = (db) => (db.columns || []).map((c) => ({ name: c.name, type: c.type, ...(Array.isArray(c.options) && { options: c.options }), rule: columnRule(db, c.name),
+  canAgent: FILLABLE_TYPES.has(c.type) && c.type !== 'status', canFix: FIXABLE_TYPES.has(c.type) && c.type !== 'title' }));
+// The columns that can hold the draft value: Notion status and select columns, with their options.
+const draftChoices = (columns) => columns.filter((c) => (c.type === 'status' || c.type === 'select') && Array.isArray(c.options) && c.options.length)
+  .map((c) => ({ column: c.name, type: c.type, options: c.options, suggested: c.options.find((o) => /^draft$/i.test(o)) || null }));
+
+// What Notion says about a database: its title, data source and columns ({ name, type, options }). Through the Connect
+// sign-in when it works, otherwise with the room's Notion token.
+async function inspectNotionDatabase(link) {
+  const id = notionId(link);
+  if (!id) throw new Error(`"${String(link).slice(0, 200)}" isn't a Notion database link or id`);
+  const conn = notionWriter();
+  if (conn) return inspectDatabaseVia(conn, id);
+  if (NOTION_TOKEN) return inspectDatabaseByToken(id);
+  throw new Error("Notion isn't connected (Exec Room settings, MCP servers) and the room has no Notion token");
+}
+
+async function inspectDatabaseVia(s, id) {
+  const raw = await mcpCallTool(s, 'notion-fetch', { id });
+  const j = notionJson(raw);
+  const text = j && typeof j.text === 'string' ? j.text : String(raw);
+  const type = j && j.metadata && j.metadata.type;
+  if ((type && type !== 'database') || (!type && !/^\s*<database[\s>]/.test(text))) throw new Error("that link is a page, not a database: open the database itself in Notion and copy its link");
+  const sources = [...new Set([...text.matchAll(/<data-source url="(?:\{\{)?collection:\/\/([0-9a-f-]{32,36})(?:\}\})?"/gi)].map((m) => m[1]))];
+  if (sources.length !== 1) throw new Error(sources.length ? `that database has ${sources.length} data sources, and databases with more than one aren't supported yet` : "Notion didn't name that database's data source");
+  // Its columns are in the data source's state: {"schema": {"<name>": {"type": …, "options": […] or "groups": {…}}}}.
+  const state = (text.match(/<data-source-state>\s*([\s\S]*?)\s*<\/data-source-state>/) || [])[1];
+  let schema = {};
+  try { schema = (JSON.parse(state || '{}').schema) || {}; } catch { /* left empty: reported below */ }
+  // A column is listed by its key, which for one named "id" or "url" is "userDefined:…"; its own name is inside.
+  const columns = Object.entries(schema).map(([key, c]) => {
+    const name = c && typeof c.name === 'string' && c.name ? c.name : key;
+    const t = c && typeof c.type === 'string' ? c.type : 'unknown';
+    const opts = Array.isArray(c && c.options) ? c.options : c && c.groups && typeof c.groups === 'object' ? Object.values(c.groups).flat() : null;
+    return { name, type: t === 'text' ? 'rich_text' : t, ...(opts && { options: opts.map((o) => o && o.name).filter((n) => typeof n === 'string') }) };
+  });
+  if (!columns.length) throw new Error("Notion didn't list that database's columns");
+  const title = (j && typeof j.title === 'string' && j.title) || (text.match(/The title of this Database is: (.+)/) || [])[1] || '';
+  return { id, title: title.trim(), dataSource: sources[0], columns };
+}
+
+async function inspectDatabaseByToken(id) {
+  let data;
+  try { data = await notionRequest('GET', `/databases/${id}`); } catch (err) {
+    throw err.notFound ? new Error("Notion can't find that database; share it with the room's Notion integration first") : err;
+  }
+  if (data.object !== 'database') throw new Error("that link is a page, not a database: open the database itself in Notion and copy its link");
+  const columns = Object.entries(data.properties || {}).map(([name, c]) => {
+    const opts = c && c[c.type] && Array.isArray(c[c.type].options) ? c[c.type].options.map((o) => o.name) : null;
+    return { name, type: c.type, ...(opts && { options: opts }) };
+  });
+  return { id, title: plainText(data.title).trim(), dataSource: '', columns };
+}
+
+// Room settings as saved: databases already in the room keep what was read of them; new ones are read from Notion
+// now (their columns are never taken from the page). The draft column must be a status or select column of the
+// database, and the value one of its options; a database without one is kept, but can't be saved to.
+async function settleRoomDatabases(given, before) {
+  const out = [];
+  for (const d of given) {
+    const old = before.find((b) => b.id === d.id);
+    let info = old;
+    if (!old) {
+      try { info = await inspectNotionDatabase(d.id); } catch (err) { throw new Error(`"${d.name || d.id}": ${err.message}`); }
+    }
+    const columns = info.columns || [];
+    const name = d.name || info.name || info.title || 'Notion database';
+    let draft = null;
+    if (d.draft) {
+      const col = columns.find((c) => c.name === d.draft.column);
+      if (columns.length && (!col || !['status', 'select'].includes(col.type))) throw new Error(`"${name}": "${d.draft.column}" isn't a status or select column of that database`);
+      if (col && Array.isArray(col.options) && !col.options.includes(d.draft.value)) throw new Error(`"${name}": "${d.draft.value}" isn't an option of its "${d.draft.column}" column`);
+      draft = { column: d.draft.column, type: col ? col.type : (old && old.draft && old.draft.type) || 'status', value: d.draft.value };
+    }
+    const taken = new Set([...out, ...before].map((x) => x.key));
+    // An Output DB from room.config.json added again keeps its key there, so proposals that name it still match.
+    const configKey = Object.keys(NOTION_DBS).find((k) => notionId(NOTION_DBS[k].id) === d.id);
+    let key = old ? old.key : configKey && !out.some((x) => x.key === configKey) ? configKey : `db-${d.id.slice(0, 8)}`;
+    for (let n = 2; !old && taken.has(key); n += 1) key = `db-${d.id.slice(0, 8)}-${n}`;
+    const entry = { key, id: d.id, name, for: d.for, dataSource: info.dataSource || '', columns, draft };
+    const rules = settleRules(entry, d.rules !== undefined ? d.rules : old && old.rules, name);
+    out.push({ ...entry, ...(rules && { rules }),
+      ...(old && Array.isArray(old.accounts) && { accounts: old.accounts }), ...(old && old.readError && !columns.length && { readError: old.readError }) });
+  }
+  return out;
+}
+
+// The rules as stored: one per column (but the draft column), each allowed for its type, fixed values checked like
+// a row's. None given (a database from before the rules, columns not read yet): none stored, so the defaults apply.
+function settleRules(db, given, name) {
+  if (!given || !(db.columns || []).length) return undefined;
+  const rules = {};
+  for (const col of db.columns) {
+    if (db.draft && col.name === db.draft.column) continue;
+    const r = Object.hasOwn(given, col.name) ? given[col.name] : { mode: defaultMode(db, col) };
+    const where = `"${name}", column "${col.name}"`;
+    if (col.type === 'title' && r.mode !== 'agent') throw new Error(`${where}: the title is always filled by the agent`);
+    if (r.mode === 'agent' && !(FILLABLE_TYPES.has(col.type) && col.type !== 'status')) throw new Error(`${where}: ${col.type === 'status' ? 'a status column is never filled by an agent (automations watch them); choose a fixed value or leave it empty' : `a ${col.type} column can't be filled by an agent`}`);
+    if (r.mode === 'fixed') {
+      if (!FIXABLE_TYPES.has(col.type) || col.type === 'title') throw new Error(`${where}: a ${col.type} column can't have a fixed value`);
+      rules[col.name] = { mode: 'fixed', value: checkValue(col, r.value, where) };
+    } else rules[col.name] = { mode: r.mode };
+  }
+  return rules;
+}
+
+// A room's databases whose columns haven't been read yet (moved over from room.config.json, or Notion didn't answer
+// before), and those without a draft column yet (one may have been added in Notion since): read when its Room
+// settings open. A database Notion can't describe keeps working as before; why is said
+// on its row there.
+async function refreshRoomDatabases(space) {
+  if (!notionSaving()) return;
+  let changed = false;
+  {
+    for (const db of targetsOf(space).notionDatabases) {
+      if ((db.columns || []).length && db.draft) continue;
+      try {
+        const info = await inspectNotionDatabase(db.id);
+        Object.assign(db, { columns: info.columns, dataSource: db.dataSource || info.dataSource });
+        delete db.readError;
+        if (db.draft) {
+          const col = dbColumn(db, db.draft.column);
+          if (col) db.draft.type = col.type;
+        }
+      } catch (err) {
+        db.readError = err.message.slice(0, 300);
+      }
+      changed = true;
+    }
+  }
+  if (changed) saveSpaces();
+}
+
+// "Add a Status column with Draft", on the owner's click in Room settings, never by itself: the only change the Exec
+// Room makes to a database's columns. Through the Connect sign-in only; a Notion token has no rights to change a database.
+async function addDraftColumn(link) {
+  const conn = notionWriter();
+  if (!conn) throw new Error("adding a column needs Notion's Connect sign-in (Exec Room settings, MCP servers); with a Notion token, add a Status column in Notion yourself");
+  const info = await inspectDatabaseVia(conn, notionId(link) || '');
+  if (draftChoices(info.columns).some((c) => c.suggested)) return info;
+  const name = info.columns.some((c) => c.name === 'Status') ? 'Draft status' : 'Status';
+  if (info.columns.some((c) => c.name === name)) throw new Error(`that database already has a "${name}" column: choose its draft value instead`);
+  await mcpCallTool(conn, 'notion-update-data-source', { data_source_id: info.dataSource, statements: `ADD COLUMN "${name}" STATUS('Draft':gray:to_do, 'Done':green:complete)` });
+  return inspectDatabaseVia(conn, info.id);
+}
+
 // The 32-hex page id at the end of a Notion URL (after any title slug) or a bare id with or without dashes.
 function notionId(v) {
   if (typeof v !== 'string') return null;
@@ -1968,29 +2319,14 @@ function richText(text) {
 
 // Creates one page in an allowlisted Output DB. Status is fixed to draft here, never taken from the proposal.
 async function createNotionPage(rec, post) {
-  const conn = notionWriter();
-  if (conn) return createNotionRowVia(conn, rec, post);
-  const db = NOTION_DBS[rec.database];
-  const properties = {
-    Name: { title: richText(post.title) },
-    Status: { status: { name: 'draft' } },
-    Channel: { rich_text: richText(post.channel) },
-    'Post Content': { rich_text: richText(post.content) },
-  };
-  if (post.account) properties.Account = { select: { name: post.account } };
-  if (rec.image_prompt) properties['Image Prompt'] = { rich_text: richText(rec.image_prompt) };
-  if (rec.source_insight) properties['Source Insight'] = { rich_text: richText(`${rec.source_insight}\n\n${creditLine(rec)}`) };
-  const res = await fetch(`${NOTION_API}/pages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${NOTION_TOKEN}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ parent: { database_id: db.id }, properties }),
-    signal: AbortSignal.timeout(30000),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Notion ${res.status}: ${data.message || 'request failed'}`);
-  // The page exists once Notion returns its id; the link format varies (app.notion.com or www.notion.so).
-  if (!data.id) throw new Error('Notion did not confirm the page');
-  return NOTION_PAGE_URL.test(data.url || '') ? data.url : '';
+  const db = roomDatabase(spaceOf(rec.roomId), rec.database);
+  if (!db) throw new Error("that database isn't one of this room's Notion databases any more");
+  // A post's fields go into the post columns; a column the owner set to fixed or empty gets that instead.
+  const values = { [titleColumn(db)]: post.title, Channel: post.channel, 'Post Content': post.content };
+  if (post.account) values.Account = post.account;
+  if (rec.image_prompt) values['Image Prompt'] = rec.image_prompt;
+  if (rec.source_insight) values['Source Insight'] = `${rec.source_insight}\n\n${creditLine(rec)}`;
+  return writeNotionRow(db, rowPairs(db, values));
 }
 
 // Inline markdown -> Notion rich text: **bold**, *italic*, `code` and [text](https) links; the rest stays plain.
@@ -2199,28 +2535,19 @@ async function notionFetchText(s, id) {
 }
 
 // An Output DB's data source ("collection://…"), which new rows go into: read once per database and kept while the
-// Exec Room runs, or set by hand as "dataSource" on the database's entry in room.config.json.
+// Exec Room runs, or stored with the room's database when its columns were read.
 const notionSources = new Map();
-async function notionSource(s, key) {
-  const db = NOTION_DBS[key];
+async function notionSource(s, db) {
   if (typeof db.dataSource === 'string' && notionUuid.test(db.dataSource)) return db.dataSource.match(notionUuid)[0];
+  const key = db.id;
   if (!notionSources.has(key)) {
     const text = await notionFetchText(s, db.id);
     // Notion writes the address as "collection://…", or, since November 2026, as "{{collection://…}}".
     const found = [...new Set([...text.matchAll(/<data-source url="(?:\{\{)?collection:\/\/([0-9a-f-]{32,36})(?:\}\})?"/gi)].map((m) => m[1]))];
-    if (found.length !== 1) throw new Error(found.length ? `${db.name} has ${found.length} data sources, so it isn't clear which one gets the row: name it as "dataSource" in room.config.json` : `Notion didn't name ${db.name}'s data source`);
+    if (found.length !== 1) throw new Error(found.length ? `${db.name} has ${found.length} data sources, and databases with more than one aren't supported yet` : `Notion didn't name ${db.name}'s data source`);
     notionSources.set(key, found[0]);
   }
   return notionSources.get(key);
-}
-
-async function createNotionRowVia(s, rec, post) {
-  const properties = { Name: post.title, Status: 'draft', Channel: post.channel, 'Post Content': post.content };
-  if (post.account) properties.Account = post.account;
-  if (rec.image_prompt) properties['Image Prompt'] = rec.image_prompt;
-  if (rec.source_insight) properties['Source Insight'] = `${rec.source_insight}\n\n${creditLine(rec)}`;
-  const text = await mcpCallTool(s, 'notion-create-pages', { parent: { type: 'data_source_id', data_source_id: await notionSource(s, rec.database) }, pages: [{ properties }], allow_async: false });
-  return notionMadeUrl(text);
 }
 
 async function createNotionDocVia(s, rec) {
@@ -2266,7 +2593,7 @@ function extractRecs(text, space) {
 // A proposal in a block the room doesn't read (tagged json, or with no tag) gets no card, and the page shows it as
 // a piece of code: smaller models do this. It is only noticed here, never accepted, so that the owner can be told.
 // A block counts when its JSON names one of validateRec's actions.
-const REC_ACTIONS = ['dispatch', 'github_issue', 'github_comment', 'notion_draft', 'notion_page', 'notion_page_update', 'email_draft', 'create_agent', 'save_file'];
+const REC_ACTIONS = ['dispatch', 'github_issue', 'github_comment', 'notion_draft', 'notion_row', 'notion_page', 'notion_page_update', 'email_draft', 'create_agent', 'save_file'];
 function hasMisfiledRec(text) {
   const rest = text.replace(/```recommendation[^\n]*\n[\s\S]*?\n```/g, '');
   return [...rest.matchAll(/```[^\n]*\n([\s\S]*?)\n```/g)].some((m) => {
@@ -2750,13 +3077,6 @@ setInterval(expireEmails, 60 * 60 * 1000).unref();
     try {
       // A room saved before attachments existed (or edited by hand) may list a folder that holds them. It is left out
       // of that room's runs (see permissionsFor) and reported here.
-      // A room can list a Notion database the config no longer has (taken out of room.config.json after the room was
-      // set up). It is left out of that room's runs (see targetsOf) and reported here; the room's file keeps it.
-      const goneDbs = ((space.targets && Array.isArray(space.targets.notionDbs) && space.targets.notionDbs) || []).filter((k) => !Object.hasOwn(NOTION_DBS, k));
-      if (goneDbs.length) {
-        console.warn(`Room "${space.name}" lists Notion databases that room.config.json doesn't have: ${goneDbs.map((k) => JSON.stringify(k)).join(', ')}. They are left out of that room until the config has them again.`);
-        fs.appendFileSync(JOBS_FILE, JSON.stringify({ kind: 'warning', check: 'room lists a Notion database the config lacks', room: space.id, name: space.name, databases: goneDbs, at: new Date().toISOString() }) + '\n');
-      }
       const attached = ((space.access && space.access.files) || []).filter((f) => typeof f === 'string' && overlapsAttachments(realOr(f) || f));
       if (attached.length) {
         console.warn(`Room "${space.name}" lists folders that hold files attached to messages: ${attached.map(tilde).join(', ')}. Agents in that room don't get them; remove them in the room's settings.`);
@@ -3888,7 +4208,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
   const offEmail = rec.action === 'email_draft' ? notAllowed(rec, targets.allowedRecipients) : [];
   const offList = (rec.action === 'github_issue' || rec.action === 'github_comment') && !roomRepo(spaceOf(rec.roomId), rec.repo) ? `${rec.repo} is no longer one of this room's repos`
     : rec.action === 'save_file' && !targets.saveFolders.includes(rec.folder) ? `${tilde(rec.folder)} is no longer one of this room's save folders`
-    : rec.action === 'notion_draft' && !targets.notionDbs.includes(rec.database) ? `this room can no longer save posts to ${Object.hasOwn(NOTION_DBS, rec.database) ? NOTION_DBS[rec.database].name : `"${rec.database}" (room.config.json doesn't list that database)`}`
+    : rec.action === 'notion_draft' && (!roomDatabase(spaceOf(rec.roomId), rec.database) || postsNotReady(roomDatabase(spaceOf(rec.roomId), rec.database))) ? `this room can no longer save posts to ${roomDatabase(spaceOf(rec.roomId), rec.database) ? `${roomDatabase(spaceOf(rec.roomId), rec.database).name} (${postsNotReady(roomDatabase(spaceOf(rec.roomId), rec.database))})` : `"${rec.database}" (it isn't one of the room's Notion databases any more)`}`
       : offEmail.length ? `${offEmail.join(' and ')} ${offEmail.length > 1 ? 'are' : 'is'} no longer on this room's recipient list`
         : null;
   if (offList) return res.status(409).json({ error: `${offList}. Ask Coen to propose it again, or change the room's settings.` });
@@ -3935,6 +4255,34 @@ app.post('/api/recs/:id/approve', async (req, res) => {
       rec.result = { error: err.message.slice(0, 500) };
       rec.state = 'failed';
     }
+    saveRecs();
+    logDecision(rec, { result: rec.result });
+    return res.json({ events: [decision, recResult(rec, rec.result)] });
+  }
+  if (rec.action === 'notion_row') {
+    const db = roomDatabase(spaceOf(rec.roomId), rec.database);
+    const urls = [];
+    let error = null;
+    try {
+      if (!db || !db.draft) throw new Error(db ? `${db.name} has no draft column any more` : "that database isn't one of this room's Notion databases any more");
+      // The database as Notion describes it now: a column or option may have changed since the card appeared.
+      const info = await inspectNotionDatabase(db.id);
+      db.columns = info.columns;
+      if (!db.dataSource) db.dataSource = info.dataSource;
+      saveSpaces();
+      const draftCol = dbColumn(db, db.draft.column);
+      if (!draftCol) throw new Error(`its draft column "${db.draft.column}" is gone from Notion`);
+      checkValue(draftCol, db.draft.value, `its draft column "${db.draft.column}"`);
+      for (const { col, rule } of fixedColumns(db)) checkValue(col, rule.value, `the fixed value of "${col.name}"`);
+      const rows = rec.rows.map((r, i) => checkRow(db, r, `row ${i + 1}`));
+      for (const r of rows) {
+        try { urls.push(await writeNotionRow(db, rowPairs(db, r))); } catch (err) { error = `row ${urls.length + 1}: ${err.message.slice(0, 400)}`; break; }
+      }
+    } catch (err) {
+      error = err.message.slice(0, 500);
+    }
+    rec.state = error ? 'failed' : 'done';
+    rec.result = error ? { urls, error } : { urls };
     saveRecs();
     logDecision(rec, { result: rec.result });
     return res.json({ events: [decision, recResult(rec, rec.result)] });
@@ -4216,7 +4564,9 @@ function publicSpace(space) {
   return {
     id: space.id, name: space.name, description: space.description || '', brief: space.brief || '', members: space.members, focus: focus ? focus.key : null, isDefault: space.id === DEFAULT_SPACE,
     access: { ...access, files: access.files.map(tilde) },
-    targets: { ...targetsOf(space), saveFolders: targetsOf(space).saveFolders.map(tilde) },
+    targets: { ...targetsOf(space), saveFolders: targetsOf(space).saveFolders.map(tilde),
+      notionDatabases: targetsOf(space).notionDatabases.map((d) => ({ key: d.key, id: d.id, name: d.name, for: d.for, draft: d.draft ? { column: d.draft.column, value: d.draft.value } : null,
+        columns: (d.columns || []).length, cols: publicColumns(d), draftChoices: draftChoices(d.columns || []), postsReady: !postsNotReady(d), ...(d.readError && { readError: d.readError }) })) },
   };
 }
 
@@ -4278,7 +4628,7 @@ app.get('/api/workspaces', (req, res) => {
   res.json({
     current: currentSpace().id, limit: MAX_PARALLEL,
     // For "What this room can propose": the Output DBs the code knows, and whether Notion actions are on at all.
-    notionDbs: Object.entries(NOTION_DBS).map(([key, db]) => ({ key, name: db.name })), notion: notionSaving(), notionConnected: Boolean(notionReader()),
+    notion: notionSaving(), notionConnected: Boolean(notionReader()), notionCanAddColumns: Boolean(notionWriter()),
     // For the Notion note under Can use: 'on' (agents read through the connection), 'off' (connected, but paused or
     // needing a new sign-in: no Notion for agents), or null (not connected: the claude.ai connector, or links on a key).
     notionConnection: notionConn() ? (notionReader() ? 'on' : 'off') : null, auth: AUTH,
@@ -4469,7 +4819,7 @@ function freeSpaceId(slug) {
 }
 
 // A new room starts with a fresh chat and becomes the current room.
-app.post('/api/workspaces', (req, res) => {
+app.post('/api/workspaces', async (req, res) => {
   let fields;
   try { fields = validateSpace(req.body); } catch (err) { return res.status(400).json({ error: err.message }); }
   const slug = fields.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'room';
@@ -4479,6 +4829,7 @@ app.post('/api/workspaces', (req, res) => {
   try {
     access = req.body.access == null ? minimalAccess() : validateAccess(req.body.access);
     targets = req.body.targets == null ? minimalTargets() : validateTargets(req.body.targets);
+    targets.notionDatabases = await settleRoomDatabases(targets.notionDatabases, []);
   } catch (err) { return res.status(400).json({ error: err.message }); }
   spaces.workspaces[id] = { id, ...fields, ...(fields.brief && { briefAt: new Date().toISOString() }), access, targets, chat: null, createdAt: new Date().toISOString() };
   spaces.current = id;
@@ -4489,7 +4840,7 @@ app.post('/api/workspaces', (req, res) => {
 });
 
 // Name and members; the next message in the room uses the new members.
-app.post('/api/workspaces/:id', (req, res) => {
+app.post('/api/workspaces/:id', async (req, res) => {
   const space = knownSpace(req, res);
   if (!space) return;
   let fields;
@@ -4498,6 +4849,9 @@ app.post('/api/workspaces/:id', (req, res) => {
   try {
     if (req.body.access != null) fields.access = validateAccess(req.body.access);
     if (req.body.targets != null) fields.targets = validateTargets(req.body.targets);
+    // A page from before the room's own Notion databases sends targets without them: the room keeps its own.
+    if (fields.targets) fields.targets.notionDatabases = req.body.targets.notionDatabases === undefined ? [...targetsOf(space).notionDatabases]
+      : await settleRoomDatabases(fields.targets.notionDatabases, targetsOf(space).notionDatabases);
   } catch (err) { return res.status(400).json({ error: err.message }); }
   // A page from before the MCP servers sends access without them: the room keeps the ones it has on.
   if (fields.access && req.body.access.mcp === undefined) fields.access.mcp = { ...(accessOf(space).mcp || {}) };
@@ -4509,6 +4863,47 @@ app.post('/api/workspaces/:id', (req, res) => {
   saveSpaces();
   logSpaceChange('updated', space);
   res.json({ workspace: publicSpace(space) });
+});
+
+// Room settings opened: read the columns of the room's databases that haven't been read yet, then the room as the page
+// shows it.
+app.post('/api/workspaces/:id/notion-databases/refresh', async (req, res) => {
+  const space = knownSpace(req, res);
+  if (!space) return;
+  try { await refreshRoomDatabases(space); } catch { /* each database says why on its row */ }
+  res.json({ workspace: publicSpace(space) });
+});
+
+// A database as Room settings shows it before it is saved: its columns with their default rules, the suggested draft
+// value already taken.
+function newDatabaseView(info) {
+  const choices = draftChoices(info.columns);
+  const suggested = choices.find((c) => c.suggested);
+  const db = { columns: info.columns, draft: suggested ? { column: suggested.column, value: suggested.suggested } : null };
+  return { id: info.id, title: info.title, columns: info.columns.map((c) => ({ name: c.name, type: c.type })), cols: publicColumns(db), draftChoices: choices };
+}
+
+// Room settings → "Add database": what Notion says about it, before it is added (nothing is saved here).
+app.post('/api/notion/database', async (req, res) => {
+  const link = req.body && req.body.link;
+  try {
+    const info = await inspectNotionDatabase(typeof link === 'string' ? link : '');
+    res.json(newDatabaseView(info));
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// Room settings → "Add a Status column with Draft", clicked by the owner for one database.
+app.post('/api/notion/database/draft-column', async (req, res) => {
+  const link = req.body && req.body.link;
+  try {
+    const info = await addDraftColumn(typeof link === 'string' ? link : '');
+    // The room's own entry learns the new column at once, so it can be chosen without adding the database again.
+    for (const space of Object.values(spaces.workspaces)) {
+      for (const db of targetsOf(space).notionDatabases) if (db.id === info.id) Object.assign(db, { columns: info.columns, dataSource: info.dataSource });
+    }
+    saveSpaces();
+    res.json(newDatabaseView(info));
+  } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 app.post('/api/workspaces/:id/switch', (req, res) => {
@@ -4768,8 +5163,9 @@ app.post('/api/workspaces/:id/remove', (req, res) => {
 // logged as its domain too. addressDomain() gives a bare domain entry back as it is.
 const loggedTargets = (t) => {
   if (!t) return t;
-  const { allowedRecipients = [], sendFrom = '', ...rest } = t;
-  return { ...rest, recipientCount: allowedRecipients.length, recipientDomains: [...new Set(allowedRecipients.map(addressDomain))], sendFromDomain: sendFrom ? addressDomain(sendFrom) : '' };
+  const { allowedRecipients = [], sendFrom = '', notionDatabases = [], ...rest } = t;
+  // Notion databases by name and draft column; their columns and data sources stay out of the log.
+  return { ...rest, notionDatabases: notionDatabases.map((d) => ({ key: d.key, name: d.name, draft: d.draft ? `${d.draft.column} = ${d.draft.value}` : null })), recipientCount: allowedRecipients.length, recipientDomains: [...new Set(allowedRecipients.map(addressDomain))], sendFromDomain: sendFrom ? addressDomain(sendFrom) : '' };
 };
 
 // The fields are named one by one: a room's description and brief are never logged.

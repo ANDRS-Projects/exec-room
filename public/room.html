@@ -308,10 +308,17 @@
           </div>
           <div class="sections" id="targets-notion">
             <div class="sec">
-              <div class="sec-head"><h3 class="sec-title">Notion databases for posts</h3><span class="count" id="targets-db-count"></span><span class="hint">saved as drafts</span></div>
+              <div class="sec-head"><h3 class="sec-title">Notion databases</h3><span class="count" id="targets-db-count"></span><span class="hint">rows saved as drafts</span></div>
               <div class="sec-body">
-                <p class="sec-note">Saved as drafts; you schedule them yourself.</p>
-                <div class="tool-list" id="targets-dbs"></div>
+                <p class="sec-note">Databases agents can propose rows for. Every row gets the database's draft value (for example Status = Draft): the Exec Room sets it, never an agent, and you take it from there in Notion. Under Columns you choose, per column, whether an agent fills it, the room always sets the same value, or it stays empty.</p>
+                <ul class="access-list" id="targets-dbs"></ul>
+                <div class="access-add place-add">
+                  <input id="targets-db-url" placeholder="Notion database link" autocomplete="off">
+                  <input id="targets-db-name" placeholder="Name (optional)" autocomplete="off">
+                  <input id="targets-db-for" placeholder="What it's for (optional)" autocomplete="off">
+                  <button type="button" class="ghost" id="targets-db-add">Add database</button>
+                </div>
+                <div class="form-error" id="targets-db-error" role="alert" hidden></div>
               </div>
             </div>
             <div class="sec">
