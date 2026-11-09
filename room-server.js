@@ -2206,7 +2206,8 @@ async function notionSource(s, key) {
   if (typeof db.dataSource === 'string' && notionUuid.test(db.dataSource)) return db.dataSource.match(notionUuid)[0];
   if (!notionSources.has(key)) {
     const text = await notionFetchText(s, db.id);
-    const found = [...new Set([...text.matchAll(/<data-source url="collection:\/\/([0-9a-f-]{32,36})"/gi)].map((m) => m[1]))];
+    // Notion writes the address as "collection://…", or, since November 2026, as "{{collection://…}}".
+    const found = [...new Set([...text.matchAll(/<data-source url="(?:\{\{)?collection:\/\/([0-9a-f-]{32,36})(?:\}\})?"/gi)].map((m) => m[1]))];
     if (found.length !== 1) throw new Error(found.length ? `${db.name} has ${found.length} data sources, so it isn't clear which one gets the row: name it as "dataSource" in room.config.json` : `Notion didn't name ${db.name}'s data source`);
     notionSources.set(key, found[0]);
   }
