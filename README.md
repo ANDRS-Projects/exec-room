@@ -24,7 +24,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **A brief per room** — what every agent in the room should know about your business (customers, pricing, tone), written by you in Room settings and given to Coen, every advisor and every maker as background
 - **Chat list** — every chat in a room is kept; go back to one from the Chats panel, give it a name, or archive it to take it out of the list (nothing is removed, and it can be put back)
 - **GitHub** — issues and comments in the repos you allow per room (private repos only, unless you mark one as public)
-- **Notion** — rows saved as drafts in any Notion database you add to a room (a content calendar, a lead list, a task list), and long-form pages under pages you allow. Per database you choose which columns agents fill, which always get the same value, and which stay empty; a page the room made can later be updated in place, with the previous version kept under the new one. Connect Notion once in Exec Room settings and agents read it and the room saves through that sign-in (see [MCP servers and Notion](#mcp-servers-and-notion)); a Notion integration token works too
+- **Notion** — rows saved as drafts in any Notion database you add to a room (a content calendar, a lead list, a task list), and long-form pages under pages you allow. Per database you choose which columns agents fill, which always get the same value, and which stay empty; a page the room made can later be updated in place, with the previous version kept under the new one. Connect Notion once in Exec Room settings and agents read it and the room saves through that sign-in (see [Notion](#notion)); a Notion integration token works too
 - **MCP servers** — give agents read tools of other services: from the Popular list in Exec Room settings, or any server by its web address, signed in with Connect or with a token from 1Password; each room switches a server on for itself
 - **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
 - **Saving files** — into folders you choose per room: a document, spreadsheet, data file or image from an https link (checked to be that kind of file, at most 25 MB, never from your own computer or network), or an agent's draft as Markdown or as a Word file with its headings, lists, links and tables. The room saves only after you approve and never overwrites a file
@@ -72,8 +72,8 @@ Started on an API key instead (see [Running on an API key](#running-on-an-api-ke
 - **Python 3** — only to run the tests
 - Optional: **GitHub CLI** (`gh`), signed in, for GitHub actions
 - Optional: **1Password CLI** (`op`), signed in, for tokens: the settings page takes an MCP server's token only as a 1Password reference, and the API key and Notion token can be references too. Without it, use Connect, or `"tokenEnv"` in `room.config.json` (see Configuration).
-- Optional: **Notion**, connected once in Exec Room settings (Popular MCPs → Notion → Set Up → Connect), for agents reading Notion and for saving drafts and pages. Instead of connecting, a **Notion integration token** works for saving, with agents reading through the claude.ai Notion connector.
-- Optional: the **Notion** and **Microsoft 365** connectors on your claude.ai account, if agents should read Notion without connecting it in the room, or search your Outlook mail. Agents read through those connectors; the integration token is used by the server (saving drafts and pages, checking where a page sits), never by agents. So a room's Notion and Microsoft 365 switches do nothing until Notion is connected in the room or the connector is connected.
+- Optional: **Notion**, connected once in Exec Room settings, or a Notion integration token; see [Notion](#notion).
+- Optional: the **Microsoft 365** connector on your claude.ai account, if agents should search your Outlook mail (and the claude.ai **Notion** connector, if agents should read Notion without connecting it in the room). A room's Microsoft 365 switch does nothing until the connector is connected.
 
 ## Quick start
 
@@ -131,16 +131,16 @@ Most settings live in the room itself (Room settings), per room: folders agents 
 | `notionChannels` | The channel names a post may have (default: X, LinkedIn, Substack Note, Substack Post, Instagram, Blog). |
 | `hiddenConnectors` | Other claude.ai connectors on your account to keep out of the agents' view, by the name in their tool names (`mcp__claude_ai_<name>__…`), e.g. `["My_Connector"]`. Agents can only call the tools a room allows; connectors that aren't hidden are still visible to them, so this keeps the rest out of their context. Claude Docs, Gmail, Slack, Google Drive and Google Calendar are always hidden. `Notion` and `Microsoft_365` can't be listed, as those are switched per room: such an entry is skipped with a warning at start-up, like an entry that isn't a connector name. |
 | `agentsGetClaudeFiles` | Whether agents are given Claude Code's own files, as any Claude Code session started in the room's folder would be: the `CLAUDE.md` files of that folder and the folders above it (this repo's notes for contributors, your personal `~/.claude/CLAUDE.md`, anything other tools write into such files) and the memory Claude Code keeps for the folder. Default `false`: agents get only what the room gives them (their own description, the room's note and brief, your message), and the room checks at every start that this still holds, with one small run that costs about a cent; `ROOM_CONTEXT_CHECK=off` skips that check. Set it to `true` if you keep instructions in `CLAUDE.md` that the agents should follow too; every agent in every room then gets all of those files, whatever else they say. |
-| `mcpServers` | MCP servers set up by hand, next to the ones set up in Exec Room settings: an entry from the catalog (`{"catalog": "<id>", "tools": [...], "tokenRef": "op://…"}`) or a server by its web address (`{"name": "…", "url": "https://…", "readOnlyTools": [...], "tokenRef": "op://…"}`, or `"tokenEnv"` with the name of a variable that holds the token). You name each tool agents may use. A program on your computer can't be added yet. See [MCP servers and Notion](#mcp-servers-and-notion). |
+| `mcpServers` | MCP servers set up by hand, next to the ones set up in Exec Room settings: an entry from the catalog (`{"catalog": "<id>", "tools": [...], "tokenRef": "op://…"}`) or a server by its web address (`{"name": "…", "url": "https://…", "readOnlyTools": [...], "tokenRef": "op://…"}`, or `"tokenEnv"` with the name of a variable that holds the token). You name each tool agents may use. A program on your computer can't be added yet. See [MCP servers](#mcp-servers). |
 | `ownerName` | Your name as decisions are recorded under it: "approved by …" on a proposal card, the Decisions tab in Room settings, and the credit line on what an approved proposal creates (default: "the owner"). One line, up to 60 characters. It is a label, not a login. |
 
-With a Notion integration token, share the databases and pages with that integration; connected with Connect, the room reaches what you can reach in Notion, within each room's places. Posts are always saved with Status `draft`; publishing stays with you.
+For Notion, the databases and pages a room may save to are set in the room, not here: see [Notion](#notion).
 
 Agent runs and `gh` are started with a short, fixed set of environment variables (what a program needs to run and reach the network, and their own login settings), not with everything your shell has. If your setup needs another variable passed on, for example one a version manager uses to find `node`, start the room with its name in `ROOM_PASS_ENV` (names separated by commas).
 
 Environment variables are listed in `.env.example`. The server reads them from your shell; it does not load a `.env` file.
 
-## MCP servers and Notion
+## MCP servers
 
 Exec Room settings (the room menu → Exec Room settings) list the MCP servers the room uses, for every room at once:
 
@@ -153,13 +153,40 @@ Agents get the ticked tools of a server and nothing else of it. For a service in
 
 **GitHub.** Set it up with a fine-grained token (GitHub: Settings → Developer settings → Fine-grained tokens), read-only, with the repos agents may read; the room uses GitHub's read-only address. The token decides which private repos agents can read, in every room that switches GitHub on; a room's own repo list only limits which repos it may propose issues for. Every fine-grained token can also read all public repos on GitHub, so agents can search text anyone wrote there.
 
-**Notion through Connect.** Set Notion up once (Popular MCPs → Notion → Set Up → Connect) and sign in with Notion. If the Notion desktop app opens instead of your browser, copy the sign-in link into the browser. Two things use that sign-in:
+**Notion** is set up here too (Popular MCPs → Notion → Set Up → Connect); what agents read in it and what they can save there is in [Notion](#notion).
 
-- **Agents read.** In a room with Notion on they can search, open and query Notion: three read tools, nothing else. Notion's server offers more (68 tools in November 2026); the settings page lists the rest as blocked for agents. This is the same on a Claude plan and on an API key: once Notion is connected, the claude.ai Notion connector isn't used. Paused, or needing a new sign-in, agents read no Notion until it works again.
-- **Notion databases per room.** In Room settings → Can propose → Notion databases, paste a database's link. The Exec Room reads its columns from Notion, and you choose its **draft value** once (for example Status = Draft): every row the room saves gets it. A database without a status or select column for that can get one with **Add a Status column with Draft** (through Connect, only when you click it). Under **Columns** you choose, per column, **Agent fills**, **Always this value** or **Leave empty**. Status columns are never the agent's (automations often watch them), and people, relations, files and formulas always stay empty.
-- **The Exec Room app saves what you approve.** Agents can't write to Notion. They propose a save on a card: rows in one of the room's databases (always with its draft value, and only in the columns agents may fill; every value is checked again against Notion when you approve), a post in a database with Channel and Post Content columns, a new page, or a new version of a page the room made. Only when you approve does the Exec Room app do it, and only into the places of the room the card came from. Approving doesn't unlock any of Notion's tools; the other tools (moving or deleting pages, comments, changing a database) are used by nobody.
+## Notion
 
-The sign-in has your own rights in Notion, so those limits come from the Exec Room app, not from Notion: see [SECURITY.md](SECURITY.md). A Notion integration token still works for saving while Notion isn't connected.
+Agents can read your Notion and propose to save three kinds of things there: **rows** in a database, **posts** in a post database, and **pages**. Nothing is written until you approve the card, and then the Exec Room app writes it, not the agent.
+
+### Connecting
+
+- **Connect (recommended).** Exec Room settings → Popular MCPs → Notion → Set Up → Connect, and sign in with Notion. If the Notion desktop app opens instead of your browser, copy the sign-in link into the browser. The sign-in has your own rights in Notion, so the room can reach what you can reach. The limits below come from the Exec Room app, not from Notion.
+- **An integration token.** Instead of connecting, make a Notion integration, share the databases and pages agents may use with it, and give its token as `notionTokenRef` (a 1Password reference) or `ROOM_NOTION_TOKEN`. The token is used by the room for saving and checking, never by agents. It also works for saving while Connect is paused or needs a new sign-in.
+
+### What agents read
+
+In a room with **Notion** switched on (Room settings → Can use), agents can search, open and query Notion through the Connect sign-in: three read tools, nothing else. Notion's server offers more (68 tools in November 2026); the settings page lists the rest as blocked for agents. This works the same on a Claude plan and on an API key. While Notion is paused or needs a new sign-in, agents read no Notion.
+
+Not connected? On a Claude plan, agents read through the claude.ai Notion connector on your account, if you have it. On an API key, put the link of a Notion page or database in your message and the room reads it with your integration token for them (see [Running on an API key](#running-on-an-api-key)).
+
+### What agents can save
+
+All three are set per room in Room settings → **Can propose**, and every room starts with none.
+
+**Rows in a database.** Under **Notion databases**, paste a database's link. The Exec Room reads its columns from Notion. Then:
+
+- **Draft value.** Choose it once, for example Status = Draft. Every row the room saves gets it, set by the room, never by an agent, so you take it from there in Notion. A database without a suitable status or select column can get one with **Add a Status column with Draft** (through Connect, only when you click it; with a token, add it in Notion and open Room settings again).
+- **Columns.** Per column choose **Agent fills** (the agent proposes the value, you see it on the card), **Always this value** (the room sets it on every row) or **Leave empty**. Titles, text and links start as Agent fills; everything else starts empty, and so does a column added in Notion later. Status columns are never the agent's, because automations often watch them; people, relations, files and formulas always stay empty.
+- **Checks.** Each value must fit its column (an option of a select, a date, a number, a link) when it is proposed, and again against Notion when you approve. If a column or option was removed in the meantime, nothing is saved and the card says why.
+
+**Posts.** A database with **Channel** and **Post Content** columns also takes posts: a whole package at once (say LinkedIn, X and a Substack note, one row each), with an image prompt and the insight it came from. Only the post columns are the agent's by default there, so columns a posting tool reads (an image link, a "posted" mark) stay empty. The channel names a post may have are set with `notionChannels`.
+
+**Pages.** Under **Notion places for pages**, add the pages new pages may go under, each with a name and what it's for (meeting notes, research, a blog backlog). Agents propose a new page (an article, a review, notes) under one of these places, or under a page inside one; where it lands is checked when you approve. A page the room made can later be **updated**: the new version goes on top and the previous one is kept under it, so nothing is lost. Pages written by hand, or made in another room, can't be updated by agents.
+
+### What the room never does
+
+Agents never get a tool that writes to Notion. The room only creates pages and rows, and updates pages it made itself; it never moves, deletes or comments, and the only change it makes to a database's columns is the Status column you add with the button. Details are in [SECURITY.md](SECURITY.md).
 
 ## Your own agents
 
