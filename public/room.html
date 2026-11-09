@@ -150,7 +150,7 @@
         <textarea id="agent-instructions" rows="9" maxlength="20000"></textarea>
       </label>
       <fieldset class="field">
-        <legend class="field-label">Tools <small>only what the room already allows; nothing can post, publish or send</small></legend>
+        <legend class="field-label">Tools <small>what this agent gets, if the room has it on too (Room settings → Can use); nothing can post, publish or send</small></legend>
         <div class="tool-list" id="agent-tools"></div>
       </fieldset>
       <label class="field">
@@ -213,7 +213,7 @@
         <p class="sec-note" id="space-focus-note">Coen hands every request to this advisor; their answer and proposals come to you directly.</p>
       </div>
       <div class="space-panel" role="tabpanel" id="space-panel-use" aria-labelledby="space-tab-use" hidden>
-        <p class="panel-note">Every agent in this room, Coen included. Anything not listed here is refused.</p>
+        <p class="panel-note">Every agent in this room, Coen included. Anything not listed here is refused. Coen gets everything on here; agents you built get only what's also ticked in their own settings.</p>
         <div class="sections">
           <div class="sec">
             <div class="sec-head"><h3 class="sec-title">Folders it can read</h3><span class="count" id="access-file-count"></span><span class="hint">+ drafts/ always</span></div>
@@ -222,6 +222,7 @@
               <ul class="access-list" id="access-files"></ul>
               <div class="access-add"><input id="access-file-input" placeholder="~/Dev/my-repo" autocomplete="off"><button type="button" class="ghost" id="access-file-add">Add folder</button></div>
               <div class="form-error" id="access-file-error" role="alert" hidden></div>
+              <div class="not-given" id="access-file-missing" hidden></div>
             </div>
           </div>
           <div class="sec">
@@ -231,6 +232,7 @@
               <ul class="access-list" id="access-sites"></ul>
               <div class="access-add"><input id="access-site-input" placeholder="docs.example.com" autocomplete="off"><button type="button" class="ghost" id="access-site-add">Add site</button></div>
               <div class="form-error" id="access-site-error" role="alert" hidden></div>
+              <div class="not-given" id="access-site-missing" hidden></div>
             </div>
           </div>
           <div class="sec outside">
@@ -238,6 +240,7 @@
             <div class="sec-body">
               <label class="choice"><input type="checkbox" id="access-websearch"> <span><b>Web search</b> · agents can search the web</span></label>
               <p class="sec-note">The query goes to the search provider.</p>
+              <div class="not-given" id="access-websearch-missing" hidden></div>
             </div>
           </div>
           <div class="sec">
@@ -246,6 +249,7 @@
               <label class="choice"><input type="checkbox" id="access-notion"> <span><b>Notion</b> · read-only</span></label>
               <p class="sec-note" id="access-notion-via">Read-only, through your Notion connector.</p>
               <p class="sec-note key-off" id="access-notion-key" hidden>The room runs on an API key, so agents can't search Notion themselves until Notion is connected (Exec Room settings, MCP servers). Until then, with this on, the room reads a Notion page for them when you put its link in your message (up to three, and only pages shared with the room's Notion integration).</p>
+              <div class="not-given" id="access-notion-missing" hidden></div>
             </div>
           </div>
           <div class="sec">
@@ -254,6 +258,7 @@
               <label class="choice"><input type="checkbox" id="access-m365"> <span><b>Outlook mail</b> · search</span></label>
               <p class="sec-note">Read-only, through your Microsoft 365 connector: agents can search mail (sender, subject, date and a short preview) but can't open emails, and never send, reply or delete. Switch it on only in rooms that need client mail.</p>
               <p class="sec-note key-off" id="access-m365-key" hidden>Not available while the room runs on an API key. Your choice is kept for when it runs on your Claude plan.</p>
+              <div class="not-given" id="access-m365-missing" hidden></div>
             </div>
           </div>
           <div class="sec outside" id="access-mcp-sec" hidden>
@@ -261,6 +266,7 @@
             <div class="sec-body">
               <div class="mcp-choices" id="access-mcp-list"></div>
               <p class="sec-note">Set up once for the whole Exec Room (room menu → Exec Room settings). On here, agents in this room can use the tools ticked for that server and nothing else of it; what they ask goes to the service.</p>
+              <div class="not-given" id="access-mcp-missing" hidden></div>
             </div>
           </div>
         </div>

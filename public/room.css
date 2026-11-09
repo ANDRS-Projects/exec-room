@@ -204,6 +204,11 @@ button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: 
 .sec-body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .sec-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
 .sec-note.key-off { margin-top: 6px; color: var(--warn); }
+/* Under a switch that's on: the room's own agents that don't get that tool, each with a button to their settings. */
+.not-given { display: flex; flex-direction: column; gap: 6px; }
+.not-given .sec-note { color: var(--warn); }
+.not-given-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.not-given-buttons .ghost { margin-left: 0; }
 /* Shown only while runs are paid with an API key (pay-as-you-go), next to the room's name. */
 .auth-badge { flex: none; font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 999px; background: var(--warn-fill); color: var(--warn); white-space: nowrap; cursor: help; }
 .sec-sub { margin: 4px 0 0; font-size: 13px; font-weight: 600; }
