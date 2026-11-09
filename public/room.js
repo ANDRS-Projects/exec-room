@@ -1357,12 +1357,14 @@ function syncDraftsBox() {
   box.disabled = maker;
 }
 
-function openAgentEditor(agent = null) {
+// fromSettings: opened from a room's settings, which may be another room than the one in view, so "Remove from this
+// room" (which acts on the room in view) is left out there.
+function openAgentEditor(agent = null, { fromSettings = false } = {}) {
   editingKey = agent ? agent.key : null;
   $('agent-editor-title').textContent = agent ? `Edit ${agent.name}` : 'Build a new agent';
   $('agent-save').textContent = agent ? 'Save changes' : 'Build and add to room';
   $('agent-remove').hidden = !agent;
-  $('agent-leave').hidden = !agent || !space;
+  $('agent-leave').hidden = !agent || !space || fromSettings;
   $('agent-export').hidden = !agent;
   $('agent-ask-coen').hidden = Boolean(agent);
   $('agent-import-open').hidden = Boolean(agent);
@@ -1403,7 +1405,11 @@ function openAgentEditor(agent = null) {
   syncDraftsBox();
   agentError.textContent = '';
   editor.showModal();
-  $('agent-name').focus();
+  // From a room's settings the question is which tools it gets: open on those, the first box focused.
+  if (fromSettings) {
+    $('agent-tools').scrollIntoView({ block: 'center' });
+    $('agent-tools').querySelector('input').focus({ preventScroll: true });
+  } else $('agent-name').focus();
 }
 
 // What the build form preselected for a new agent: only an avatar the owner changed is passed on to Coen as a choice already made.
@@ -1472,6 +1478,8 @@ agentForm.addEventListener('submit', async (e) => {
     const { agent } = await agentRequest(url, agentFromForm());
     editor.close();
     await refreshAgents();
+    // Opened from a room's settings: its lists of who isn't given a tool follow the change.
+    if (spaceEditor.open) renderNotGiven();
     appendToThread(el('div', 'notice', editingKey ? `Updated ${agent.name}.` : `Added ${agent.name} to the room as ${agent.role === 'maker' ? 'a maker' : 'an advisor'}. Coen can use them from your next message.`));
   } catch (err) {
     agentError.textContent = err.message;
@@ -2563,6 +2571,41 @@ function updateSpaceSummary() {
   proposes.push(len('allowedRecipients') ? [plural(len('allowedRecipients'), 'email recipient'), true] : ['email off']);
   const parts = (items) => items.flatMap(([text, out], i) => [...(i ? [' · '] : []), out ? el('span', 'out', text) : text]);
   $('space-summary').replaceChildren(el('b', null, 'Reads'), ' ', ...parts(reads), ' — ', el('b', null, 'Proposes'), ' ', ...parts(proposes));
+  renderNotGiven();
+}
+
+// Agents built in the room get only the tools ticked on them, so a switch on here can still leave one of them out.
+// Under each switch that is on: the room's own agents (members as ticked now) without that tool, with a button to
+// their settings. Coen gets everything on here, so he is never listed.
+const NOT_GIVEN = [
+  ['access-file-missing', 'files', () => accessLists.files.length > 0],
+  ['access-site-missing', 'web_fetch', () => accessLists.sites.length > 0],
+  ['access-websearch-missing', 'web_search', () => $('access-websearch').checked],
+  ['access-notion-missing', 'notion', () => $('access-notion').checked],
+  ['access-m365-missing', 'm365', () => $('access-m365').checked],
+  ['access-mcp-missing', 'mcp', () => mcpChecked().length > 0],
+];
+function renderNotGiven() {
+  const everyone = $('space-everyone').checked;
+  const ticked = new Set([...$('space-members').querySelectorAll('input:checked')].map((b) => b.dataset.member));
+  const own = [...CUSTOM.values()].filter((a) => everyone || ticked.has(a.key));
+  for (const [id, group, on] of NOT_GIVEN) {
+    const box = $(id);
+    const missing = on() ? own.filter((a) => !(a.tools || []).includes(group)) : [];
+    box.hidden = !missing.length;
+    if (!missing.length) { box.replaceChildren(); continue; }
+    const names = missing.map((a) => a.name);
+    const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+    const note = el('p', 'sec-note', `Not given to ${list}: agents you built get only the tools ticked in their own settings.`);
+    const buttons = el('div', 'not-given-buttons');
+    for (const a of missing) {
+      const b = el('button', 'ghost', `${a.name}'s settings`);
+      b.type = 'button';
+      b.addEventListener('click', () => openAgentEditor(a, { fromSettings: true }));
+      buttons.appendChild(b);
+    }
+    box.replaceChildren(note, buttons);
+  }
 }
 
 // Folders, sites, public repos and recipients added since the dialog opened, and web search or Microsoft 365 mail
