@@ -279,6 +279,10 @@ try:
         call(f"/api/recs/{slow['recId']}/approve", {})
         time.sleep(1.5)
         out("F busy names the maker", call("/api/coen", {"text": "anything"})[:2])
+        # While the maker works, a page that checks sees the running turn (and that the follow-up before it is saved).
+        st = json.loads(call("/api/room/state")[1])
+        saved = [e["jobId"] for e in json.loads(call("/api/room")[1])["events"] if e.get("jobId")]
+        out("F state while a maker works", (bool(st["runningJobId"]), st["runningJobId"] != st["lastJobId"], st["lastJobId"] == saved[-1]))
         out("F stop maker", call("/api/coen/stop", {})[0])
         time.sleep(1)
         room = json.loads(call("/api/room")[1])
@@ -2120,6 +2124,9 @@ try:
             "c-gone": chat("c-gone", "Orphan", None, ago(5), workspaceId="deleted-room")}}, f)
     with open(os.path.join(data, "rooms", "c-old.ndjson"), "w") as f:
         f.write(json.dumps({"type": "user", "text": "Old question about pricing", "jobId": "j1", "ts": 1}) + "\n" + json.dumps({"type": "end", "status": "ok", "costUsd": 0, "totalCostUsd": 0, "jobId": "j1", "ts": 2}) + "\n")
+    # A chat saved before turns had ids: the page's "did I miss something?" check finds no last turn in it.
+    with open(os.path.join(data, "rooms", "c-side.ndjson"), "w") as f:
+        f.write(json.dumps({"type": "user", "text": "Side question", "ts": 1}) + "\n" + json.dumps({"type": "end", "status": "ok", "ts": 2}) + "\n")
     with open(os.path.join(data, "jobs.ndjson"), "w") as f:
         f.write("".join(json.dumps({"kind": "decision", "recId": "rec-old", "roomId": "c-old", "action": "github_issue", "summary": "Old", "state": state, "at": f"2026-08-01T10:0{n}:00.000Z"}) + "\n" for n, state in enumerate(["pending", "approved"])))
     s = Server("workspaces", data_name="data-chats")
@@ -2159,6 +2166,17 @@ try:
         call("/api/chats/c-old/rename", {"name": "Pricing talk"})
         out("N unknown chat", (call("/api/chats/nope/open", {})[:2], call("/api/chats/nope/rename", {"name": "x"})[0], call("/api/chats/__proto__/open", {})[0]))
         out("N a deleted room's chat", (call("/api/chats/c-gone/open", {})[:2], call("/api/chats/c-gone/rename", {"name": "x"})[0]))
+        # A page names the chat it shows when it follows a turn or checks whether it missed one, so another tab that
+        # opened a different chat can't divert it. Naming a chat reads it; it doesn't open it.
+        state = lambda q="": (lambda r: (r[0], json.loads(r[1])))(call("/api/room/state" + q))
+        last_turn = [e["jobId"] for e in evs if e["type"] == "end"][-1]
+        code, st = state()
+        out("N state of the open chat: nothing running, its last turn", (code, st["roomId"], st["runningJobId"], st["lastJobId"] == last_turn))
+        out("N state of another chat by name", [(q, (lambda c, s: (c, s.get("roomId"), s.get("runningJobId"), s.get("lastJobId")))(*state(f"?room={q}"))) for q in ("c-recent", "c-side", "c-nosession")])
+        out("N state, stream and history of unknown chats", [(q, call(f"/api/room/state?room={q}")[0], call(f"/api/stream?room={q}")[0], call(f"/api/room?room={q}")[0])
+                                                              for q in ("nope", "__proto__", "constructor", "c-old%2F..")] + [call("/api/room/state?room[]=c-old")[0], call("/api/stream?room=a&room=b")[0]])
+        named = json.loads(call("/api/room?room=c-recent")[1])
+        out("N history of another chat by name leaves the open chat as it was", (named["roomId"], json.loads(call("/api/room")[1])["roomId"], call("/api/stream?room=c-recent")[0]))
         # Another chat in the same room: its own session is resumed, and the first chat's cards wait until it is open again.
         call("/api/chats/c-recent/open", {})
         say("back in the recent chat")
