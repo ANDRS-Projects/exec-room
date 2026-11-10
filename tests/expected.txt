@@ -99,6 +99,7 @@ F nudge names the draft: True
 F follow-up proposal involves the maker: [['wren']]
 F approve twice: (409, '{"error":"this proposal is already done"}')
 F busy names the maker: (409, '{"error":"Wren is still working in this chat. Wait until that\'s finished, or press Stop."}')
+F state while a maker works: (True, True, True)
 F stop maker: 200
 F nudges after stop: 1
 F stopped proposal: ['stopped']
@@ -672,6 +673,10 @@ N its decisions show the name: {'id': 'c-old', 'title': 'Pricing talk', 'named':
 N an empty name goes back to the first message: (200, ('Old question about pricing for …@client.exam', {'current': True, 'waiting': 2}), {'id': 'c-old', 'title': 'Old question about pricing for …@client.example'}, False)
 N unknown chat: ((404, '{"error":"chat not found"}'), 404, 404)
 N a deleted room's chat: ((404, '{"error":"chat not found"}'), 404)
+N state of the open chat: nothing running, its last turn: (200, 'c-old', None, True)
+N state of another chat by name: [('c-recent', (200, 'c-recent', None, None)), ('c-side', (200, 'c-side', None, None)), ('c-nosession', (200, 'c-nosession', None, None))]
+N state, stream and history of unknown chats: [('nope', 404, 404, 404), ('__proto__', 404, 404, 404), ('constructor', 404, 404, 404), ('c-old%2F..', 404, 404, 404), 200, 404]
+N history of another chat by name leaves the open chat as it was: ('c-recent', 'c-old', 204)
 N each chat resumes its own session: coen-session
 N a card only answers in its own chat: (404, '{"error":"proposal not found"}')
 N back in its chat the card works: (200, [1])

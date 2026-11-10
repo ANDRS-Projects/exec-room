@@ -1151,13 +1151,24 @@ async function send() {
   await attach();
 }
 
+// The chat this page shows, and what of it has been drawn, turn by turn: a turn loaded finished, or seen to its end,
+// is complete; of a turn being followed, `streamed` counts the events drawn, so following it again (after a dropped
+// connection, or from two places at once) draws only what is new.
+let chatId = null;
+const doneJobs = new Set();
+const streamed = new Map();
+let following = 0;
+const chatQuery = () => (chatId ? `?room=${encodeURIComponent(chatId)}` : '');
+
 // Follow the running job until it ends. The server replays everything the job has done so far.
 async function attach() {
   setBusy(true);
+  following += 1;
   let ended = false;
   let followup = false;
+  const got = new Map();
   try {
-    const res = await fetch('/api/stream');
+    const res = await fetch('/api/stream' + chatQuery());
     if (res.status === 204) { ended = true; return; }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -1180,23 +1191,71 @@ async function attach() {
         // A job that has ended is not followed at all, so its end always happens now.
         if (ev.type === 'end') { ended = true; sayNow = true; }
         if (ev.type === 'followup') followup = true;
+        // What this page already drew of the turn (before a dropped connection, or in another attach) is skipped.
+        if (typeof ev.jobId === 'string' && ev.type !== 'activity') {
+          const n = (got.get(ev.jobId) || 0) + 1;
+          got.set(ev.jobId, n);
+          if (doneJobs.has(ev.jobId) || n <= (streamed.get(ev.jobId) || 0)) continue;
+          streamed.set(ev.jobId, n);
+          if (ev.type === 'end') { doneJobs.add(ev.jobId); streamed.delete(ev.jobId); }
+        }
         handle(ev);
       }
     }
   } catch (err) {
     appendToThread(el('div', 'bubble err', err.message));
   } finally {
+    following -= 1;
     if (!ended) {
-      appendToThread(el('div', 'notice', 'Lost the connection to the room while Coen was working. Reload to catch up.'));
+      appendToThread(el('div', 'notice', 'Lost the connection to the room while Coen was working. Reconnecting…'));
       sayNow = true;
-      say('Lost the connection to the room while Coen was working. Reload to catch up.');
+      say('Lost the connection to the room while Coen was working. Reconnecting…');
+      setTimeout(catchUp, 2000);
     }
-    setBusy(false);
+    setBusy(following > 0);
     input.focus();
   }
   // A maker just finished and the room started Coen's review turn: follow that too.
   if (followup && ended) await attach();
 }
+
+// The page checks on its own whether it missed something in its chat: a turn that ran while it wasn't following
+// (a dropped connection, a sleeping Mac, a follow-up that started unseen), or one running now that it isn't
+// following. What it missed is drawn in place, so what's typed in the message box stays.
+let catching = false;
+async function catchUp() {
+  if (!chatId || following || catching || document.hidden) return;
+  catching = true;
+  try {
+    const res = await fetch('/api/room/state' + chatQuery());
+    if (!res.ok) return;
+    const state = await res.json();
+    if (state.lastJobId && !doneJobs.has(state.lastJobId)) {
+      const full = await fetch('/api/room' + chatQuery());
+      if (!full.ok) return;
+      const room = await full.json();
+      const missed = room.events.filter((ev) => typeof ev.jobId === 'string' && !doneJobs.has(ev.jobId));
+      // A turn this page drew part of, and that ended unseen: the saved copy can't be lined up with what is on
+      // the page, so the page reloads (only with nothing typed), or says to. Turns it missed whole are drawn anyway,
+      // so a card from a follow-up turn always shows.
+      const partial = new Set(missed.filter((ev) => streamed.has(ev.jobId)).map((ev) => ev.jobId));
+      if (partial.size && !input.value.trim() && !picked.length && !document.querySelector('dialog[open]')) { location.reload(); return; }
+      const whole = missed.filter((ev) => !partial.has(ev.jobId));
+      if (whole.length) {
+        sayNow = true;
+        for (const ev of whole) handle(ev);
+      }
+      if (partial.size) appendToThread(el('div', 'notice', 'Coen finished a turn while the connection was lost. Reload to see all of it.'));
+      for (const ev of missed) { doneJobs.add(ev.jobId); streamed.delete(ev.jobId); }
+      if (missed.length) thread.scrollTop = thread.scrollHeight;
+    }
+    if (state.runningJobId && !following) await attach();
+  } catch { /* tried again at the next check */ } finally {
+    catching = false;
+  }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) catchUp(); });
+window.addEventListener('online', () => catchUp());
 
 $('composer').addEventListener('submit', (e) => { e.preventDefault(); send(); });
 input.addEventListener('input', growInput);
@@ -1254,6 +1313,9 @@ async function newChat() {
     appendToThread(el('div', 'bubble err', data.error || `HTTP ${res.status}`));
     return;
   }
+  // The page shows the new chat from here on, without a reload: what it follows and checks goes with it.
+  const fresh = await res.json().catch(() => ({}));
+  chatId = typeof fresh.roomId === 'string' ? fresh.roomId : null;
   const empty = el('div', 'empty', 'Fresh chat. Coen starts without the previous conversation; it stays in the chat list.');
   empty.id = 'empty';
   empty.dataset.fresh = '1';
@@ -1725,7 +1787,7 @@ async function refreshWorking() {
   } catch { /* try again next time */ }
 }
 
-setInterval(() => { if (!document.hidden) { refreshWorking(); loadChats(); } }, 10000);
+setInterval(() => { if (!document.hidden) { refreshWorking(); loadChats(); catchUp(); } }, 10000);
 
 // The rail and the empty-state line only show this room's members.
 function applyMembership() {
@@ -3409,7 +3471,11 @@ $('space-remove').addEventListener('click', async () => {
       attachInput.accept = attachLimits.extensions.map((e) => `.${e}`).join(',');
     }
     setChats(chatsWide.matches && chatsPref());
-    for (const ev of room.events) handle(ev);
+    chatId = room.roomId;
+    for (const ev of room.events) {
+      handle(ev);
+      if (typeof ev.jobId === 'string') doneJobs.add(ev.jobId);
+    }
     // The room's start-up check found that agents are given files the room means to keep from them (see
     // contextCheck in room-server.js). Said on the page, as nobody watches the terminal the room runs in.
     if (Array.isArray(room.contextLeak) && room.contextLeak.length) {

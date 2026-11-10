@@ -4084,7 +4084,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 // History of finished jobs; a running job's events come from /api/stream instead.
 app.get('/api/room', (req, res) => {
   expireEmails();
-  const room = currentRoom();
+  const room = pageRoom(req);
+  if (!room) return res.status(404).json({ error: 'unknown chat' });
   const live = jobs.has(room.roomId) ? jobs.get(room.roomId).jobId : null;
   const space = spaceOf(room.roomId);
   res.json({ roomId: room.roomId, workspace: { id: space.id, name: space.name }, owner: OWNER_NAME, runningJobId: live,
@@ -4113,8 +4114,28 @@ app.post('/api/coen', (req, res) => {
 
 // Follow the running job: everything so far, then live events until it ends.
 // Disconnecting only stops following; the job keeps running (use Stop to end it).
+// A page names the chat it shows (`?room=`), so a second tab that opened another chat can't send it that chat's
+// turn. Without the name it is the current chat, as before. The id is only looked up in the index, never used as a path.
+function pageRoom(req) {
+  const id = req.query.room;
+  if (id === undefined) return currentRoom();
+  return typeof id === 'string' && Object.hasOwn(index.rooms, id) ? index.rooms[id] : null;
+}
+
+// What a page checks every few seconds to find out whether it missed something: the turn running in its chat, and
+// the last finished turn saved there. A chat saved before turns had ids has no last turn, so it never looks behind.
+app.get('/api/room/state', (req, res) => {
+  const room = pageRoom(req);
+  if (!room) return res.status(404).json({ error: 'unknown chat' });
+  const live = jobs.has(room.roomId) ? jobs.get(room.roomId).jobId : null;
+  const saved = readEvents(room.roomId).filter((ev) => typeof ev.jobId === 'string' && ev.jobId !== live);
+  res.json({ roomId: room.roomId, runningJobId: live, lastJobId: saved.length ? saved[saved.length - 1].jobId : null });
+});
+
 app.get('/api/stream', (req, res) => {
-  const job = jobs.get(currentRoom().roomId);
+  const room = pageRoom(req);
+  if (!room) return res.status(404).json({ error: 'unknown chat' });
+  const job = jobs.get(room.roomId);
   if (!job) return res.status(204).end();
   res.setHeader('Content-Type', 'application/x-ndjson');
   for (const ev of job.events) res.write(JSON.stringify(ev) + '\n');
