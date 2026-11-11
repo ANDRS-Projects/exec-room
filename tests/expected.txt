@@ -911,3 +911,31 @@ F2 the folder at the end: ['Notes.docx', 'Pricing review (2).md', 'Pricing revie
 F2 job log keeps no file contents: True
 M6 GitHub: a token at the read-only address, no Connect: ('https://api.githubcopilot.com/mcp/readonly', False, {'tool': 'get_me', 'arguments': {}})
 M6 GitHub: only reading tools, none of its writing ones: (21, ['reads'], [])
+S3 a sandbox stays off Slack: (0, False)
+S3 an approver that isn't a member ID: "approver" in room.config.json must be your Slack member ID (U…, in your Slack profile under "Copy member ID")
+server stderr: Slack: not connected: "approver" in room.config.json must be your Slack member ID (U…, in your Slack profile under "Copy member ID"). New cards aren't sent to Slack until this is fixed and the room restarted.
+S3 a Node without WebSocket: ('Slack needs Node 22 or newer: this Node has no built-in WebSocket', 0)
+server stderr: Slack: not connected: Slack needs Node 22 or newer: this Node has no built-in WebSocket. New cards aren't sent to Slack until this is fixed and the room restarted.
+S3 an app-level token Slack refuses: ('Slack refused the app-level token (invalid_auth)', ['apps.connections.open'])
+server stderr: Slack: Slack refused the app-level token (invalid_auth). Taps in Slack won't work until the token is fixed and the room restarted.
+S3 connects with the app-level token, over Socket Mode: ([('apps.connections.open', 'Bearer xapp-test')], 1)
+S3 one DM per new card, to the approver: [('UOWNER', 'Coen proposes: LinkedIn post about dark '), ('UOWNER', 'Coen proposes: Track dark mode')]
+S3 the DM: kind, who, room, chat, summary, target: ['*GitHub issue* from Coen · Ops room · Launch &lt;plan&gt; &amp; more', 'Track dark mode', '_Example-Org/demo-app_']
+S3 the DM: buttons and what they carry: [('approve', True, 'primary', None), ('dismiss', True, None, None), ('open', False, None, 'http://127.0.0.1:4180/room.html')]
+S3 the brief and the issue text stay out of Slack: (False, False)
+S3 the card remembers its message: ['channel', 'ts']
+S3 a tap by someone else: (True, 'pending', 0)
+S3 Dismiss in Slack: (True, True, 'dismissed', 'slack')
+S3 the message after Dismiss: (True, '✖️ Dismissed in Slack.', ['open'])
+S3 the decision's log line and event: ([('pending', None), ('dismissed', 'slack')], [('dismissed', 'slack')])
+S3 the page's check sees the decision: True
+S3 approved on the page: the message follows: (3, '✅ Approved in the Exec Room. Done. <https://github.com/Example-Org/demo-app/issues/999|open it>')
+S3 a tap on a card decided already: (True, True, True, 'done')
+S3 a tap on a card that is gone: (True, True, 'This proposal is no longer in the Exec Room, so nothing was done.')
+S3 a card saved before Slack: ('dismissed', False, 5)
+S3 Approve in Slack: a GitHub issue: ('done', 'slack', '✅ Approved in Slack. Done. <https://github.com/Example-Org/demo-app/issues/999|open it>')
+S3 Approve in Slack: a maker starts: ✅ Approved in Slack. Wren and Iris are working on it.
+S3 the maker's run done: ✅ Approved in Slack. Done. 2 drafts in the Exec Room.
+S3 the Decisions list says where: [(False, 'approved', None), (False, 'dismissed', None), (True, 'approved', 'slack'), (True, 'approved', 'slack'), (True, 'dismissed', 'slack')]
+S3 a new connection after Slack's disconnect: (2, 2)
+server stderr: Slack: a tap by USOMEONE was refused: only the approver set in room.config.json decides.

@@ -1,7 +1,7 @@
 # Exec Room
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
-[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Runs on Claude Code](https://img.shields.io/badge/runs%20on-Claude%20Code-555555)](https://code.claude.com/docs)
 [![Runs locally](https://img.shields.io/badge/runs-locally-2ea44f)](SECURITY.md)
 [![Actions: approve first](https://img.shields.io/badge/actions-approve--first-6f42c1)](SECURITY.md)
@@ -27,6 +27,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Notion** — rows saved as drafts in any Notion database you add to a room (a content calendar, a lead list, a task list), and long-form pages under pages you allow. Per database you choose which columns agents fill, which always get the same value, and which stay empty; a page the room made can later be updated in place, with the previous version kept under the new one. Connect Notion once in Exec Room settings and agents read it and the room saves through that sign-in (see [Notion](#notion)); a Notion integration token works too
 - **MCP servers** — give agents read tools of other services: from the Popular list in Exec Room settings, or any server by its web address, signed in with Connect or with a token from 1Password; each room switches a server on for itself
 - **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
+- **Approve from Slack** — each new proposal also comes as a Slack message with Approve and Dismiss, so you can decide from your phone; the room connects out to Slack, nothing on your computer is opened to the internet (see [Approving from Slack](#approving-from-slack))
 - **Saving files** — into folders you choose per room: a document, spreadsheet, data file or image from an https link (checked to be that kind of file, at most 25 MB, never from your own computer or network), or an agent's draft as Markdown or as a Word file with its headings, lists, links and tables. The room saves only after you approve and never overwrites a file
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
 - **Claude plan or API key** — runs use your Claude plan by default; start the room with `npm run room:key` to pay with an Anthropic API key instead, with a spend cap per run and per day
@@ -67,7 +68,7 @@ Started on an API key instead (see [Running on an API key](#running-on-an-api-ke
 ## Requirements
 
 - **macOS or Linux.** Windows isn't supported.
-- **Node.js 20+**
+- **Node.js 22+** (Node 20 no longer gets security updates, and approving from Slack needs the WebSocket that Node 22 has built in)
 - **Claude Code** (`claude`), signed in to your Claude plan (tested with version 2.1.316) — see the [Claude Code docs](https://code.claude.com/docs). By default the room runs agents on your plan and never uses an Anthropic API key; to pay with a key instead, see [Running on an API key](#running-on-an-api-key) (no plan sign-in is needed for that). It starts every run with `--agents`, `--tools`, `--setting-sources` and `--disable-slash-commands`, so it needs a recent version that has all four.
 - **Python 3** — only to run the tests
 - Optional: **GitHub CLI** (`gh`), signed in, for GitHub actions
@@ -132,6 +133,7 @@ Most settings live in the room itself (Room settings), per room: folders agents 
 | `hiddenConnectors` | Other claude.ai connectors on your account to keep out of the agents' view, by the name in their tool names (`mcp__claude_ai_<name>__…`), e.g. `["My_Connector"]`. Agents can only call the tools a room allows; connectors that aren't hidden are still visible to them, so this keeps the rest out of their context. Claude Docs, Gmail, Slack, Google Drive and Google Calendar are always hidden. `Notion` and `Microsoft_365` can't be listed, as those are switched per room: such an entry is skipped with a warning at start-up, like an entry that isn't a connector name. |
 | `agentsGetClaudeFiles` | Whether agents are given Claude Code's own files, as any Claude Code session started in the room's folder would be: the `CLAUDE.md` files of that folder and the folders above it (this repo's notes for contributors, your personal `~/.claude/CLAUDE.md`, anything other tools write into such files) and the memory Claude Code keeps for the folder. Default `false`: agents get only what the room gives them (their own description, the room's note and brief, your message), and the room checks at every start that this still holds, with one small run that costs about a cent; `ROOM_CONTEXT_CHECK=off` skips that check. Set it to `true` if you keep instructions in `CLAUDE.md` that the agents should follow too; every agent in every room then gets all of those files, whatever else they say. |
 | `mcpServers` | MCP servers set up by hand, next to the ones set up in Exec Room settings: an entry from the catalog (`{"catalog": "<id>", "tools": [...], "tokenRef": "op://…"}`) or a server by its web address (`{"name": "…", "url": "https://…", "readOnlyTools": [...], "tokenRef": "op://…"}`, or `"tokenEnv"` with the name of a variable that holds the token). You name each tool agents may use. A program on your computer can't be added yet. See [MCP servers](#mcp-servers). |
+| `slack` | Approving proposals from Slack: `botTokenRef` and `appTokenRef` (1Password references to the Slack app's two tokens; or set `ROOM_SLACK_BOT_TOKEN` and `ROOM_SLACK_APP_TOKEN`) and `approver` (your Slack member ID). Leave it out to keep Slack off. See [Approving from Slack](#approving-from-slack). |
 | `ownerName` | Your name as decisions are recorded under it: "approved by …" on a proposal card, the Decisions tab in Room settings, and the credit line on what an approved proposal creates (default: "the owner"). One line, up to 60 characters. It is a label, not a login. |
 
 For Notion, the databases and pages a room may save to are set in the room, not here: see [Notion](#notion).
@@ -187,6 +189,53 @@ All three are set per room in Room settings → **Can propose**, and every room 
 ### What the room never does
 
 Agents never get a tool that writes to Notion. The room only creates pages and rows, and updates pages it made itself; it never moves, deletes or comments, and the only change it makes to a database's columns is the Status column you add with the button. Details are in [SECURITY.md](SECURITY.md).
+
+## Approving from Slack
+
+Every new proposal can also come to you as a Slack message, with **Approve** and **Dismiss** buttons, so you can decide from your phone while the room runs on your computer. It is off until you set it up.
+
+### What you get
+
+- **A message per proposal.** The Exec Room's Slack app sends you a direct message for each new card: what kind it is, who proposed it, the room and chat, the summary and where it goes (the maker, the repo, the Notion database, the email recipients, the file). Drafts, briefs, issue text and email text stay in the room.
+- **Approve or Dismiss.** A tap does exactly what the card's button does, with the same checks. Sending a proposal back for a revision needs a note, so that stays in the room.
+- **The message keeps up.** After a decision, made in Slack or in the room, the message shows what happened (done, with a link; failed, with the reason; dismissed) and the buttons go. The room shows "approved … in Slack" on the card and in the Decisions list.
+- **Email drafts:** approving one in Slack records the decision; you send it from the room, as always.
+- **Only you.** Only taps from the Slack member set as `approver` count. A tap from anyone else does nothing and is noted in the terminal.
+- **Nothing on your computer is opened to the internet.** The room connects out to Slack (Slack's Socket Mode), and taps come in over that connection. The room still only answers on your own computer, so the **Open the Exec Room** link in the message works only there.
+- **The room has to be running.** A tap while it isn't makes Slack show an error, and the card waits in the room.
+
+### Set it up (about 10 minutes)
+
+You need a Slack workspace where you can add an app, and 1Password with its command-line tool (`op`), as for the Notion token.
+
+1. **Create the Slack app.** Go to [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App**, then **From a manifest**, and pick your workspace. Paste the contents of [`docs/slack-app-manifest.json`](docs/slack-app-manifest.json) and click **Create**. If Slack says the app needs an admin's approval, your workspace restricts apps: approve it as an admin, or ask one.
+2. **Make the app-level token.** In the app's **Basic Information**, under **App-Level Tokens**, choose **Generate Token and Scopes**. Give it a name (for example `exec-room`), add the scope `connections:write`, and generate it. Copy the token: it starts with `xapp-`.
+3. **Install the app.** Under **Install App**, choose **Install to Workspace** and allow it. Then, under **OAuth & Permissions**, copy the **Bot User OAuth Token**: it starts with `xoxb-`.
+4. **Put both tokens in 1Password** and copy their references (in 1Password: the field's menu → **Copy Secret Reference**; they look like `op://Private/Exec Room Slack/bot-token`). The room never needs the tokens themselves. If an item's title has a space at the end or other unusual characters, use the item's ID in the reference instead of its title.
+5. **Find your Slack member ID.** In Slack, open your profile, choose **⋯**, then **Copy member ID**. It starts with `U`.
+6. **Add it to `room.config.json`:**
+
+   ```json
+   "slack": {
+     "botTokenRef": "op://Private/Exec Room Slack/bot-token",
+     "appTokenRef": "op://Private/Exec Room Slack/app-token",
+     "approver": "U0123ABCDEF"
+   }
+   ```
+
+7. **Restart the room.** 1Password may ask you to allow it to read the two tokens. The terminal then says `Slack: connected. New cards are sent to you as a Slack DM with Approve and Dismiss.` If 1Password didn't hand a token over in time, or a setting is wrong, the room starts without Slack and says why, in the terminal and on the page; fix it and restart.
+
+**Using a Slack app you already have** (Slack's free plan limits how many apps a workspace can have). This only works for an app you created yourself at api.slack.com/apps, not one from Slack's app directory. Don't paste the manifest over it: that would replace its settings. Instead:
+
+- **Check first:** in the app, **Event Subscriptions** and **Interactivity & Shortcuts** must be off, or have no Request URL. Socket Mode takes over everything Slack sends to the app, so an app that receives events or clicks at a web address would stop getting them. An app that only sends messages (incoming webhooks, say) is fine: those keep working.
+- **Then change it:** turn on **Socket Mode** (it asks for the app-level token of step 2), turn on **Interactivity & Shortcuts** (no address needed), add the bot scopes `chat:write` and `im:write` under **OAuth & Permissions**, and under **App Home** turn on the **Messages Tab** with users not allowed to send messages. Reinstall the app when Slack asks, and carry on from step 3.
+- The messages come from that app's name and icon.
+
+### Good to know
+
+- **One room per Slack app.** Slack hands each tap to one of the app's open connections, so two rooms connected to the same app would each catch some of the other's taps. A room started with its own data folder (`ROOM_DATA_DIR`, as for a test copy) stays off Slack unless you start it with `ROOM_SLACK=on`. `ROOM_SLACK=off` keeps any room off Slack.
+- **What Slack keeps.** Slack stores the messages the room sends, so the summaries and targets of your proposals are in your Slack workspace.
+- **Not the Slack connector.** This is separate from a Slack connector on your Claude account: that stays hidden from agents, and agents can't read or post in Slack.
 
 ## Your own agents
 

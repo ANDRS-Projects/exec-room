@@ -435,6 +435,7 @@ function endTurn(ev) {
 
 function handle(ev) {
   if (ev.type === 'activity') { showActivity(ev); return; }
+  if ((ev.type === 'decision' || ev.type === 'rec_result') && typeof ev.ts === 'number' && ev.ts > lastDecisionTs) lastDecisionTs = ev.ts;
   // Anything else from an agent means that what it had just started on has arrived, or is over.
   if (ev.type === 'user' || ev.type === 'end') clearAllActivity();
   else if (ev.who === 'coen' || ev.type === 'consult' || ev.type === 'recommendation') clearActivity('coen');
@@ -805,7 +806,7 @@ function whenText(t) {
 function showDecided(entry, ev) {
   if (!entry.decided) entry.decided = entry.pill.parentNode.appendChild(el('span', 'rec-decided'));
   const when = whenText(ev.ts);
-  entry.decided.textContent = `${ev.decision} by ${ev.actor || ownerName}${when ? `, ${when}` : ''}`;
+  entry.decided.textContent = `${ev.decision} by ${ev.actor || ownerName}${ev.via === 'slack' ? ' in Slack' : ''}${when ? `, ${when}` : ''}`;
 }
 
 function showRecResult(ev) {
@@ -1156,6 +1157,7 @@ async function send() {
 // connection, or from two places at once) draws only what is new.
 let chatId = null;
 const doneJobs = new Set();
+let lastDecisionTs = 0;   // the latest decision or result this page has drawn (see handle)
 const streamed = new Map();
 let following = 0;
 const chatQuery = () => (chatId ? `?room=${encodeURIComponent(chatId)}` : '');
@@ -1248,6 +1250,18 @@ async function catchUp() {
       if (partial.size) appendToThread(el('div', 'notice', 'Coen finished a turn while the connection was lost. Reload to see all of it.'));
       for (const ev of missed) { doneJobs.add(ev.jobId); streamed.delete(ev.jobId); }
       if (missed.length) thread.scrollTop = thread.scrollHeight;
+    }
+    // A card decided elsewhere (in Slack, or in another tab), or its result: drawn on the card here. Decisions made
+    // during a turn come with the turn; these are the ones outside any turn.
+    if (typeof state.lastDecisionTs === 'number' && state.lastDecisionTs > lastDecisionTs) {
+      const full = await fetch('/api/room' + chatQuery());
+      if (!full.ok) return;
+      const since = lastDecisionTs;
+      const room = await full.json();
+      for (const ev of room.events) {
+        if ((ev.type === 'decision' || ev.type === 'rec_result') && !ev.jobId && typeof ev.ts === 'number' && ev.ts > since) handle(ev);
+      }
+      if (state.lastDecisionTs > lastDecisionTs) lastDecisionTs = state.lastDecisionTs;
     }
     if (state.runningJobId && !following) await attach();
   } catch { /* tried again at the next check */ } finally {
@@ -3050,7 +3064,7 @@ function decisionsMessage(text) {
 function decisionRow(d) {
   const row = el('li', 'decision');
   const head = el('div', 'decision-head');
-  head.append(el('b', null, d.actor || ownerName), el('span', null, DECISION_WORDS[d.decision] || d.decision || ''), el('span', 'decision-kind', Object.hasOwn(ACTION_LABELS, d.action) ? ACTION_LABELS[d.action] : 'Proposal'), el('span', 'decision-when', whenText(d.at)));
+  head.append(el('b', null, d.actor || ownerName), el('span', null, `${DECISION_WORDS[d.decision] || d.decision || ''}${d.via === 'slack' ? ' in Slack' : ''}`),el('span', 'decision-kind', Object.hasOwn(ACTION_LABELS, d.action) ? ACTION_LABELS[d.action] : 'Proposal'), el('span', 'decision-when', whenText(d.at)));
   row.append(head, el('p', 'decision-summary', d.summary || ''));
   // Background, as tags: who proposed it, in that agent's own colour, and the chat it came up in. Each chat gets a
   // dot in one colour for this list, so rows from the same discussion are easy to spot. A row without them (an
@@ -3485,6 +3499,10 @@ $('space-remove').addEventListener('click', async () => {
     // when it is locked, and the room waits a minute). Notion drafts and pages can't be saved until a restart.
     if (room.notionTokenMissing === true) {
       appendToThread(el('div', 'notice', "Heads-up: the room started without its Notion token, because 1Password didn't hand it over in time. Notion drafts and pages can't be saved until the room is restarted and the 1Password prompt is approved. Everything else works."));
+    }
+    // Slack was set up and isn't connected (the terminal's line about it goes unread): cards aren't sent there.
+    if (typeof room.slackProblem === 'string' && room.slackProblem) {
+      appendToThread(el('div', 'notice', `Heads-up: Slack isn't connected: ${room.slackProblem}. New cards aren't sent to Slack until this is fixed and the Exec Room restarted. Approve them here; everything else works.`));
     }
     // A finished job with no end event was cut off (the server stopped mid-answer).
     if (turn && !turn.ended) endTurn({ type: 'end', status: 'interrupted' });

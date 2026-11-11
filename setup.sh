@@ -18,13 +18,13 @@ NC='\033[0m' # No Color
 echo "Checking prerequisites..."
 
 command -v node >/dev/null 2>&1 || {
-  echo -e "${RED}Error: Node.js 20+ is required.${NC}"
+  echo -e "${RED}Error: Node.js 22+ is required.${NC}"
   echo "Install from: https://nodejs.org"
   exit 1
 }
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  echo -e "${RED}Error: Node.js 20+ is required (found $(node --version)).${NC}"
+if [ "$NODE_MAJOR" -lt 22 ]; then
+  echo -e "${RED}Error: Node.js 22+ is required (found $(node --version)).${NC}"
   echo "Install from: https://nodejs.org"
   exit 1
 fi
