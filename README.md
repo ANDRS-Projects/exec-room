@@ -1,7 +1,7 @@
 # Exec Room
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
-[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Runs on Claude Code](https://img.shields.io/badge/runs%20on-Claude%20Code-555555)](https://code.claude.com/docs)
 [![Runs locally](https://img.shields.io/badge/runs-locally-2ea44f)](SECURITY.md)
 [![Actions: approve first](https://img.shields.io/badge/actions-approve--first-6f42c1)](SECURITY.md)
@@ -68,7 +68,7 @@ Started on an API key instead (see [Running on an API key](#running-on-an-api-ke
 ## Requirements
 
 - **macOS or Linux.** Windows isn't supported.
-- **Node.js 20+**
+- **Node.js 22+** (Node 20 no longer gets security updates, and approving from Slack needs the WebSocket that Node 22 has built in)
 - **Claude Code** (`claude`), signed in to your Claude plan (tested with version 2.1.316) — see the [Claude Code docs](https://code.claude.com/docs). By default the room runs agents on your plan and never uses an Anthropic API key; to pay with a key instead, see [Running on an API key](#running-on-an-api-key) (no plan sign-in is needed for that). It starts every run with `--agents`, `--tools`, `--setting-sources` and `--disable-slash-commands`, so it needs a recent version that has all four.
 - **Python 3** — only to run the tests
 - Optional: **GitHub CLI** (`gh`), signed in, for GitHub actions

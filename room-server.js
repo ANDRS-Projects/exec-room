@@ -5356,6 +5356,8 @@ const slack = { state: 'off', reason: '', bot: null, app: null, approver: null, 
   const fail = (reason) => { slack.state = 'failed'; slack.reason = reason; };
   const approver = typeof SLACK_CONFIG.approver === 'string' ? SLACK_CONFIG.approver.trim() : '';
   if (!SLACK_MEMBER.test(approver)) return fail('"approver" in room.config.json must be your Slack member ID (U…, in your Slack profile under "Copy member ID")');
+  // Taps come in over Node's own WebSocket, which Node 20 doesn't have. Said before any token is read.
+  if (typeof WebSocket !== 'function') return fail("Slack needs Node 22 or newer: this Node has no built-in WebSocket");
   const read = (env, key) => {
     if (process.env[env]) return process.env[env];
     try {

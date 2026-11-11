@@ -3443,6 +3443,12 @@ try:
         out("S3 an approver that isn't a member ID", json.loads(call("/api/room")[1]).get("slackProblem"))
     finally:
         s.stop()
+    # A Node without its built-in WebSocket (Node 20; here switched off): Slack is off, said before any token is read.
+    s = Server("proposals", {**slack_env, "ROOM_SLACK": "on", "NODE_OPTIONS": "--no-experimental-websocket"}, data_name="data-slack-node", config=slack_config("UOWNER"))
+    try:
+        out("S3 a Node without WebSocket", (json.loads(call("/api/room")[1]).get("slackProblem"), len(FakeSlack.calls)))
+    finally:
+        s.stop()
     s = Server("proposals", {**slack_env, "ROOM_SLACK": "on", "ROOM_SLACK_APP_TOKEN": "xapp-wrong"}, data_name="data-slack-token", config=slack_config("UOWNER"))
     try:
         until(lambda: "slackProblem" in json.loads(call("/api/room")[1]))
