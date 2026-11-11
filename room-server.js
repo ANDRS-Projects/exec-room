@@ -3742,6 +3742,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       saveRecs();
       logDecision(dispatch, { result: dispatch.result, jobId: job.jobId });
       send({ type: 'rec_result', recId: dispatch.recId, state: dispatch.state, drafts: dispatch.result.drafts });
+      slackSettle(dispatch);
     } else if (status === 'ok') {
       // The focus agent's proposals come from its own reply (same checks, same approval), credited to it.
       const found = [...extractRecs(job.coenText, space), ...(focus ? extractRecs(job.focusText, space).map((f) => ({ ...f, by: focus.key })) : [])];
@@ -3756,6 +3757,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
         saveRecs();
         logDecision(rec, {});
         send({ type: 'recommendation', rec });
+        slackPost(rec);
       }
       for (const [text, by] of [[job.coenText, null], ...(focus ? [[job.focusText, focus]] : [])]) {
         if (hasMisfiledRec(text)) send({ type: 'notice', text: `${by ? by.name : 'Coen'}'s proposal couldn't be turned into a card (it wasn't in the form the room reads). Ask ${by ? by.name : 'him'} to propose it again.` });
@@ -4097,6 +4099,8 @@ app.get('/api/room', (req, res) => {
     // terminal's line about it goes unread.
     // Not said once Notion is connected: saving then goes through the connection.
     ...(NOTION_TOKEN_REF && !NOTION_TOKEN && !notionConn() && { notionTokenMissing: true }),
+    // Slack was set up and can't be used until a restart (a token 1Password didn't hand over, a wrong setting).
+    ...(slack.state === 'failed' && { slackProblem: slack.reason }),
     attachments: { maxFiles: ATTACH_MAX_FILES, maxBytes: ATTACH_MAX_BYTES, extensions: Object.keys(ATTACH_TYPES) }, events: readEvents(room.roomId).filter((ev) => !live || ev.jobId !== live) });
 });
 
@@ -4128,8 +4132,13 @@ app.get('/api/room/state', (req, res) => {
   const room = pageRoom(req);
   if (!room) return res.status(404).json({ error: 'unknown chat' });
   const live = jobs.has(room.roomId) ? jobs.get(room.roomId).jobId : null;
-  const saved = readEvents(room.roomId).filter((ev) => typeof ev.jobId === 'string' && ev.jobId !== live);
-  res.json({ roomId: room.roomId, runningJobId: live, lastJobId: saved.length ? saved[saved.length - 1].jobId : null });
+  const all = readEvents(room.roomId);
+  const saved = all.filter((ev) => typeof ev.jobId === 'string' && ev.jobId !== live);
+  // When a card in this chat was last decided or got its result: a decision made in Slack (or in another tab)
+  // reaches an open page through this.
+  const decided = all.filter((ev) => (ev.type === 'decision' || ev.type === 'rec_result') && typeof ev.ts === 'number').map((ev) => ev.ts);
+  res.json({ roomId: room.roomId, runningJobId: live, lastJobId: saved.length ? saved[saved.length - 1].jobId : null,
+    lastDecisionTs: decided.length ? Math.max(...decided) : null });
 });
 
 app.get('/api/stream', (req, res) => {
@@ -4200,29 +4209,39 @@ function recordDecision(rec, decision, extra = {}) {
   logDecision(rec, extra);
   const ev = { type: 'decision', recId: rec.recId, decision, actor: rec.actor, ...extra, ...(rec.keepUntil && { keepUntil: rec.keepUntil }), ts: Date.now() };
   appendEvent(rec.roomId, ev);
+  slackSettle(rec);
   return ev;
 }
 
 function recResult(rec, extra) {
   const ev = { type: 'rec_result', recId: rec.recId, state: rec.state, ...extra, ts: Date.now() };
   appendEvent(rec.roomId, ev);
+  slackSettle(rec);
   return ev;
 }
 
 app.post('/api/recs/:id/approve', async (req, res) => {
   const rec = pendingRec(req, res);
   if (!rec) return;
+  const { status = 200, body } = await approveRec(rec);
+  res.status(status).json(body);
+});
+
+// Carries out an approval, from the page or from Slack (via 'slack'): the same checks and the same work either way.
+// The answer is what the page's route sends: { status, body }, the status only when it isn't 200.
+async function approveRec(rec, via) {
+  const how = via ? { via } : {};
   if (rec.action === 'dispatch') {
     const busy = busyReason(rec.roomId);
-    if (busy) return res.status(409).json({ error: busy });
+    if (busy) return { status: 409, body: { error: busy } };
     const here = makers(spaceOf(rec.roomId));
     const gone = [rec.agent, rec.then].filter((k) => k && !Object.hasOwn(here, k));
-    if (gone.length) return res.status(409).json({ error: `${gone.map((k) => makerInfo(k).name).join(' and ')} is no longer in this room. Ask Coen to propose it again.` });
-    const decision = recordDecision(rec, 'approved');
+    if (gone.length) return { status: 409, body: { error: `${gone.map((k) => makerInfo(k).name).join(' and ')} is no longer in this room. Ask Coen to propose it again.` } };
+    const decision = recordDecision(rec, 'approved', how);
     rec.state = 'running';
     saveRecs();
     const job = startJob(rec.brief, rec, false, null, index.rooms[rec.roomId]);
-    return res.json({ events: [decision], jobId: job.jobId });
+    return { body: { events: [decision], jobId: job.jobId } };
   }
   // The room's targets may have changed since the card appeared: what's approved must still be on its lists.
   const targets = targetsOf(spaceOf(rec.roomId));
@@ -4232,10 +4251,10 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     : rec.action === 'notion_draft' && (!roomDatabase(spaceOf(rec.roomId), rec.database) || postsNotReady(roomDatabase(spaceOf(rec.roomId), rec.database))) ? `this room can no longer save posts to ${roomDatabase(spaceOf(rec.roomId), rec.database) ? `${roomDatabase(spaceOf(rec.roomId), rec.database).name} (${postsNotReady(roomDatabase(spaceOf(rec.roomId), rec.database))})` : `"${rec.database}" (it isn't one of the room's Notion databases any more)`}`
       : offEmail.length ? `${offEmail.join(' and ')} ${offEmail.length > 1 ? 'are' : 'is'} no longer on this room's recipient list`
         : null;
-  if (offList) return res.status(409).json({ error: `${offList}. Ask Coen to propose it again, or change the room's settings.` });
-  const decision = recordDecision(rec, 'approved');
+  if (offList) return { status: 409, body: { error: `${offList}. Ask Coen to propose it again, or change the room's settings.` } };
+  const decision = recordDecision(rec, 'approved', how);
   // Nothing is sent and no API is called: the card now offers Outlook web, mailto and Copy, and the owner sends it.
-  if (rec.action === 'email_draft') return res.json({ events: [decision] });
+  if (rec.action === 'email_draft') return { body: { events: [decision] } };
   if (rec.action === 'create_agent') {
     // Re-checked now: the name may have been taken since Coen proposed it.
     try {
@@ -4251,7 +4270,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     }
     saveRecs();
     logDecision(rec, { result: rec.result });
-    return res.json({ events: [decision, recResult(rec, rec.result)] });
+    return { body: { events: [decision, recResult(rec, rec.result)] } };
   }
   if (rec.action === 'notion_draft') {
     // One page per post; a failure stops the rest so nothing is half-saved silently.
@@ -4266,7 +4285,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     rec.result = error ? { urls, error } : { urls };
     saveRecs();
     logDecision(rec, { result: rec.result });
-    return res.json({ events: [decision, recResult(rec, rec.result)] });
+    return { body: { events: [decision, recResult(rec, rec.result)] } };
   }
   if (rec.action === 'save_file') {
     try {
@@ -4278,7 +4297,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     }
     saveRecs();
     logDecision(rec, { result: rec.result });
-    return res.json({ events: [decision, recResult(rec, rec.result)] });
+    return { body: { events: [decision, recResult(rec, rec.result)] } };
   }
   if (rec.action === 'notion_row') {
     const db = roomDatabase(spaceOf(rec.roomId), rec.database);
@@ -4306,7 +4325,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     rec.result = error ? { urls, error } : { urls };
     saveRecs();
     logDecision(rec, { result: rec.result });
-    return res.json({ events: [decision, recResult(rec, rec.result)] });
+    return { body: { events: [decision, recResult(rec, rec.result)] } };
   }
   if (rec.action === 'notion_page_update') {
     try {
@@ -4322,7 +4341,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     }
     saveRecs();
     logDecision(rec, { result: rec.result });
-    return res.json({ events: [decision, recResult(rec, rec.result)] });
+    return { body: { events: [decision, recResult(rec, rec.result)] } };
   }
   if (rec.action === 'notion_page') {
     try {
@@ -4335,7 +4354,7 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     }
     saveRecs();
     logDecision(rec, { result: rec.result });
-    return res.json({ events: [decision, recResult(rec, rec.result)] });
+    return { body: { events: [decision, recResult(rec, rec.result)] } };
   }
   try {
     const expectPublic = isPublicRepo(spaceOf(rec.roomId), roomRepo(spaceOf(rec.roomId), rec.repo));
@@ -4344,15 +4363,15 @@ app.post('/api/recs/:id/approve', async (req, res) => {
     rec.result = { url };
     saveRecs();
     logDecision(rec, { result: rec.result });
-    res.json({ events: [decision, recResult(rec, { url })] });
+    return { body: { events: [decision, recResult(rec, { url })] } };
   } catch (err) {
     rec.state = 'failed';
     rec.result = { error: err.message.slice(0, 500) };
     saveRecs();
     logDecision(rec, { result: rec.result });
-    res.json({ events: [decision, recResult(rec, { error: rec.result.error })] });
+    return { body: { events: [decision, recResult(rec, { error: rec.result.error })] } };
   }
-});
+}
 
 app.post('/api/recs/:id/revise', (req, res) => {
   const note = ((req.body && req.body.note) || '').trim();
@@ -4377,15 +4396,20 @@ app.post('/api/recs/:id/dismiss', (req, res) => {
   if (reason.length > 4000) return res.status(400).json({ error: 'That reason is too long (4000 characters max).' });
   const rec = pendingRec(req, res);
   if (!rec) return;
-  const decision = recordDecision(rec, 'dismissed', reason ? { reason } : {});
+  res.json({ events: [dismissRec(rec, reason)] });
+});
+
+// A dismissal, from the page or from Slack (via 'slack', without a reason).
+function dismissRec(rec, reason, via) {
+  const decision = recordDecision(rec, 'dismissed', { ...(reason && { reason }), ...(via && { via }) });
   // Coen hears about it with the next run he leads in this chat (see dismissalNote), never through a job started here.
   const chat = index.rooms[rec.roomId];
   if (chat) {
     chat.dismissedToTell = [...(Array.isArray(chat.dismissedToTell) ? chat.dismissedToTell : []), rec.recId].slice(-DISMISSED_TELL_MAX);
     saveIndex();
   }
-  res.json({ events: [decision] });
-});
+  return decision;
+}
 
 // "Sent, remove the text": an approved email draft gives up its addresses and text now instead of when its time is up.
 // Final, like the removal after a decision used to be; a draft that has none left answers the same way.
@@ -5103,6 +5127,8 @@ function decisionsOf(space) {
     // What was written with the decision. Lines from before dismissals took a reason have none.
     if (line.state === 'dismissed' && typeof line.reason === 'string' && line.reason) row.reason = line.reason;
     if (line.state === 'revised' && typeof line.note === 'string' && line.note) row.note = line.note;
+    // Decided in Slack; lines from before Slack, and decisions made on the page, have no `via`.
+    if (DECIDED.has(line.state) && line.via === 'slack') row.via = 'slack';
     if (line.result && typeof line.result === 'object') row.result = line.result;
   }
   const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
@@ -5117,7 +5143,7 @@ function decisionsOf(space) {
       const by = rec && typeof rec.by === 'string' && rec.by ? rec.by : 'coen';
       return {
         recId: r.recId, action: String(r.action || ''), summary: String(r.summary || ''), decision: r.decision, at: r.at,
-        actor: r.actor || OWNER_NAME, state: String(r.state || ''),
+        actor: r.actor || OWNER_NAME, state: String(r.state || ''), ...(r.via && { via: r.via }),
         ...(rec && { proposer: { key: by, name: by === 'coen' ? 'Coen' : agentName(by) } }),
         chat: { id: r.chatId, ...chatLabel(index.rooms[r.chatId]) },
         ...(r.action === 'email_draft' && { subject: String(r.subject || ''), domains: strings(r.domains) }),
@@ -5306,8 +5332,251 @@ function contextCheck() {
   });
 }
 
+// ---- Slack: a DM to the owner for each new card, with Approve and Dismiss. A tap there goes through approveRec and
+// dismissRec, the same checks as the page. Taps come in over Slack's Socket Mode: the room opens a connection out to
+// Slack, so nothing on this computer can be reached from outside. Set up in room.config.json as "slack": { botTokenRef,
+// appTokenRef (1Password references), approver (the owner's Slack member ID) }; ROOM_SLACK_BOT_TOKEN and
+// ROOM_SLACK_APP_TOKEN stand in for the references. A room on another data folder (a sandbox, the suite) stays off
+// Slack unless ROOM_SLACK=on: Slack hands each tap to one of the app's connections, so a sandbox would take taps
+// meant for the live room. ROOM_SLACK=off keeps the live room off Slack too.
+const SLACK_CONFIG = CONFIG.slack && typeof CONFIG.slack === 'object' && !Array.isArray(CONFIG.slack) ? CONFIG.slack : null;
+const SLACK_API = (process.env.ROOM_SLACK_API || 'https://slack.com/api').replace(/\/+$/, '');
+const SLACK_MEMBER = /^[UW][A-Z0-9]{2,20}$/;
+const SLACK_WANTED = process.env.ROOM_SLACK === 'on' || (process.env.ROOM_SLACK !== 'off' && !process.env.ROOM_DATA_DIR);
+const SLACK_RETRY_MAX_MS = 5 * 60 * 1000;
+// state: off (not set up, or not for this room), failed (set up and unusable until a restart), connecting, connected.
+const slack = { state: 'off', reason: '', bot: null, app: null, approver: null, ws: null, retryMs: 2000, said: false, queue: new Map() };
+
+(function slackSetup() {
+  if (!SLACK_CONFIG) return;
+  if (!SLACK_WANTED) {
+    slack.reason = process.env.ROOM_SLACK === 'off' ? 'ROOM_SLACK is off' : 'this room runs on another data folder (a sandbox or a test); ROOM_SLACK=on connects it';
+    return;
+  }
+  const fail = (reason) => { slack.state = 'failed'; slack.reason = reason; };
+  const approver = typeof SLACK_CONFIG.approver === 'string' ? SLACK_CONFIG.approver.trim() : '';
+  if (!SLACK_MEMBER.test(approver)) return fail('"approver" in room.config.json must be your Slack member ID (U…, in your Slack profile under "Copy member ID")');
+  const read = (env, key) => {
+    if (process.env[env]) return process.env[env];
+    try {
+      return execFileSync('op', ['read', SLACK_CONFIG[key]], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+    } catch {
+      return null;
+    }
+  };
+  for (const [env, key] of [['ROOM_SLACK_BOT_TOKEN', 'botTokenRef'], ['ROOM_SLACK_APP_TOKEN', 'appTokenRef']]) {
+    if (!process.env[env] && (typeof SLACK_CONFIG[key] !== 'string' || !MCP_OP_REF.test(SLACK_CONFIG[key]))) return fail(`"${key}" in room.config.json must be a 1Password reference (op://vault/item/field)`);
+  }
+  slack.bot = read('ROOM_SLACK_BOT_TOKEN', 'botTokenRef');
+  slack.app = read('ROOM_SLACK_APP_TOKEN', 'appTokenRef');
+  if (!slack.bot || !slack.app) {
+    const which = !slack.bot && !slack.app ? 'tokens' : !slack.bot ? 'bot token' : 'app-level token';
+    slack.bot = slack.app = null;
+    return fail(`1Password didn't hand over the Slack ${which} (it was locked, or the prompt wasn't approved in time)`);
+  }
+  slack.approver = approver;
+  slack.state = 'connecting';
+}());
+
+async function slackCall(method, body, token = slack.bot) {
+  const res = await fetch(`${SLACK_API}/${method}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(body || {}),
+    signal: AbortSignal.timeout(15000),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!json.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status}`), { slackError: json.error });
+  return json;
+}
+
+// Slack's answers that no retry will change: a token that's wrong, revoked or lacks what it needs.
+const SLACK_FINAL = new Set(['invalid_auth', 'not_authed', 'token_revoked', 'account_inactive', 'not_allowed_token_type', 'missing_scope']);
+
+function slackConnect() {
+  slackCall('apps.connections.open', {}, slack.app).then(({ url }) => {
+    const ws = new WebSocket(url);
+    slack.ws = ws;
+    ws.addEventListener('message', (m) => slackMessage(ws, m.data));
+    ws.addEventListener('close', () => {
+      if (slack.ws !== ws) return;
+      slack.ws = null;
+      slackRetry('the connection to Slack closed');
+    });
+    ws.addEventListener('error', () => { /* followed by close */ });
+  }).catch((err) => {
+    if (SLACK_FINAL.has(err.slackError)) {
+      slack.state = 'failed';
+      slack.reason = `Slack refused the app-level token (${err.slackError})`;
+      console.warn(`Slack: ${slack.reason}. Taps in Slack won't work until the token is fixed and the room restarted.`);
+      return;
+    }
+    slackRetry(`couldn't reach Slack (${err.message})`);
+  });
+}
+
+function slackRetry(why) {
+  const wasConnected = slack.state === 'connected';
+  slack.state = 'connecting';
+  slack.reason = why;
+  // Slack closes the connection every few hours on purpose and a new one follows at once; only a lasting
+  // problem is worth a line in the terminal.
+  if (!wasConnected && slack.retryMs >= 30000) console.warn(`Slack: ${why}. Trying again in ${Math.round(slack.retryMs / 1000)} s; taps in Slack wait until then.`);
+  setTimeout(slackConnect, wasConnected ? 0 : slack.retryMs).unref();
+  if (!wasConnected) slack.retryMs = Math.min(slack.retryMs * 2, SLACK_RETRY_MAX_MS);
+}
+
+function slackMessage(ws, data) {
+  let msg;
+  try { msg = JSON.parse(data); } catch { return; }
+  // Every envelope is acknowledged at once (Slack waits 3 s); the work follows.
+  if (msg.envelope_id) ws.send(JSON.stringify({ envelope_id: msg.envelope_id }));
+  if (msg.type === 'hello') {
+    if (!slack.said) console.log('Slack: connected. New cards are sent to you as a Slack DM with Approve and Dismiss.');
+    slack.said = true;
+    slack.state = 'connected';
+    slack.reason = '';
+    slack.retryMs = 2000;
+  } else if (msg.type === 'disconnect') {
+    ws.close();
+  } else if (msg.type === 'interactive' && msg.payload && msg.payload.type === 'block_actions') {
+    slackTap(msg.payload).catch((err) => console.warn(`Slack: a tap couldn't be handled (${err.message}).`));
+  }
+}
+
+// A tap on Approve or Dismiss. Only the approver's taps count; the proposal is looked up by the id on the button,
+// in any chat of any room (the page's own buttons only act on the chat it shows).
+async function slackTap(p) {
+  const action = Array.isArray(p.actions) ? p.actions[0] : null;
+  if (!action || !['approve', 'dismiss'].includes(action.action_id)) return; // "Open the Exec Room" is a link
+  const who = p.user && typeof p.user.id === 'string' ? p.user.id : '';
+  const recId = typeof action.value === 'string' ? action.value : '';
+  if (who !== slack.approver) {
+    console.warn(`Slack: a tap by ${who.slice(0, 30) || 'someone unknown'} was refused: only the approver set in room.config.json decides.`);
+    return;
+  }
+  const rec = Object.hasOwn(recs, recId) ? recs[recId] : null;
+  if (!rec) {
+    if (p.channel && p.message) {
+      await slackCall('chat.update', { channel: p.channel.id, ts: p.message.ts, text: 'This proposal is no longer in the Exec Room.',
+        blocks: [{ type: 'section', text: { type: 'mrkdwn', text: 'This proposal is no longer in the Exec Room, so nothing was done.' } }] });
+    }
+    return;
+  }
+  // Decided in the meantime (on the page, or a second tap): the message is brought up to date, nothing else.
+  if (rec.state !== 'pending') return slackSettle(rec);
+  if (action.action_id === 'dismiss') {
+    dismissRec(rec, '', 'slack');
+    return;
+  }
+  const { status = 200, body } = await approveRec(rec, 'slack');
+  // Not carried out (Coen is busy, or a target is no longer on the room's lists): the buttons stay, with the reason.
+  if (status !== 200) slackSettle(rec, body && body.error);
+}
+
+// One message per card, changed in order: each change waits for the one before it (the first is the post itself).
+function slackQueue(recId, what, fn) {
+  const next = (slack.queue.get(recId) || Promise.resolve()).then(fn)
+    .catch((err) => console.warn(`Slack: the message for ${recId} couldn't be ${what} (${err.message}).`));
+  slack.queue.set(recId, next);
+  next.finally(() => { if (slack.queue.get(recId) === next) slack.queue.delete(recId); });
+}
+
+function slackPost(rec) {
+  if (!slack.bot || !slack.approver) return;
+  slackQueue(rec.recId, 'sent', async () => {
+    const sent = await slackCall('chat.postMessage', { channel: slack.approver, ...slackCard(rec) });
+    rec.slack = { channel: sent.channel, ts: sent.ts };
+    saveRecs();
+  });
+}
+
+// After any decision or result, wherever it was made: the card's message shows it. A card from before Slack was
+// set up (or one whose message couldn't be sent) has no message to change.
+function slackSettle(rec, error) {
+  if (!slack.bot || !rec) return;
+  slackQueue(rec.recId, 'updated', async () => {
+    if (!rec.slack || typeof rec.slack.channel !== 'string' || typeof rec.slack.ts !== 'string') return;
+    await slackCall('chat.update', { channel: rec.slack.channel, ts: rec.slack.ts, ...slackCard(rec, error) });
+  });
+}
+
+const SLACK_KINDS = {
+  dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft', notion_row: 'Notion row',
+  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', create_agent: 'New agent', save_file: 'Saved file',
+};
+// Text an agent wrote goes into Slack as text: &, < and > escaped, so it can't mention people or channels or make links.
+const slackText = (t, max = 1500) => String(t == null ? '' : t).replace(/\s+/g, ' ').trim().slice(0, max).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const slackLink = (url, label) => (typeof url === 'string' && /^https:\/\/[^\s<>|]+$/.test(url) ? `<${url}|${slackText(label, 80)}>` : '');
+
+// Where the card points: the maker, repo, database, page title, recipients, file or agent. Never a draft's or an
+// email's text: that stays in the Exec Room.
+function slackTarget(rec) {
+  const list = (a) => (Array.isArray(a) ? a.filter((x) => typeof x === 'string') : []);
+  switch (rec.action) {
+    case 'dispatch': return `${makerInfo(rec.agent).name}${rec.then ? ` → ${makerInfo(rec.then).name}` : ''}`;
+    case 'github_issue': return rec.repo;
+    case 'github_comment': return `${rec.repo} #${rec.issue}`;
+    case 'notion_draft': case 'notion_row': return rec.databaseName;
+    case 'notion_page': case 'notion_page_update': return rec.title;
+    case 'email_draft': { const to = [...list(rec.to), ...list(rec.cc)]; return to.length ? `To ${to.join(', ')}` : ''; }
+    case 'save_file': return rec.where && rec.name ? `${rec.where}/${rec.name}` : rec.name;
+    case 'create_agent': return rec.agent && rec.agent.name;
+    default: return '';
+  }
+}
+
+function slackStatus(rec) {
+  const where = rec.via === 'slack' ? 'in Slack' : 'in the Exec Room';
+  const r = rec.result && typeof rec.result === 'object' ? rec.result : {};
+  const links = [...(Array.isArray(r.urls) ? r.urls : []), ...(r.url ? [r.url] : [])].map((u, i, all) => slackLink(u, all.length > 1 ? `link ${i + 1}` : 'open it')).filter(Boolean);
+  const drafts = Array.isArray(r.drafts) && r.drafts.length ? ` ${r.drafts.length} draft${r.drafts.length > 1 ? 's' : ''} in the Exec Room.` : '';
+  switch (rec.state) {
+    case 'pending': return '';
+    case 'approved': return rec.action === 'email_draft' ? `✅ Approved ${where}. Send it from the Exec Room on your Mac.` : `✅ Approved ${where}.`;
+    case 'running': return `✅ Approved ${where}. ${rec.then ? `${slackText(makerInfo(rec.agent).name, 80)} and ${slackText(makerInfo(rec.then).name, 80)} are` : `${slackText(makerInfo(rec.agent).name, 80)} is`} working on it.`;
+    case 'done': return `✅ Approved ${where}. Done.${links.length ? ` ${links.join(' · ')}` : ''}${drafts}${r.shown ? ` Saved as ${slackText(r.shown, 300)}.` : ''}`;
+    case 'failed': return `⚠️ Approved ${where}, but it didn't work: ${slackText(r.error, 400)}${links.length ? ` (done before that: ${links.join(' · ')})` : ''}`;
+    case 'stopped': return `✅ Approved ${where}. The run was stopped.${drafts}`;
+    case 'revised': return `↩️ Sent back for a revision ${where}.`;
+    case 'dismissed': return `✖️ Dismissed ${where}.`;
+    default: return slackText(rec.state, 40);
+  }
+}
+
+function slackCard(rec, error) {
+  const chat = index.rooms[rec.roomId];
+  const space = spaceOf(rec.roomId);
+  const who = rec.by ? agentName(rec.by) : 'Coen';
+  const kind = SLACK_KINDS[rec.action] || 'Proposal';
+  const target = slackTarget(rec);
+  const lines = [
+    `*${slackText(kind, 60)}* from ${slackText(who, 60)} · ${slackText(space ? space.name : 'a room', 80)}${chat && chat.title ? ` · ${slackText(chat.title, 80)}` : ''}`,
+    slackText(rec.summary),
+    ...(target ? [`_${slackText(target, 500)}_`] : []),
+  ];
+  const note = [slackStatus(rec), ...(error ? [`⚠️ Not done: ${slackText(error, 400)}`] : [])].filter(Boolean).join('\n');
+  const open = { type: 'button', action_id: 'open', text: { type: 'plain_text', text: 'Open the Exec Room' }, url: `http://127.0.0.1:${PORT}/room.html` };
+  const buttons = rec.state === 'pending' ? [
+    { type: 'button', action_id: 'approve', style: 'primary', text: { type: 'plain_text', text: 'Approve' }, value: rec.recId },
+    { type: 'button', action_id: 'dismiss', text: { type: 'plain_text', text: 'Dismiss' }, value: rec.recId },
+    open,
+  ] : [open];
+  return {
+    text: `${who} proposes: ${String(rec.summary || '').replace(/\s+/g, ' ').slice(0, 150)}`,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text: lines.join('\n') } },
+      ...(note ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }] : []),
+      { type: 'actions', elements: buttons },
+    ],
+  };
+}
+
 app.listen(PORT, HOST, () => {
   console.log(`Exec Room (headless Claude Code) at http://127.0.0.1:${PORT}/room.html`);
+  if (slack.state === 'connecting') slackConnect();
+  else if (slack.state === 'failed') console.warn(`Slack: not connected: ${slack.reason}. New cards aren't sent to Slack until this is fixed and the room restarted.`);
+  else if (SLACK_CONFIG) console.log(`Slack: off (${slack.reason}).`);
   if (SAVE_TEST_HOST) console.log(`Test setting ROOM_TEST_SAVE_HOST is on: approved downloads may use plain http from ${SAVE_TEST_HOST} on this computer. Never set it for a real room.`);
   contextCheck();
   // Said after the servers' check: how agents read Notion depends on whether the Notion sign-in works.

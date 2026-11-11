@@ -17,6 +17,7 @@ The web room runs Coen (the room lead) and the advisors and makers the owner bui
 | Web room (`room-server.js`) | Node.js + Express | `127.0.0.1:4179` only |
 | Room page (`public/`) | Static HTML/CSS/JS, vendored `marked` + `DOMPurify` | Served by the room |
 | Agents | Headless Claude Code on the owner's plan | Local processes |
+| Deciding from Slack (optional) | Slack's Socket Mode (a connection the server opens out to Slack) and its Web API | Slack: a direct message per card to the approver; only the approver's taps count |
 | Approved actions | `gh` CLI, Notion's own MCP server (through "Connect") or Notion's API (with a token) | GitHub (the repos each room lists in Room settings; private unless the room marks one as public), Notion (the databases listed in `room.config.json`, and the pages each room allows) |
 
 npm dependencies: `express`, `marked`, `dompurify` and the Inter font (`@fontsource-variable/inter`). The last three are copied into `public/vendor/`, so the page loads nothing from a CDN.
@@ -163,6 +164,13 @@ Coen can only *propose* an action. The owner approves it once on a card; the ser
   - Posts (notion_draft) follow the same rules: a post column set to always or empty gets that, and a database whose Channel or Post Content isn't the agent's can't take posts.
 
 Posting, scheduling, sending messages and deploying can't be proposed at all.
+
+**Deciding from Slack (optional, off until `slack` is set in `room.config.json`).** Each new card is also sent to the owner as a Slack direct message with Approve, Dismiss and a link to the room; a tap there is decided by the same code as the card's own buttons (`approveRec`, `dismissRec`), with the same checks on approval. Revise needs a written note and stays on the page.
+- **Nothing listens.** Taps come in over Slack's Socket Mode: the server opens a connection *out* to Slack (TLS, with the app-level token) and Slack sends taps down it. The room still answers only on `127.0.0.1`.
+- **Who decides.** Only a tap whose Slack member ID is the `approver` in `room.config.json` counts; any other is refused and noted in the terminal. Decisions made in Slack carry `via: "slack"` on the proposal, its log line and its decision event, and the page and Decisions list say "in Slack".
+- **What goes to Slack.** The card's kind, who proposed it, the room, the chat's name, the summary and its target (the maker, repo, Notion database, page title, email recipients, file path or new agent's name), and after a decision its outcome and result links. Never a brief, a draft, an issue's text or an email's text. Text an agent wrote is escaped (`&`, `<`, `>`), so it can't mention people or channels or make links in Slack. Slack keeps what it is sent.
+- **The tokens.** A bot token (`chat:write`, `im:write`: it messages the approver and updates those messages) and an app-level token (`connections:write`), read from 1Password at start-up and kept in memory, like the Notion token. No run or agent gets them; the page only ever learns that Slack isn't connected, and why.
+- **One room per Slack app.** Slack hands each tap to one of the app's open connections, so a second room connected to the same app would take taps meant for the first. A room on another data folder (`ROOM_DATA_DIR`) only connects with `ROOM_SLACK=on`; `ROOM_SLACK=off` keeps any room off. `ROOM_SLACK_API` is for the test suite's pretend Slack; never set it for a real room, as the tokens would go to that address.
 
 ### 5. Private data stays local
 

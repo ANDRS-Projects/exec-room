@@ -3327,6 +3327,207 @@ try:
     out("M6 GitHub: only reading tools, none of its writing ones", (len(gh_entry["tools"]), sorted(set(gh_entry["tools"].values())), sorted(GH_WRITES & set(gh_entry["tools"]))))
     fake_vendor.shutdown()
     fake_mcp.shutdown()
+
+    # S3: cards approved from Slack. A pretend Slack plays Slack's Web API and Socket Mode: the room asks it for a
+    # connection address, opens it, gets "hello", and the suite sends taps over it the way Slack does. The room posts a
+    # DM per new card, decides a tap through the same checks as the page, refuses taps from anyone but the approver,
+    # and updates the message after every decision wherever it was made. A sandbox (another data folder) stays off
+    # Slack unless ROOM_SLACK=on. The data folder holds a card saved before Slack (no `slack`): deciding it changes
+    # no message.
+    SLACK_PORT = int(os.environ.get("ROOM_TEST_SLACK_PORT", "4196"))
+
+    class FakeSlack:
+        calls, acks, socks, lock, envelopes = [], [], [], threading.Lock(), 0
+
+    def ws_send(sock, text):
+        data = text.encode()
+        n = len(data)
+        head = bytes([0x81, n]) if n < 126 else bytes([0x81, 126]) + n.to_bytes(2, "big")
+        with FakeSlack.lock:
+            sock.sendall(head + data)
+
+    def ws_read(f):
+        """One frame from the room (a client's frames are masked): (opcode, text), or None when the socket closed."""
+        head = f.read(2)
+        if len(head) < 2:
+            return None
+        n = head[1] & 0x7F
+        if n == 126:
+            n = int.from_bytes(f.read(2), "big")
+        elif n == 127:
+            n = int.from_bytes(f.read(8), "big")
+        mask = f.read(4) if head[1] & 0x80 else b"\0\0\0\0"
+        data = bytes(b ^ mask[i % 4] for i, b in enumerate(f.read(n)))
+        return head[0] & 0x0F, data.decode(errors="replace")
+
+    class SlackHandler(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            method = self.path.rsplit("/", 1)[-1]
+            body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
+            token = self.headers.get("authorization", "")
+            FakeSlack.calls.append((method, token, body))
+            if method == "apps.connections.open":
+                res = {"ok": True, "url": f"ws://127.0.0.1:{SLACK_PORT}/socket"} if token == "Bearer xapp-test" else {"ok": False, "error": "invalid_auth"}
+            elif method in ("chat.postMessage", "chat.update"):
+                res = {"ok": True, "channel": "D0TEST", "ts": f"1700000000.{len(FakeSlack.calls):06d}"} if token == "Bearer xoxb-test" else {"ok": False, "error": "invalid_auth"}
+            else:
+                res = {"ok": False, "error": "unknown_method"}
+            data = json.dumps(res).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            if self.path != "/socket" or self.headers.get("upgrade", "").lower() != "websocket":
+                self.send_response(404)
+                self.end_headers()
+                return
+            accept = base64.b64encode(hashlib.sha1((self.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+            self.wfile.write(f"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {accept}\r\n\r\n".encode())
+            self.wfile.flush()
+            sock = self.connection
+            FakeSlack.socks.append(sock)
+            ws_send(sock, json.dumps({"type": "hello", "num_connections": 1}))
+            while True:
+                frame = ws_read(self.rfile)
+                if frame is None or frame[0] == 8:
+                    break
+                if frame[0] == 1:
+                    FakeSlack.acks.append(json.loads(frame[1]).get("envelope_id"))
+            self.close_connection = True
+
+    fake_slack = ThreadingHTTPServer(("127.0.0.1", SLACK_PORT), SlackHandler)
+    threading.Thread(target=fake_slack.serve_forever, daemon=True).start()
+
+    def until(check, seconds=8):
+        for _ in range(int(seconds * 20)):
+            if check():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def tap(user, action, value):
+        """A tap in Slack, sent over the room's newest connection; returns once the room has acknowledged it."""
+        FakeSlack.envelopes += 1
+        envelope = f"env-{FakeSlack.envelopes}"
+        ws_send(FakeSlack.socks[-1], json.dumps({"envelope_id": envelope, "type": "interactive", "payload": {
+            "type": "block_actions", "user": {"id": user}, "channel": {"id": "D0TEST"}, "message": {"ts": "1700000000.000001"},
+            "actions": [{"action_id": action, "value": value}]}}))
+        return until(lambda: envelope in FakeSlack.acks)
+
+    slack_env = {"ROOM_SLACK_API": f"http://127.0.0.1:{SLACK_PORT}/api", "ROOM_SLACK_BOT_TOKEN": "xoxb-test", "ROOM_SLACK_APP_TOKEN": "xapp-test"}
+
+    def slack_config(approver):
+        path = os.path.join(TMP, f"room.config.slack-{approver}.json")
+        with open(path, "w") as f:
+            json.dump({**json.load(open(os.path.join(TESTS, "room.config.test.json"))), "slack": {"approver": approver}}, f)
+        return path
+
+    # A sandbox: Slack set up, another data folder, no ROOM_SLACK. Nothing reaches Slack.
+    s = Server("proposals", slack_env, data_name="data-slack-sandbox", config=slack_config("UOWNER"))
+    try:
+        call("/api/coen", {"text": "propose things"})
+        events(call("/api/stream")[1])
+        time.sleep(0.5)
+        out("S3 a sandbox stays off Slack", (len(FakeSlack.calls), "slackProblem" in json.loads(call("/api/room")[1])))
+    finally:
+        s.stop()
+    # Set up wrong: the page says so, as the terminal's line goes unread.
+    s = Server("proposals", {**slack_env, "ROOM_SLACK": "on"}, data_name="data-slack-approver", config=slack_config("nobody"))
+    try:
+        out("S3 an approver that isn't a member ID", json.loads(call("/api/room")[1]).get("slackProblem"))
+    finally:
+        s.stop()
+    s = Server("proposals", {**slack_env, "ROOM_SLACK": "on", "ROOM_SLACK_APP_TOKEN": "xapp-wrong"}, data_name="data-slack-token", config=slack_config("UOWNER"))
+    try:
+        until(lambda: "slackProblem" in json.loads(call("/api/room")[1]))
+        out("S3 an app-level token Slack refuses", (json.loads(call("/api/room")[1]).get("slackProblem"), [c[0] for c in FakeSlack.calls]))
+    finally:
+        s.stop()
+
+    FakeSlack.calls.clear()
+    data = os.path.join(TMP, "data-slack")
+    os.makedirs(os.path.join(data, "rooms"))
+    with open(os.path.join(data, "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": None, "title": "Launch <plan> & more",
+                   "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}}}, f)
+    with open(os.path.join(data, "workspaces.json"), "w") as f:
+        json.dump(default_rooms(), f)
+    with open(os.path.join(data, "recommendations.json"), "w") as f:
+        json.dump({"rec-before-slack": {"recId": "rec-before-slack", "roomId": "old-chat", "action": "github_issue", "summary": "Saved before Slack",
+                   "repo": "Example-Org/demo-app", "title": "Old", "body": "Old body", "state": "pending", "createdAt": "2026-09-01T00:00:00.000Z"}}, f)
+    s = Server("proposals", {**slack_env, "ROOM_SLACK": "on"}, data_name="data-slack", config=slack_config("UOWNER"))
+    try:
+        saved = lambda: json.load(open(os.path.join(data, "recommendations.json")))
+        log = lambda: [json.loads(l) for l in open(os.path.join(data, "jobs.ndjson")) if l.startswith('{"')]
+        sent = lambda m: [c[2] for c in FakeSlack.calls if c[0] == m]
+        until(lambda: FakeSlack.socks)
+        out("S3 connects with the app-level token, over Socket Mode", ([(c[0], c[1]) for c in FakeSlack.calls], len(FakeSlack.socks)))
+        call("/api/coen", {"text": "propose things"})
+        recs = [e["rec"] for e in events(call("/api/stream")[1]) if e["type"] == "recommendation"]
+        issue = [r for r in recs if r["action"] == "github_issue"][0]
+        dispatch = [r for r in recs if r["action"] == "dispatch"][0]
+        until(lambda: len(sent("chat.postMessage")) == 2 and all("slack" in saved()[r["recId"]] for r in recs))
+        posts = sent("chat.postMessage")
+        out("S3 one DM per new card, to the approver", [(p["channel"], p["text"][:40]) for p in posts])
+        post = [p for p in posts if issue["recId"] in json.dumps(p)][0]
+        out("S3 the DM: kind, who, room, chat, summary, target", post["blocks"][0]["text"]["text"].split("\n"))
+        out("S3 the DM: buttons and what they carry", [(b["action_id"], b.get("value") == issue["recId"], b.get("style"), b.get("url")) for b in post["blocks"][-1]["elements"]])
+        out("S3 the brief and the issue text stay out of Slack", (dispatch["brief"][:30] in json.dumps(posts), issue["body"][:30] in json.dumps(posts)))
+        out("S3 the card remembers its message", sorted(saved()[issue["recId"]]["slack"]))
+        # Someone else's tap does nothing; the approver's Dismiss decides, and says it was in Slack.
+        out("S3 a tap by someone else", (tap("USOMEONE", "dismiss", dispatch["recId"]), saved()[dispatch["recId"]]["state"], len(sent("chat.update"))))
+        out("S3 Dismiss in Slack", (tap("UOWNER", "dismiss", dispatch["recId"]), until(lambda: len(sent("chat.update")) == 1), saved()[dispatch["recId"]]["state"], saved()[dispatch["recId"]].get("via")))
+        update = sent("chat.update")[0]
+        out("S3 the message after Dismiss", (update["ts"] == saved()[dispatch["recId"]]["slack"]["ts"], update["blocks"][1]["elements"][0]["text"], [b["action_id"] for b in update["blocks"][-1]["elements"]]))
+        out("S3 the decision's log line and event", ([(l["state"], l.get("via")) for l in log() if l.get("recId") == dispatch["recId"]],
+            [(e["decision"], e.get("via")) for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "decision" and e["recId"] == dispatch["recId"]]))
+        state = json.loads(call("/api/room/state")[1])
+        decided = [e["ts"] for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "decision"]
+        out("S3 the page's check sees the decision", state["lastDecisionTs"] == max(decided))
+        # Approved on the page: the Slack message follows, with the link to the issue.
+        call(f"/api/recs/{issue['recId']}/approve", {})
+        until(lambda: saved()[issue["recId"]]["state"] == "done" and len(sent("chat.update")) >= 3)
+        out("S3 approved on the page: the message follows", (len(sent("chat.update")), sent("chat.update")[-1]["blocks"][1]["elements"][0]["text"]))
+        gh_before = open(os.path.join(TMP, "gh.json")).read()
+        out("S3 a tap on a card decided already", (tap("UOWNER", "approve", issue["recId"]), until(lambda: len(sent("chat.update")) == 4), open(os.path.join(TMP, "gh.json")).read() == gh_before, saved()[issue["recId"]]["state"]))
+        out("S3 a tap on a card that is gone", (tap("UOWNER", "approve", "rec-gone"), until(lambda: len(sent("chat.update")) == 5), sent("chat.update")[-1]["blocks"][0]["text"]["text"]))
+        # A card from before Slack has no message: deciding it on the page changes none.
+        call("/api/recs/rec-before-slack/dismiss", {})
+        time.sleep(0.3)
+        out("S3 a card saved before Slack", (saved()["rec-before-slack"]["state"], "slack" in saved()["rec-before-slack"], len(sent("chat.update"))))
+        # Approve in Slack: a GitHub issue (done at once) and a maker's run (working on it, then done).
+        call("/api/coen", {"text": "propose again"})
+        again = [e["rec"] for e in events(call("/api/stream")[1]) if e["type"] == "recommendation"]
+        issue2 = [r for r in again if r["action"] == "github_issue"][0]
+        dispatch2 = [r for r in again if r["action"] == "dispatch"][0]
+        until(lambda: all("slack" in saved()[r["recId"]] for r in again))
+        n = len(sent("chat.update"))
+        tap("UOWNER", "approve", issue2["recId"])
+        until(lambda: saved()[issue2["recId"]]["state"] == "done" and len(sent("chat.update")) >= n + 2)
+        out("S3 Approve in Slack: a GitHub issue", (saved()[issue2["recId"]]["state"], saved()[issue2["recId"]].get("via"), sent("chat.update")[-1]["blocks"][1]["elements"][0]["text"]))
+        n = len(sent("chat.update"))
+        tap("UOWNER", "approve", dispatch2["recId"])
+        until(lambda: len(sent("chat.update")) >= n + 1)
+        out("S3 Approve in Slack: a maker starts", sent("chat.update")[n]["blocks"][1]["elements"][0]["text"])
+        for _ in range(3):  # the two makers, and Coen's turn after them
+            events(call("/api/stream")[1])
+        until(lambda: saved()[dispatch2["recId"]]["state"] == "done" and "Done" in sent("chat.update")[-1]["blocks"][1]["elements"][0]["text"])
+        out("S3 the maker's run done", sent("chat.update")[-1]["blocks"][1]["elements"][0]["text"])
+        got = json.loads(call("/api/workspaces/exec/decisions")[1])["decisions"]
+        out("S3 the Decisions list says where", sorted((d["recId"] in (dispatch["recId"], issue2["recId"], dispatch2["recId"]), d["decision"], d.get("via")) for d in got))
+        # Slack closes the connection every few hours; the room opens a new one.
+        ws_send(FakeSlack.socks[-1], json.dumps({"type": "disconnect", "reason": "refresh_requested"}))
+        until(lambda: len(FakeSlack.socks) == 2)
+        out("S3 a new connection after Slack's disconnect", ([c[0] for c in FakeSlack.calls].count("apps.connections.open"), len(FakeSlack.socks)))
+    finally:
+        s.stop()
+    fake_slack.shutdown()
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 
