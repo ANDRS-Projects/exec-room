@@ -244,10 +244,10 @@
             </div>
           </div>
           <div class="sec">
-            <div class="sec-head"><h3 class="sec-title">Notion</h3><span class="count" id="access-notion-count"></span><span class="hint">read-only</span></div>
+            <div class="sec-head"><h3 class="sec-title">Notion</h3><span class="count" id="access-notion-count"></span><span class="hint">agents read</span></div>
             <div class="sec-body">
-              <label class="choice"><input type="checkbox" id="access-notion"> <span><b>Notion</b> · read-only</span></label>
-              <p class="sec-note" id="access-notion-via">Read-only, through your Notion connector.</p>
+              <label class="choice"><input type="checkbox" id="access-notion"> <span><b>Notion</b><span id="access-notion-what"> · read-only</span></span></label>
+              <p class="sec-note" id="access-notion-via">Agents read it through your Notion connector.</p>
               <p class="sec-note key-off" id="access-notion-key" hidden>The room runs on an API key, so agents can't search Notion themselves until Notion is connected (Exec Room settings, MCP servers). Until then, with this on, the room reads a Notion page for them when you put its link in your message (up to three, and only pages shared with the room's Notion integration).</p>
               <div class="not-given" id="access-notion-missing" hidden></div>
             </div>
@@ -262,7 +262,7 @@
             </div>
           </div>
           <div class="sec outside" id="access-mcp-sec" hidden>
-            <div class="sec-head"><h3 class="sec-title">MCP servers</h3><span class="count" id="access-mcp-count"></span><span class="hint">read-only</span><span class="tag-out">reaches outside</span></div>
+            <div class="sec-head"><h3 class="sec-title">MCP servers</h3><span class="count" id="access-mcp-count"></span><span class="hint">agents read</span><span class="tag-out">reaches outside</span></div>
             <div class="sec-body">
               <div class="mcp-choices" id="access-mcp-list"></div>
               <p class="sec-note">Set up once for the whole Exec Room (room menu → Exec Room settings). On here, agents in this room can use the tools ticked for that server and nothing else of it; what they ask goes to the service.</p>

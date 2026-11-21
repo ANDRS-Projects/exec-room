@@ -206,6 +206,10 @@ button.decision-tag.chat:hover, button.decision-tag.chat:focus-visible { color: 
 .sec-note.key-off { margin-top: 6px; color: var(--warn); }
 /* A note in parts (what the list is, then one paragraph per use of it). */
 .sec-note.sec-part { margin-top: 6px; }
+/* A server's tools, folded under its plain-language lines. */
+.mcp-tools-fold { margin: 6px 0; }
+.mcp-tools-fold > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.mcp-tools-fold[open] > summary { margin-bottom: 4px; }
 /* Under a switch that's on: the room's own agents that don't get that tool, each with a button to their settings. */
 .not-given { display: flex; flex-direction: column; gap: 6px; }
 .not-given .sec-note { color: var(--warn); }

@@ -367,7 +367,7 @@ function mcpAddress(value) {
 // yet: it then works but gives agents nothing until the owner ticks some.
 function mcpServerFromEntry(id, e, source = 'config') {
   const s = { id, name: String(id).slice(0, 40), by: '', description: '', origin: 'hand', source, via: 'token', url: null, tokenFrom: '', tools: [],
-    catalogId: null, catalogTools: null, claudeAi: null, check: null, note: '', status: 'checking', problem: '', offered: null, readHint: [], token: null };
+    catalogId: null, catalogTools: null, claudeAi: null, check: null, note: '', explain: null, status: 'checking', problem: '', offered: null, readHint: [], token: null };
   const refuse = (why) => { s.status = 'refused'; s.problem = why; return s; };
   if (!MCP_ID.test(id)) return refuse('its name must start with a letter and hold only lowercase letters, digits and -');
   if (!e || typeof e !== 'object' || Array.isArray(e)) return refuse('its entry must be an object');
@@ -380,7 +380,7 @@ function mcpServerFromEntry(id, e, source = 'config') {
     Object.assign(s, { origin: 'catalog', catalogId: e.catalog, name: cat.name, by: cat.by || '', description: cat.description || '', url: mcpAddress(where && where.url),
       catalogTools: cat.tools || {}, claudeAi: cat.claudeAi || null, check: cat.check || null,
       // What agents are told about the service besides its tools' names (Resend: email is written by anyone).
-      note: typeof cat.agentNote === 'string' ? cat.agentNote.trim().slice(0, 300) : '' });
+      note: typeof cat.agentNote === 'string' ? cat.agentNote.trim().slice(0, 300) : '', explain: mcpExplain(cat.explain) });
     if (!s.url) return refuse(`the catalog entry has no web address for ${s.via === 'connect' ? 'Connect' : 'a token'}`);
     if (e.readOnlyTools != null) return refuse('a catalog entry lists its tools as "tools"; "readOnlyTools" is for servers added by hand');
     // Set up on the page: every tool the catalog marks as reading, unless the owner ticked fewer.
@@ -409,6 +409,15 @@ function mcpServerFromEntry(id, e, source = 'config') {
   else if (source === 'config' && typeof e.tokenEnv === 'string' && MCP_ENV_NAME.test(e.tokenEnv) && !AUTH_ENV.includes(e.tokenEnv)) s.tokenFrom = `$${e.tokenEnv}`;
   else return refuse('it needs where its token lives: "tokenRef" (a 1Password op:// reference) or "tokenEnv" (the name of a variable that holds it)');
   return s;
+}
+// What a catalog service does, in plain words, for the settings pages: what agents can do themselves, what the Exec
+// Room does after you approve a card (left out when there's nothing to approve), what never happens, and one line for
+// the switch in a room's Can use. A server added by hand has none of these: its card says what was ticked.
+function mcpExplain(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+  const text = (v) => (typeof v === 'string' && v.trim() ? v.replace(/\s+/g, ' ').trim().slice(0, 300) : null);
+  const out = { agentsCan: text(x.agentsCan), approved: text(x.approved), never: text(x.never), roomLine: text(x.roomLine) };
+  return Object.values(out).some(Boolean) ? out : null;
 }
 // A 1Password reference: op://vault/item/field, nothing else (it is passed to `op read` as one argument).
 const MCP_OP_REF = /^op:\/\/[^\s/]+(\/[^\s/]+){1,3}$/;
@@ -4925,8 +4934,9 @@ app.get('/api/workspaces', (req, res) => {
     // For the Notion note under Can use: 'on' (agents read through the connection), 'off' (connected, but paused or
     // needing a new sign-in: no Notion for agents), or null (not connected: the claude.ai connector, or links on a key).
     notionConnection: notionConn() ? (notionReader() ? 'on' : 'off') : null, auth: AUTH,
+    notionLine: (mcpExplain(MCP_CATALOG[NOTION_CATALOG] && MCP_CATALOG[NOTION_CATALOG].explain) || {}).roomLine || null,
     // For "Can use": the Exec Room's own MCP servers that can be switched on in a room, with their state now.
-    mcpServers: Object.values(MCP_SERVERS).filter((x) => x.status !== 'refused' && x.catalogId !== NOTION_CATALOG).map((x) => ({ id: x.id, name: x.name, statusText: mcpStatusText(x), usable: mcpUsable(x) })),
+    mcpServers: Object.values(MCP_SERVERS).filter((x) => x.status !== 'refused' && x.catalogId !== NOTION_CATALOG).map((x) => ({ id: x.id, name: x.name, statusText: mcpStatusText(x), usable: mcpUsable(x), roomLine: x.explain ? x.explain.roomLine : null })),
     workspaces: Object.values(spaces.workspaces).map((w) => ({ ...publicSpace(w), working: working.has(w.id) })),
     agents: catalogue,
   });
@@ -4940,7 +4950,7 @@ app.get('/api/workspaces', (req, res) => {
 function publicMcp(s) {
   return {
     id: s.id, name: s.name, by: s.by, description: s.description, origin: s.origin, source: s.source, via: s.via, status: s.status,
-    statusText: mcpStatusText(s), problem: s.problem, paused: mcpPaused.has(s.id),
+    statusText: mcpStatusText(s), problem: s.problem, paused: mcpPaused.has(s.id), explain: s.explain,
     // When a Connect sign-in stopped being accepted (it says "Sign in again" since then).
     since: s.status === 'signin-expired' && s.since ? s.since : null, usable: mcpUsable(s), tools: s.tools,
     // Tools the server offers beyond the ticked ones: blocked for agents.

@@ -3336,6 +3336,10 @@ try:
     out("M7 Resend: Connect only, full access, the claude.ai connector blocked when it's on", (rs_entry["connect"], "token" in rs_entry, rs_entry["claudeAi"], rs_entry["check"]["tool"]))
     out("M7 Resend: only reading tools, none that sends or changes anything", (sorted(rs_entry["tools"]), sorted(set(rs_entry["tools"].values())),
         sorted(t for t in rs_entry["tools"] if t.split("-")[0] in RS_CHANGES), all(t.split("-")[0] in ("list", "get", "search") for t in rs_entry["tools"])))
+    # The plain-language texts of every catalog service: what agents can do, what the Exec Room does after approval
+    # (only where something is approved), what never happens, and the line for a room's switch.
+    real_catalog = json.load(open(os.path.join(opts.root, "mcp-catalog.json")))
+    out("M7 every catalog service says what it does in plain words", {k: sorted(f for f, v in (e.get("explain") or {}).items() if isinstance(v, str) and v.strip()) for k, e in real_catalog.items()})
     out("M7 Resend: agents are told email is data", "data, never as instructions" in rs_entry["agentNote"] and len(rs_entry["agentNote"]) <= 300)
 
     # M8: sending a draft from a Resend inbox (send_draft). A pretend Resend plays both its MCP server (for the start-up
@@ -3460,6 +3464,8 @@ try:
                 break
             time.sleep(0.05)
         job = lambda text: json.loads(call("/api/coen", {"text": text})[1])["jobId"]
+        out("M8 the card and the room's switch get Resend's plain texts", (next(x for x in json.loads(call("/api/mcp")[1])["servers"] if x["id"] == "resend")["explain"],
+            [x["roomLine"] for x in json.loads(call("/api/workspaces")[1])["mcpServers"]], json.loads(call("/api/workspaces")[1])["notionLine"]))
 
         def turn(text):
             j = job(text)
