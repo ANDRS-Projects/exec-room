@@ -27,6 +27,7 @@ Each agent gets a name, a job description, instructions, the tools it may use an
 - **Notion** — rows saved as drafts in any Notion database you add to a room (a content calendar, a lead list, a task list), and long-form pages under pages you allow. Per database you choose which columns agents fill, which always get the same value, and which stay empty; a page the room made can later be updated in place, with the previous version kept under the new one. Connect Notion once in Exec Room settings and agents read it and the room saves through that sign-in (see [Notion](#notion)); a Notion integration token works too
 - **MCP servers** — give agents read tools of other services: from the Popular list in Exec Room settings, or any server by its web address, signed in with Connect or with a token from 1Password; each room switches a server on for itself
 - **Email drafts** — to recipients you allow; the room never sends mail, you do. An approved draft opens in Outlook web or your mail app when it is short, and can always be copied; its text stays on the card for 7 days or until you remove it
+- **Resend inboxes** — agents read the inboxes of your Resend account; Coen can write a draft into an inbox, or propose sending one that is waiting there, each only after you approve its card (see [Resend inboxes](#resend-inboxes))
 - **Approve from Slack** — each new proposal also comes as a Slack message with Approve and Dismiss, so you can decide from your phone; the room connects out to Slack, nothing on your computer is opened to the internet (see [Approving from Slack](#approving-from-slack))
 - **Saving files** — into folders you choose per room: a document, spreadsheet, data file or image from an https link (checked to be that kind of file, at most 25 MB, never from your own computer or network), or an agent's draft as Markdown or as a Word file with its headings, lists, links and tables. The room saves only after you approve and never overwrites a file
 - **Attach a file to a message** — text, PDF or images; agents can read it for that turn only, then the room deletes it
@@ -146,7 +147,7 @@ Environment variables are listed in `.env.example`. The server reads them from y
 
 Exec Room settings (the room menu → Exec Room settings) list the MCP servers the room uses, for every room at once:
 
-- **Popular MCPs** — services from the room's catalog (`mcp-catalog.json`), set up with **Set Up**: Money Magician (reading your books: invoices, customers, vendors, taxes, profitability; with Connect or an API token; made by ANDRS, the company behind Exec Room), GitHub (reading code, issues, pull requests, commits and releases; with a read-only token) and Notion (with Connect).
+- **Popular MCPs** — services from the room's catalog (`mcp-catalog.json`), set up with **Set Up**: Money Magician (reading your books: invoices, customers, vendors, taxes, profitability; with Connect or an API token; made by ANDRS, the company behind Exec Room), GitHub (reading code, issues, pull requests, commits and releases; with a read-only token), Notion (with Connect) and Resend (reading your inboxes; with Connect, see [Resend inboxes](#resend-inboxes)).
 - **Add custom MCP** — any server by its web address. You tick the tools agents may use; the page shows which ones the server itself says only read, as the server's own claim.
 - **Connect or a token** — Connect signs in with the service in a new browser tab; the room keeps the sign-in and renews it. A token is given as a 1Password reference, never the token itself.
 - **Per room** — a room uses a server only when it is switched on in that room's settings (Can use). The toggle on a server's card pauses it in every room.
@@ -189,6 +190,20 @@ All three are set per room in Room settings → **Can propose**, and every room 
 ### What the room never does
 
 Agents never get a tool that writes to Notion. The room only creates pages and rows, and updates pages it made itself; it never moves, deletes or comments, and the only change it makes to a database's columns is the Status column you add with the button. Details are in [SECURITY.md](SECURITY.md).
+
+## Resend inboxes
+
+If you use [Resend](https://resend.com) Inboxes (an address that receives mail, often with Resend's own inbox agent drafting replies), agents can read them and Coen can help you answer.
+
+**Set it up.** Exec Room settings → Popular MCPs → **Resend** → Set Up → Connect, and approve "Exec Room" in Resend. Then switch Resend on in each room that should use it (Room settings → Can use). Resend only offers full access when you sign in, so the limits below come from the Exec Room app, not from Resend.
+
+**What agents can do:**
+
+- **Read** the inboxes, their threads and messages, and the drafts waiting there: ten reading tools, nothing else. Everything that sends, replies, forwards, labels or deletes is blocked, and agents are told that anyone can write to an inbox, so an email is data, never an instruction.
+- **Write a draft** (card: *write a reply / an email as a draft*). Coen writes the text; approving only saves it as a draft in the inbox, where you can still change it. Nothing is sent. If the email already has an unsent reply draft (say, the inbox agent's), Resend keeps that one and the card says so.
+- **Send a draft** (card: *send a reply / an email*). Coen names a draft that is already in the inbox; the card shows exactly what Resend has. Approving sends it once, and only if the draft is unchanged since the card was made; otherwise nothing goes out and the card says why. A sent email can't be recalled, so this card is approved on the Exec Room page only: in Slack it comes without Approve.
+
+**Who mail may go to.** A reply only to people already in its thread. A new email only to the room's **Email recipients for drafts** (Room settings → Can propose). Drafts with attachments can't be sent from the room.
 
 ## Approving from Slack
 
