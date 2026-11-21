@@ -2867,6 +2867,14 @@ function mcpItem(m) {
     ...(m.blocked ? [row('Blocked for agents', `${m.blocked} other ${m.blocked === 1 ? 'tool' : 'tools'} the server offers.`)] : []),
   );
   details.append(tools);
+  // What the Exec Room itself uses after you approve a card: where to and with which access (it can differ from this
+  // card's: GitHub's issues go through gh with your own login). A server added by hand: nothing, it never writes there.
+  if (ex.approved || m.origin !== 'catalog') {
+    const uses = el('details', 'mcp-tools-fold');
+    uses.append(el('summary', null, 'What the Exec Room uses after you approve'),
+      el('p', 'sec-note', ex.roomUses || (m.origin === 'catalog' ? 'nothing is said about this service yet.' : 'nothing: the Exec Room never writes through a server you add yourself.')));
+    details.append(uses);
+  }
   if (m.description) details.append(el('p', 'sec-note', m.description));
   details.append(
     row('Token', m.via === 'connect' ? 'from signing in with Connect' : m.tokenFrom ? `from ${m.tokenFrom}` : 'none'),

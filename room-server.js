@@ -412,11 +412,12 @@ function mcpServerFromEntry(id, e, source = 'config') {
 }
 // What a catalog service does, in plain words, for the settings pages: what agents can do themselves, what the Exec
 // Room does after you approve a card (left out when there's nothing to approve), what never happens, and one line for
-// the switch in a room's Can use. A server added by hand has none of these: its card says what was ticked.
+// the switch in a room's Can use, and what the Exec Room itself uses after approval (where to, with which access). A
+// server added by hand has none of these: its card says what was ticked, and that the Exec Room never writes through it.
 function mcpExplain(x) {
   if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
   const text = (v) => (typeof v === 'string' && v.trim() ? v.replace(/\s+/g, ' ').trim().slice(0, 300) : null);
-  const out = { agentsCan: text(x.agentsCan), approved: text(x.approved), never: text(x.never), roomLine: text(x.roomLine) };
+  const out = { agentsCan: text(x.agentsCan), approved: text(x.approved), never: text(x.never), roomLine: text(x.roomLine), roomUses: text(x.roomUses) };
   return Object.values(out).some(Boolean) ? out : null;
 }
 // A 1Password reference: op://vault/item/field, nothing else (it is passed to `op read` as one argument).

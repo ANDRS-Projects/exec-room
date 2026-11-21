@@ -45,7 +45,8 @@
       "agentsCan": "search, open and query your Notion pages and databases.",
       "approved": "save rows, posts and new pages, and update pages a room made, only in the places each room may use.",
       "never": "delete, move or comment on anything.",
-      "roomLine": "agents read Notion; Coen can propose rows, posts and pages for your approval."
+      "roomLine": "agents read Notion; Coen can propose rows, posts and pages for your approval.",
+      "roomUses": "Notion's MCP server (mcp.notion.com) with this sign-in, or the Notion API (api.notion.com) with your integration token when one is set: create rows and pages, update a page a room made, and add the Status column when you click that button."
     },
     "connect": {
       "url": "https://mcp.notion.com/mcp"
@@ -68,7 +69,8 @@
       "agentsCan": "read code, issues, pull requests, commits and releases in the repos the token allows, and in public repos.",
       "approved": "create an issue or a comment in the room's own repos.",
       "never": "push code, merge, close issues or change settings.",
-      "roomLine": "agents read GitHub; Coen can propose issues and comments for your approval."
+      "roomLine": "agents read GitHub; Coen can propose issues and comments for your approval.",
+      "roomUses": "GitHub's API (api.github.com) through gh, with your own GitHub login on this Mac, not this token: create an issue, add a comment."
     },
     "token": {
       "url": "https://api.githubcopilot.com/mcp/readonly",
@@ -107,7 +109,8 @@
       "agentsCan": "read the inboxes, their threads, messages and drafts.",
       "approved": "save a draft in an inbox, or send a draft from an inbox.",
       "never": "delete, label, archive or forward email.",
-      "roomLine": "agents read the inboxes; Coen can propose drafts and sends for your approval."
+      "roomLine": "agents read the inboxes; Coen can propose drafts and sends for your approval.",
+      "roomUses": "Resend's API (api.resend.com) with this sign-in: read an inbox, a draft and a thread (to check who a reply may go to), save a draft, send a draft."
     },
     "connect": {
       "url": "https://mcp.resend.com/mcp",
