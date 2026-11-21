@@ -1797,11 +1797,12 @@ async function loadSpaces() {
     // Connected with Connect, agents read Notion through that sign-in on the plan and on a key alike; the API-key
     // note (links) only applies while it isn't connected.
     $('access-notion-via').textContent = data.notionConnection === 'on'
-      ? "Read-only, through the Exec Room app's Notion sign-in (Exec Room settings, MCP servers). The claude.ai Notion connector isn't used."
+      ? "Agents read it through the Exec Room app's Notion sign-in (Exec Room settings, MCP servers). The claude.ai Notion connector isn't used."
       : data.notionConnection === 'off'
-        ? "Read-only, through the Exec Room app's Notion sign-in, which is paused or needs signing in again: agents read no Notion until it works again."
+        ? "Agents read it through the Exec Room app's Notion sign-in, which is paused or needs signing in again: agents read no Notion until it works again."
         : NOTION_VIA_NOTE;
     $('access-notion-key').textContent = NOTION_KEY_NOTE;
+    $('access-notion-what').textContent = data.notionLine ? `: ${data.notionLine}` : ' · read-only';
     if (data.notionConnection) $('access-notion-key').hidden = true;
     space = spaceList.find((w) => w.id === data.current) || null;
     if (space) spaceButton.textContent = space.name;
@@ -2617,7 +2618,8 @@ function renderMcpChoices(on) {
     box.dataset.mcp = m.id;
     box.checked = on[m.id] === true;
     const text = el('span');
-    text.append(el('b', null, m.name), ' · read-only');
+    // What switching it on means, from the catalog (a server added by hand: its ticked tools, which only read).
+    text.append(el('b', null, m.name), m.roomLine ? `: ${m.roomLine}` : ' · read-only');
     if (!m.usable) text.append(' ', el('small', 'mcp-off', `(${m.statusText.toLowerCase()})`));
     label.append(box, text);
     return label;
@@ -2848,11 +2850,33 @@ function mcpItem(m) {
     return p;
   };
   if (m.problem) details.append(el('p', `mcp-problem${m.usable ? '' : ' bad'}`, m.problem.charAt(0).toUpperCase() + m.problem.slice(1) + '.'));
+  // What this service means in plain words (from the catalog): what agents can do, what the Exec Room does after you
+  // approve a card, and what never happens. A server added by hand: agents get the tools ticked for it, nothing else.
+  const ex = m.explain || {};
+  details.append(
+    row('Agents can', ex.agentsCan || (m.tools.length ? 'use the tools ticked below, which only read.' : 'nothing yet: tick the tools below.')),
+    ...(ex.approved ? [row('After you approve a card, the Exec Room can', ex.approved)] : []),
+    ...(ex.never ? [row('Never', ex.never)] : []),
+  );
+  // The tools themselves, folded: what agents call, and how many others the server offers (blocked for agents).
+  const tools = el('details', 'mcp-tools-fold');
+  tools.append(el('summary', null, `Tools agents use (${m.tools.length})${m.blocked ? ` · blocked (${m.blocked})` : ''}`));
+  tools.append(
+    ...(m.choices ? [] : [row(`Tools agents may use (${m.tools.length})`, m.tools.join(', '))]),
+    // Blocked for agents only: the Exec Room's own saves go through the same sign-in, after approval.
+    ...(m.blocked ? [row('Blocked for agents', `${m.blocked} other ${m.blocked === 1 ? 'tool' : 'tools'} the server offers.`)] : []),
+  );
+  details.append(tools);
+  // What the Exec Room itself uses after you approve a card: where to and with which access (it can differ from this
+  // card's: GitHub's issues go through gh with your own login). A server added by hand: nothing, it never writes there.
+  if (ex.approved || m.origin !== 'catalog') {
+    const uses = el('details', 'mcp-tools-fold');
+    uses.append(el('summary', null, 'What the Exec Room uses after you approve'),
+      el('p', 'sec-note', ex.roomUses || (m.origin === 'catalog' ? 'nothing is said about this service yet.' : 'nothing: the Exec Room never writes through a server you add yourself.')));
+    details.append(uses);
+  }
   if (m.description) details.append(el('p', 'sec-note', m.description));
   details.append(
-    ...(m.choices ? [] : [row(`Tools agents may use (${m.tools.length})`, m.tools.join(', '))]),
-    // Blocked for agents only: the Exec Room's own saves to Notion go through the same sign-in, after approval.
-    ...(m.blocked ? [row('Blocked for agents', `${m.blocked} other ${m.blocked === 1 ? 'tool' : 'tools'} the server offers.${m.notion ? " Agents can't write. Saving (a draft, a page, an update) is done by the Exec Room app after you approve it, only to the places of the room it was proposed in." : ''}`)] : []),
     row('Token', m.via === 'connect' ? 'from signing in with Connect' : m.tokenFrom ? `from ${m.tokenFrom}` : 'none'),
     ...(m.address ? [row('Address', m.address)] : []),
     m.notion ? row('Rooms with Notion on', m.rooms.length ? m.rooms.map((r) => r.name).join(', ') : "none yet: switch Notion on in a room's settings, under Can use")
@@ -2861,7 +2885,7 @@ function mcpItem(m) {
     el('p', 'sec-note', m.source === 'page' ? `Set up on this page${m.origin === 'catalog' && m.by ? `, from the catalog (by ${m.by})` : ''}.`
       : m.origin === 'catalog' ? `From the catalog${m.by ? `, by ${m.by}` : ''}, set up in room.config.json.` : 'Added by hand in room.config.json, not checked: you marked its tools as only reading.'),
   );
-  if (m.choices) details.append(mcpToolChoices(m, details));
+  if (m.choices) tools.append(mcpToolChoices(m, details));
   if (m.source === 'page') {
     const actions = el('div', 'mcp-actions');
     if (m.via === 'connect') {
@@ -2896,6 +2920,7 @@ function mcpItem(m) {
   // A server set up a moment ago with no tools ticked yet opens on its tool list.
   if (m.choices && m.status === 'ready' && !m.tools.length) {
     details.hidden = false;
+    tools.open = true;
     gear.setAttribute('aria-expanded', 'true');
   }
   item.append(card, details);

@@ -3,6 +3,11 @@
     "name": "Money Magician",
     "by": "ANDRS, the makers of Exec Room",
     "description": "Read invoices, customers, vendors, taxes, profitability and reconciliation from your books.",
+    "explain": {
+      "agentsCan": "read your books: invoices, customers, vendors, taxes, profitability and reconciliation.",
+      "never": "create, change or delete anything in your books.",
+      "roomLine": "agents read your books."
+    },
     "token": {
       "url": "https://mcp.moneymagician.eu/",
       "where": "Money Magician: Settings, API Tokens"
@@ -36,6 +41,13 @@
     "name": "Notion",
     "by": "Notion",
     "description": "Search, open and query your Notion workspace, and save what you approve: drafts, pages and updates, only to the places each room may use.",
+    "explain": {
+      "agentsCan": "search, open and query your Notion pages and databases.",
+      "approved": "save rows, posts and new pages, and update pages a room made, only in the places each room may use.",
+      "never": "delete, move or comment on anything.",
+      "roomLine": "agents read Notion; Coen can propose rows, posts and pages for your approval.",
+      "roomUses": "Notion's MCP server (mcp.notion.com) with this sign-in, or the Notion API (api.notion.com) with your integration token when one is set: create rows and pages, update a page a room made, and add the Status column when you click that button."
+    },
     "connect": {
       "url": "https://mcp.notion.com/mcp"
     },
@@ -53,6 +65,13 @@
     "name": "GitHub",
     "by": "GitHub",
     "description": "Read code, issues, pull requests, commits and releases in the repos your token allows, and in every public repo on GitHub, in every room that switches it on. Read-only: GitHub's read-only address, and a read-only token.",
+    "explain": {
+      "agentsCan": "read code, issues, pull requests, commits and releases in the repos the token allows, and in public repos.",
+      "approved": "create an issue or a comment in the room's own repos.",
+      "never": "push code, merge, close issues or change settings.",
+      "roomLine": "agents read GitHub; Coen can propose issues and comments for your approval.",
+      "roomUses": "GitHub's API (api.github.com) through gh, with your own GitHub login on this Mac, not this token: create an issue, add a comment."
+    },
     "token": {
       "url": "https://api.githubcopilot.com/mcp/readonly",
       "where": "GitHub: Settings, Developer settings, Fine-grained tokens. Resource owner: the organisation (or you); only the repos agents may read; Contents, Issues, Pull requests and Metadata read-only"
@@ -86,6 +105,13 @@
     "name": "Resend",
     "by": "Resend",
     "description": "Read the Resend inboxes on your account: their threads, messages and the drafts waiting there, in every room that switches it on. Agents can't send, label, archive or delete anything.",
+    "explain": {
+      "agentsCan": "read the inboxes, their threads, messages and drafts.",
+      "approved": "save a draft in an inbox, or send a draft from an inbox.",
+      "never": "delete, label, archive or forward email.",
+      "roomLine": "agents read the inboxes; Coen can propose drafts and sends for your approval.",
+      "roomUses": "Resend's API (api.resend.com) with this sign-in: read an inbox, a draft and a thread (to check who a reply may go to), save a draft, send a draft."
+    },
     "connect": {
       "url": "https://mcp.resend.com/mcp",
       "scope": "full_access"
