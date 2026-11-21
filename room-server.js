@@ -367,7 +367,7 @@ function mcpAddress(value) {
 // yet: it then works but gives agents nothing until the owner ticks some.
 function mcpServerFromEntry(id, e, source = 'config') {
   const s = { id, name: String(id).slice(0, 40), by: '', description: '', origin: 'hand', source, via: 'token', url: null, tokenFrom: '', tools: [],
-    catalogId: null, catalogTools: null, claudeAi: null, check: null, status: 'checking', problem: '', offered: null, readHint: [], token: null };
+    catalogId: null, catalogTools: null, claudeAi: null, check: null, note: '', status: 'checking', problem: '', offered: null, readHint: [], token: null };
   const refuse = (why) => { s.status = 'refused'; s.problem = why; return s; };
   if (!MCP_ID.test(id)) return refuse('its name must start with a letter and hold only lowercase letters, digits and -');
   if (!e || typeof e !== 'object' || Array.isArray(e)) return refuse('its entry must be an object');
@@ -378,7 +378,9 @@ function mcpServerFromEntry(id, e, source = 'config') {
     if (!cat) return refuse(`"${String(e.catalog).slice(0, 40)}" isn't in the catalog`);
     const where = s.via === 'connect' ? cat.connect : cat.token;
     Object.assign(s, { origin: 'catalog', catalogId: e.catalog, name: cat.name, by: cat.by || '', description: cat.description || '', url: mcpAddress(where && where.url),
-      catalogTools: cat.tools || {}, claudeAi: cat.claudeAi || null, check: cat.check || null });
+      catalogTools: cat.tools || {}, claudeAi: cat.claudeAi || null, check: cat.check || null,
+      // What agents are told about the service besides its tools' names (Resend: email is written by anyone).
+      note: typeof cat.agentNote === 'string' ? cat.agentNote.trim().slice(0, 300) : '' });
     if (!s.url) return refuse(`the catalog entry has no web address for ${s.via === 'connect' ? 'Connect' : 'a token'}`);
     if (e.readOnlyTools != null) return refuse('a catalog entry lists its tools as "tools"; "readOnlyTools" is for servers added by hand');
     // Set up on the page: every tool the catalog marks as reading, unless the owner ticked fewer.
@@ -825,6 +827,145 @@ async function mcpCallTool(s, name, args, timeoutMs = 60000) {
   }
 }
 
+// ---- Sending a draft from a Resend inbox: the one thing the Exec Room sends itself. Agents only read the
+// inboxes; a draft goes out only through an approved send_draft card, sent by the Exec Room's own Resend sign-in.
+// Coen names the draft, never its text: the server reads the draft from Resend's REST API (the Connect sign-in works
+// there too, checked live on 2026-11-21) when the card is made, the card shows what Resend has, and at approval the
+// server reads it again and sends only when nothing changed. Sending uses the card's id as Resend's idempotency key,
+// so one card sends one email at most. Approving is possible on the page only: Slack shows the card without Approve.
+const RESEND_API = process.env.ROOM_RESEND_API || 'https://api.resend.com';
+const RESEND_ID = /^[A-Za-z0-9._@+-]{1,200}$/;
+const RESEND_TEXT_MAX = 20000;
+const RESEND_CATALOG = 'resend';
+// The cards that read Resend before they are shown: sending a draft, and writing one.
+const RESEND_ACTIONS = ['send_draft', 'write_draft'];
+const resendFor = (space) => (space ? roomMcp(accessOf(space)).find((s) => s.catalogId === RESEND_CATALOG) || null : null);
+const resendPath = (...parts) => parts.map((p) => `/${encodeURIComponent(p)}`).join('');
+
+async function resendRequest(s, method, p, { idempotencyKey, json = {} } = {}) {
+  if (s.via === 'connect') await mcpRenew(s, MCP_RENEW_BEFORE_MS);
+  const headers = { authorization: `Bearer ${s.token}`, accept: 'application/json' };
+  if (method === 'POST') headers['content-type'] = 'application/json';
+  if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
+  let res;
+  try {
+    res = await fetch(`${RESEND_API}${p}`, { method, headers, ...(method === 'POST' && { body: JSON.stringify(json) }), redirect: 'error', signal: AbortSignal.timeout(30000) });
+  } catch (err) {
+    throw new Error(mcpScrub(s, err.name === 'TimeoutError' ? 'Resend gave no answer within 30 seconds' : `Resend couldn't be reached (${err.message})`));
+  }
+  const text = await res.text();
+  let body = null;
+  try { body = JSON.parse(text); } catch { /* not JSON: said below by status */ }
+  if (!res.ok) throw new Error(mcpScrub(s, `Resend answered ${res.status}${body && body.message ? ` (${String(body.message).slice(0, 200)})` : ''}`));
+  return body;
+}
+
+// "Ada <ada@example.org>" and "ada@example.org" alike become ada@example.org.
+const bareAddress = (a) => { const m = /<([^<>\s]+@[^<>\s]+)>\s*$/.exec(a); return (m ? m[1] : a).trim().toLowerCase(); };
+const addressList = (v) => (Array.isArray(v) ? v : typeof v === 'string' && v ? [v] : []).filter((a) => typeof a === 'string').map(bareAddress);
+
+// What a mail app shows of an HTML-only draft, near enough to read before approving.
+function htmlText(html) {
+  return String(html).replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// The draft as Resend has it now: what the card shows, and a fingerprint of everything that would be sent.
+async function readDraft(s, inbox, draft) {
+  const d = await resendRequest(s, 'GET', `/inboxes${resendPath(inbox)}/drafts${resendPath(draft)}`);
+  if (!d || d.object !== 'inbox_draft') throw new Error("Resend didn't return a draft for that id");
+  if (d.email_id) throw new Error('that draft has already been sent');
+  if (Array.isArray(d.attachments) && d.attachments.length) throw new Error("the draft has attachments, which the Exec Room can't show you: send it from Resend instead");
+  const html = typeof d.html === 'string' && d.html.trim() ? d.html : null;
+  const plain = typeof d.text === 'string' && d.text.trim() ? d.text : null;
+  // Mail apps show the HTML version when there is one, so that is what the card shows.
+  const shown = html ? htmlText(html) : plain || '';
+  if (!shown.trim()) throw new Error('the draft has no text');
+  if (shown.length > RESEND_TEXT_MAX) throw new Error(`the draft is longer than ${RESEND_TEXT_MAX} characters, more than a card shows: send it from Resend instead`);
+  const snap = {
+    kind: d.thread_id ? 'reply' : 'standalone', threadId: d.thread_id || null,
+    to: addressList(d.to), cc: addressList(d.cc), bcc: addressList(d.bcc),
+    subject: typeof d.subject === 'string' ? d.subject.replace(/\s+/g, ' ').trim() : '', text: shown, html: Boolean(html),
+  };
+  snap.fingerprint = crypto.createHash('sha256').update(JSON.stringify([snap.to, snap.cc, snap.bcc, snap.subject, html, plain, d.thread_id, d.reply_to_email_id])).digest('hex');
+  return snap;
+}
+
+// Who a draft may go to: a reply only to people already in its thread, a new email only to the room's recipient
+// list. Returns the subject a reply goes out with when its own is empty (the thread's, with "Re:").
+async function checkDraftRecipients(s, inbox, snap, allowed, replyTo = null) {
+  const all = [...snap.to, ...snap.cc, ...snap.bcc];
+  if (!all.length) throw new Error('the draft has no recipients');
+  if (snap.kind === 'standalone') {
+    const off = all.filter((a) => !recipientAllowed(a, allowed));
+    if (off.length) throw new Error(`${off.join(', ')} ${off.length > 1 ? "aren't" : "isn't"} on this room's recipient list, and a new email may only go there`);
+    return snap.subject;
+  }
+  const emails = [];
+  let after = null;
+  for (let page = 0; page < 5; page++) {
+    const r = await resendRequest(s, 'GET', `/inboxes${resendPath(inbox)}/threads${resendPath(snap.threadId)}/emails?limit=100${after ? `&after=${encodeURIComponent(after)}` : ''}`);
+    const data = Array.isArray(r && r.data) ? r.data : [];
+    emails.push(...data);
+    if (!(r && r.has_more) || !data.length) break;
+    after = data[data.length - 1].id;
+  }
+  if (replyTo && !emails.some((e) => e.id === replyTo)) throw new Error("the email it answers isn't in that thread");
+  const people = new Set(emails.flatMap((e) => [...addressList(e.from), ...addressList(e.to), ...addressList(e.cc)]));
+  const off = all.filter((a) => !people.has(a));
+  if (off.length) throw new Error(`${off.join(', ')} ${off.length > 1 ? "aren't" : "isn't"} in that thread, and a reply may only go to people already in it`);
+  if (snap.subject) return snap.subject;
+  const first = emails.find((e) => typeof e.subject === 'string' && e.subject.trim());
+  const base = first ? first.subject.replace(/\s+/g, ' ').trim() : '';
+  return /^re:/i.test(base) ? base : base ? `Re: ${base}` : '(the thread\'s subject)';
+}
+
+// A send_draft card's content, read when the card is made. Throws a sentence for the chat.
+async function prepareSendDraft(rec, space) {
+  const s = resendFor(space);
+  if (!s) throw new Error("Resend isn't on and connected in this room");
+  const inbox = await resendRequest(s, 'GET', `/inboxes${resendPath(rec.inbox)}`);
+  if (!inbox || typeof inbox.id !== 'string') throw new Error(`Resend has no inbox "${rec.inbox}"`);
+  const snap = await readDraft(s, inbox.id, rec.draft);
+  const subject = await checkDraftRecipients(s, inbox.id, snap, targetsOf(space).allowedRecipients);
+  return { ...rec, inbox: inbox.id, from: [inbox.from_name, inbox.email_address].filter((x) => typeof x === 'string' && x).join(' · '),
+    kind: snap.kind, to: snap.to, cc: snap.cc, bcc: snap.bcc, subject, text: snap.text, html: snap.html, fingerprint: snap.fingerprint };
+}
+
+// ---- Writing a draft into a Resend inbox (write_draft): Coen writes a reply or a new email, and approving only
+// saves it as a draft in that inbox. Nothing is sent: sending is a send_draft card of its own. The same recipient
+// rule applies as for sending, checked when the card is made and again at approval.
+const writtenDraft = (rec) => ({ kind: rec.threadId ? 'reply' : 'standalone', threadId: rec.threadId || null, to: rec.to, cc: rec.cc || [], bcc: [], subject: rec.subject || '' });
+
+// A write_draft card's sender and, for a reply, the thread's subject. Throws a sentence for the chat.
+async function prepareWriteDraft(rec, space) {
+  const s = resendFor(space);
+  if (!s) throw new Error("Resend isn't on and connected in this room");
+  const inbox = await resendRequest(s, 'GET', `/inboxes${resendPath(rec.inbox)}`);
+  if (!inbox || typeof inbox.id !== 'string') throw new Error(`Resend has no inbox "${rec.inbox}"`);
+  const shownSubject = await checkDraftRecipients(s, inbox.id, writtenDraft({ ...rec }), targetsOf(space).allowedRecipients, rec.replyTo);
+  return { ...rec, inbox: inbox.id, from: [inbox.from_name, inbox.email_address].filter((x) => typeof x === 'string' && x).join(' · '),
+    kind: rec.threadId ? 'reply' : 'standalone', shownSubject };
+}
+
+// Saves an approved write_draft card as a draft. Resend keeps one unsent reply draft per email: asking for a second
+// returns the one that is there, unchanged. So the draft is read back, and anything but Coen's text is a failure.
+async function createDraft(rec, space) {
+  const s = resendFor(space);
+  if (!s) throw new Error("Resend is no longer on and connected in this room, so nothing was saved");
+  await checkDraftRecipients(s, rec.inbox, writtenDraft(rec), targetsOf(space).allowedRecipients, rec.replyTo);
+  const made = await resendRequest(s, 'POST', `/inboxes${resendPath(rec.inbox)}/drafts`, { idempotencyKey: rec.recId, json: {
+    to: rec.to, ...(rec.cc.length && { cc: rec.cc }), ...(rec.subject && { subject: rec.subject }), text: rec.body,
+    ...(rec.threadId && { thread_id: rec.threadId, reply_to_email_id: rec.replyTo }),
+  } });
+  if (!made || typeof made.id !== 'string') throw new Error("Resend didn't say which draft it saved");
+  const d = await resendRequest(s, 'GET', `/inboxes${resendPath(rec.inbox)}/drafts${resendPath(made.id)}`);
+  const same = d && d.text === rec.body && JSON.stringify(addressList(d.to)) === JSON.stringify(rec.to) && (d.subject || '') === (rec.subject || '');
+  if (!same) throw new Error('that email already has an unsent reply draft in the inbox (the inbox agent\'s, most likely), and Resend keeps one per email: it was left as it is, and nothing was saved. Send or delete that draft in Resend first, or ask Coen to propose sending it');
+  return made.id;
+}
+
 // ---- Notion through "Connect". Notion's hosted server is a catalog service like the others,
 // but no room switches it on by itself: it follows each room's "Notion (read-only)" switch. Once Notion is connected,
 // agents read it through this connection on the plan and on a key alike, and on the plan the claude.ai Notion
@@ -982,8 +1123,12 @@ ${targets.repos.length ? `- Create a GitHub issue in one of this room's repos: {
 ` : ''}${notionSaving() && targets.notionPlaces.length ? `- Save anything else as a new Notion page (a long article, research, a strategy doc, a review, meeting notes, a digest): {"action": "notion_page", "parent": the Notion URL or id of the page to put it under, "summary": "one line", "title": "…", "content": "markdown (headings, lists, quotes, code, links), up to ${NOTION_PAGE_MAX} characters"}. You choose the place, one of this room's: ${targets.notionPlaces.map((p) => `${p.name} (${p.id})${p.for ? ` for ${p.for}` : ''}`).join('; ')}. You may also pick a more fitting sub-page inside one of these places that you find with Notion search (it's checked when the owner approves); it only works where the owner has shared the page with the room.${roomPages(space).length ? `\n- Update a Notion page this room created earlier, instead of making a new one for a new version of the same document: {"action": "notion_page_update", "page": its Notion URL or id, "summary": "one line, say what changed", "title": "…", "content": "the whole new version in markdown, up to ${NOTION_PAGE_MAX} characters"}. The new version goes on top and the previous one is kept under it. Only these pages can be updated: ${roomPages(space).map((r) => `${r.title} (${notionId(r.result.url)})`).join('; ')}.` : ''}
 ` : ''}${targets.allowedRecipients.length ? `- Draft an email for the owner to send by hand (e.g. a prospect follow-up): {"action": "email_draft", "to": one address or a list of addresses, optional "cc": the same, "subject": "one line, up to ${EMAIL_SUBJECT_MAX} characters", "body": "plain text (no markdown), up to ${EMAIL_BODY_MAX} characters", "summary": "one line"}. Every address in to and cc must be on this room's list: ${targets.allowedRecipients.join(', ')} (a domain there covers addresses at exactly that domain, not its subdomains). Give each address on its own; one with a comma, ?, & or a line break is refused. Only a short draft opens straight in a mail app (up to about ${EMAIL_OPENS_ABOUT} characters of text); the owner copies and pastes a longer one by hand, so keep an email short where that fits the message, and don't split one email in two to get under it. This is allowed because the room never sends it: approving only records the owner's decision, then the owner opens the draft in a mail app and sends it${targets.sendFrom ? ` from ${targets.sendFrom}` : ''}.
 ` : `- Email drafts are off in this room because it has no email recipients. If the owner asks for an email, say that these can be turned on by adding the recipient (an address, or a domain) under Room settings → "Email recipients for drafts", and then ask again in a new chat. Don't write the email as a file instead.
-`}${targets.saveFolders.length ? `- Save a file into one of this room's save folders on the owner's computer: {"action": "save_file", "summary": "one line", "folder": one of ${targets.saveFolders.map((f) => `"${tilde(f)}"`).join(', ')}, "name": "the file name the owner will see, with its extension", and either "url": "the https link of the file to download" or "draft": "the name of a file in drafts/ (one you or a maker wrote)"}. From a link: only ${Object.keys(SAVE_WEB_TYPES).map((e) => `.${e}`).join(', ')}, up to ${SAVE_MAX_BYTES / 1024 / 1024} MB, and the extension must be what the link really is (a web page isn't a PDF); give the link to the file itself, not to a page about it. A draft is saved as Markdown (name ending in .md) or as a Word file (name ending in .docx, with its headings, lists, links and tables; images become their description); the draft itself stays in drafts/. The server saves it only after the owner approves, never over an existing file (it adds " (2)" to the name). You can't open a saved file yourself unless that folder is also one this room reads. Propose this when the owner asks for a file to be saved or kept, not for every file you read.
-`: ''}Nothing that publishes, schedules, posts or sends messages can be proposed${targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer the note and propose again.${targets.repos.length ? `
+`}${resendFor(space) ? `- Send a draft that is already waiting in one of the Resend inboxes (e.g. a reply the inbox's own agent wrote): {"action": "send_draft", "inbox": the inbox's id or address, "draft": the draft's id (from list-inbox-drafts), "summary": "one line: who it goes to and what it answers"}. One card per draft. Name the draft only, never retype it: the server reads the draft from Resend and shows the owner exactly what would go out, and sends it only if it is unchanged when she approves. You can't write or change drafts yourself. A reply may only go to people already in its thread, a new email only to this room's recipient list${targets.allowedRecipients.length ? '' : ' (which is empty, so only replies can be sent)'}; a draft with attachments can't be sent from here.
+- Write a draft into one of the Resend inboxes, for the owner to send later (e.g. a reply the inbox's agent didn't write, or a new email): {"action": "write_draft", "inbox": the inbox's id or address, "to": one address or a list, optional "cc": the same, "subject": "one line" (a new email needs one; leave it out for a reply, which takes the thread's), "body": "plain text, signed as the inbox's sender", for a reply also "thread": the thread's id and "reply_to": the id of the email it answers, "summary": "one line"}. Approving only saves it as a draft in that inbox; nothing is sent. To send it afterwards, propose send_draft for it in a later message. The same rule applies: a reply only to people already in its thread, a new email only to this room's recipient list. An email that already has an unsent reply draft (the inbox agent's) can't get a second one: propose sending that one instead, or tell the owner.
+` : ''}${targets.saveFolders.length ? `- Save a file into one of this room's save folders on the owner's computer: {"action": "save_file", "summary": "one line", "folder": one of ${targets.saveFolders.map((f) => `"${tilde(f)}"`).join(', ')}, "name": "the file name the owner will see, with its extension", and either "url": "the https link of the file to download" or "draft": "the name of a file in drafts/ (one you or a maker wrote)"}. From a link: only ${Object.keys(SAVE_WEB_TYPES).map((e) => `.${e}`).join(', ')}, up to ${SAVE_MAX_BYTES / 1024 / 1024} MB, and the extension must be what the link really is (a web page isn't a PDF); give the link to the file itself, not to a page about it. A draft is saved as Markdown (name ending in .md) or as a Word file (name ending in .docx, with its headings, lists, links and tables; images become their description); the draft itself stays in drafts/. The server saves it only after the owner approves, never over an existing file (it adds " (2)" to the name). You can't open a saved file yourself unless that folder is also one this room reads. Propose this when the owner asks for a file to be saved or kept, not for every file you read.
+`: ''}Nothing that publishes, schedules, posts or sends messages can be proposed${resendFor(space)
+  ? ` (${targets.allowedRecipients.length ? 'email_draft is an exception, as the room never sends it; ' : ''}send_draft is the one thing that sends: only a draft already in a Resend inbox, unchanged, after the owner approves it on the page)`
+  : targets.allowedRecipients.length ? ' (email_draft is the one exception, as the room never sends it)' : ''}. If the owner asks for a revision, answer the note and propose again.${targets.repos.length ? `
 
 ${githubReading}` : ''}`;
 }
@@ -1710,6 +1855,8 @@ function logDecision(rec, extra) {
   fs.appendFileSync(JOBS_FILE, JSON.stringify({
     kind: 'decision', recId: rec.recId, roomId: rec.roomId, action: rec.action, summary: rec.summary,
     ...(rec.action === 'email_draft' && { domains: emailDomains(rec), subject: rec.subject }),
+    // A draft to send from a Resend inbox: like an email draft, the log keeps the recipients' domains and the subject.
+    ...(RESEND_ACTIONS.includes(rec.action) && Array.isArray(rec.to) && { domains: [...new Set([...rec.to, ...(rec.cc || []), ...(rec.bcc || [])].map(addressDomain))], subject: rec.subject || rec.shownSubject || '' }),
     // Who decided, once someone has: the `pending` line of a new proposal has none.
     ...(rec.actor && { actor: rec.actor }),
     state: rec.state, at: new Date().toISOString(), ...extra,
@@ -1942,6 +2089,38 @@ function validateRec(o, space = null) {
       try { encodeURIComponent(value); } catch { throw new Error(`"${field}" has characters that can't go into a mail link`); }
     }
     return { action: 'email_draft', summary, to, cc, subject, body, from: targets.sendFrom || null };
+  }
+  if (o.action === 'send_draft') {
+    // Only which draft: its recipients, subject and text are read from Resend when the card is made (prepareSendDraft).
+    if (!resendFor(space)) throw new Error("Resend isn't on and connected in this room, so it can't send drafts");
+    const id = (v, field) => {
+      if (typeof v !== 'string' || !RESEND_ID.test(v.trim())) throw new Error(`"${field}" must be the ${field === 'inbox' ? "inbox's id or address" : "draft's id"} from Resend`);
+      return v.trim();
+    };
+    return { action: 'send_draft', summary, inbox: id(o.inbox, 'inbox'), draft: id(o.draft, 'draft') };
+  }
+  if (o.action === 'write_draft') {
+    // Coen's own text, saved as a draft in a Resend inbox when approved; nothing is sent. Who it may go to is
+    // checked here for a new email (the room's list) and when the card is made for a reply (the thread's people).
+    if (!resendFor(space)) throw new Error("Resend isn't on and connected in this room, so it can't write drafts");
+    const resendId = (v, field) => {
+      if (typeof v !== 'string' || !RESEND_ID.test(v.trim())) throw new Error(`"${field}" must be an id from Resend`);
+      return v.trim();
+    };
+    const inbox = resendId(o.inbox, 'inbox');
+    if ((o.thread == null) !== (o.reply_to == null)) throw new Error('a reply needs both "thread" and "reply_to" (the email it answers); a new email has neither');
+    const threadId = o.thread == null ? null : resendId(o.thread, 'thread');
+    const replyTo = o.reply_to == null ? null : resendId(o.reply_to, 'reply_to');
+    const to = emailAddresses(o.to, 'to');
+    if (!to.length) throw new Error('"to" is missing');
+    const cc = o.cc == null || o.cc === '' ? [] : emailAddresses(o.cc, 'cc');
+    if (!threadId) {
+      const off = [...to, ...cc].find((a) => !recipientAllowed(a, targetsOf(space).allowedRecipients));
+      if (off) throw new Error(`${off} isn't on this room's recipient list, and a new email may only go there`);
+    }
+    const subject = o.subject == null || o.subject === '' ? '' : str(String(o.subject).replace(/\s+/g, ' '), 'subject', EMAIL_SUBJECT_MAX);
+    if (!threadId && !subject) throw new Error('"subject" is missing (a new email needs one)');
+    return { action: 'write_draft', summary, inbox, threadId, replyTo, to, cc, subject, body: str(o.body, 'body', RESEND_TEXT_MAX) };
   }
   if (o.action === 'create_agent') {
     return { action: 'create_agent', summary, agent: validateAgent(o) };
@@ -2593,7 +2772,7 @@ function extractRecs(text, space) {
 // A proposal in a block the room doesn't read (tagged json, or with no tag) gets no card, and the page shows it as
 // a piece of code: smaller models do this. It is only noticed here, never accepted, so that the owner can be told.
 // A block counts when its JSON names one of validateRec's actions.
-const REC_ACTIONS = ['dispatch', 'github_issue', 'github_comment', 'notion_draft', 'notion_row', 'notion_page', 'notion_page_update', 'email_draft', 'create_agent', 'save_file'];
+const REC_ACTIONS = ['dispatch', 'github_issue', 'github_comment', 'notion_draft', 'notion_row', 'notion_page', 'notion_page_update', 'email_draft', 'send_draft', 'write_draft', 'create_agent', 'save_file'];
 function hasMisfiledRec(text) {
   const rest = text.replace(/```recommendation[^\n]*\n[\s\S]*?\n```/g, '');
   return [...rest.matchAll(/```[^\n]*\n([\s\S]*?)\n```/g)].some((m) => {
@@ -3542,7 +3721,7 @@ function mcpLine(access) {
   const on = Object.values(MCP_SERVERS).filter((s) => s.catalogId !== NOTION_CATALOG && access.mcp && access.mcp[s.id] === true);
   if (!on.length) return '';
   const usable = access.mcpServers || [];
-  const now = usable.map((s) => `${s.name} (read-only; its tools are named mcp__${s.id}__…)`);
+  const now = usable.map((s) => `${s.name} (read-only; its tools are named mcp__${s.id}__…${s.note ? `; ${s.note}` : ''})`);
   const later = on.filter((s) => !usable.includes(s)).map((s) => `${s.name} (${mcpPaused.has(s.id) ? 'paused' : 'not working right now'})`);
   return `; ${now.length ? `MCP servers: ${now.join(', ')}` : 'no MCP servers right now'}${later.length ? ` (switched on but not available right now: ${later.join(', ')})` : ''}`;
 }
@@ -3724,6 +3903,22 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     for (const sub of job.subscribers) sub.write(line);
   };
 
+  // Drafts that proposals name are read from Resend before the turn ends, so that their cards arrive with the rest of
+  // the turn. A read that fails becomes the reason in the chat; nothing is ever sent from here.
+  async function readDraftsFirst() {
+    release();
+    const found = [...extractRecs(job.coenText, space), ...(focus ? extractRecs(job.focusText, space) : [])].filter((f) => f.rec && RESEND_ACTIONS.includes(f.rec.action));
+    if (!found.length) return;
+    job.sendDrafts = new Map();
+    for (const f of found) {
+      const key = JSON.stringify(f.rec);
+      if (job.sendDrafts.has(key)) continue;
+      try {
+        job.sendDrafts.set(key, { rec: await (f.rec.action === 'send_draft' ? prepareSendDraft : prepareWriteDraft)(f.rec, space) });
+      } catch (err) { job.sendDrafts.set(key, { error: err.message }); }
+    }
+  }
+
   function finish(status, error = '') {
     if (job.done) return;
     // Text still held back (key mode) belongs to the answer: out with it before proposals are read from it.
@@ -3752,12 +3947,22 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
           continue;
         }
         const involved = [...new Set([...job.peers, ...after])];
-        const rec = { ...f.rec, ...(f.by && { by: f.by }), ...(involved.length && { involved }), recId: `rec-${crypto.randomBytes(4).toString('hex')}`, roomId: room.roomId, jobId: job.jobId, state: 'pending', createdAt: new Date().toISOString() };
-        recs[rec.recId] = rec;
-        saveRecs();
-        logDecision(rec, {});
-        send({ type: 'recommendation', rec });
-        slackPost(rec);
+        const file = (r) => {
+          const rec = { ...r, ...(f.by && { by: f.by }), ...(involved.length && { involved }), recId: `rec-${crypto.randomBytes(4).toString('hex')}`, roomId: room.roomId, jobId: job.jobId, state: 'pending', createdAt: new Date().toISOString() };
+          recs[rec.recId] = rec;
+          saveRecs();
+          logDecision(rec, {});
+          send({ type: 'recommendation', rec });
+          slackPost(rec);
+        };
+        // A draft to send was read from Resend before the turn ended (readDraftsFirst): the card shows what Resend
+        // has, never what an agent wrote.
+        if (RESEND_ACTIONS.includes(f.rec.action)) {
+          const read = job.sendDrafts && job.sendDrafts.get(JSON.stringify(f.rec));
+          const what = f.rec.action === 'send_draft' ? 'to send a draft' : 'to write a draft';
+          if (read && read.rec) file(read.rec);
+          else send({ type: 'notice', text: `${f.by ? focus.name : 'Coen'}'s proposal ${what} couldn't be used (${read ? read.error : 'Resend was not read'}). Nothing was ${f.rec.action === 'send_draft' ? 'sent' : 'saved or sent'}.` });
+        } else file(f.rec);
       }
       for (const [text, by] of [[job.coenText, null], ...(focus ? [[job.focusText, focus]] : [])]) {
         if (hasMisfiledRec(text)) send({ type: 'notice', text: `${by ? by.name : 'Coen'}'s proposal couldn't be turned into a card (it wasn't in the form the room reads). Ask ${by ? by.name : 'him'} to propose it again.` });
@@ -4002,6 +4207,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       const status = job.stopRequested ? 'stopped' : code === 0 && !capHit ? 'ok' : 'error';
       if (status === 'error' && capHit) fail(`This run stopped at the spend cap for one run ($${RUN_CAP_USD.toFixed(2)}). What was written so far is above. Send a message to carry on, or restart the room with a higher ROOM_RUN_CAP_USD.`);
       else if (status === 'error') fail(claudeError || cutScrubbed(stderr, STDERR_CAP).trim() || `Claude exited with code ${code}`);
+      else if (status === 'ok' && !dispatch) readDraftsFirst().then(() => finish(status), () => finish(status));
       else finish(status);
     });
   }
@@ -4220,6 +4426,32 @@ function recResult(rec, extra) {
   return ev;
 }
 
+// Sending a draft from a Resend inbox. Only from the page, where the whole email is on the card. Resend must still be
+// on in the room; the draft is read again and sent only when everything that would go out is what the card showed,
+// and its recipients still pass the rule. A refusal before the decision leaves the card waiting; anything after it
+// fails the card with the reason, and nothing is sent.
+async function approveSendDraft(rec, via, how) {
+  if (via === 'slack') return { status: 409, body: { error: 'An email is only sent when you approve it on the Exec Room page, where its whole text is on the card.' } };
+  const space = spaceOf(rec.roomId);
+  const s = resendFor(space);
+  if (!s) return { status: 409, body: { error: "Resend is no longer on and connected in this room, so nothing can be sent. Switch it on under Room settings → Can use, or dismiss this card." } };
+  const decision = recordDecision(rec, 'approved', how);
+  try {
+    const now = await readDraft(s, rec.inbox, rec.draft);
+    if (now.fingerprint !== rec.fingerprint) throw new Error('the draft changed in Resend after this card was made, so nothing was sent. Ask Coen to propose it again to see the new version');
+    await checkDraftRecipients(s, rec.inbox, now, targetsOf(space).allowedRecipients);
+    const sent = await resendRequest(s, 'POST', `/inboxes${resendPath(rec.inbox)}/drafts${resendPath(rec.draft)}/send`, { idempotencyKey: rec.recId });
+    rec.state = 'done';
+    rec.result = { sent: true, ...(sent && typeof sent.id === 'string' && { emailId: sent.id }) };
+  } catch (err) {
+    rec.state = 'failed';
+    rec.result = { error: err.message.slice(0, 500) };
+  }
+  saveRecs();
+  logDecision(rec, { result: rec.result });
+  return { body: { events: [decision, recResult(rec, rec.result)] } };
+}
+
 app.post('/api/recs/:id/approve', async (req, res) => {
   const rec = pendingRec(req, res);
   if (!rec) return;
@@ -4242,6 +4474,22 @@ async function approveRec(rec, via) {
     saveRecs();
     const job = startJob(rec.brief, rec, false, null, index.rooms[rec.roomId]);
     return { body: { events: [decision], jobId: job.jobId } };
+  }
+  if (rec.action === 'send_draft') return approveSendDraft(rec, via, how);
+  if (rec.action === 'write_draft') {
+    // Saving a draft sends nothing, so it may be approved from Slack too; sending it is a send_draft card, page only.
+    if (!resendFor(spaceOf(rec.roomId))) return { status: 409, body: { error: "Resend is no longer on and connected in this room, so nothing can be saved. Switch it on under Room settings → Can use, or dismiss this card." } };
+    const decision = recordDecision(rec, 'approved', how);
+    try {
+      rec.result = { saved: true, draftId: await createDraft(rec, spaceOf(rec.roomId)) };
+      rec.state = 'done';
+    } catch (err) {
+      rec.state = 'failed';
+      rec.result = { error: err.message.slice(0, 500) };
+    }
+    saveRecs();
+    logDecision(rec, { result: rec.result });
+    return { body: { events: [decision, recResult(rec, rec.result)] } };
   }
   // The room's targets may have changed since the card appeared: what's approved must still be on its lists.
   const targets = targetsOf(spaceOf(rec.roomId));
@@ -5118,7 +5366,7 @@ function decisionsOf(space) {
     if (!rows.has(line.recId)) rows.set(line.recId, { recId: line.recId, chatId: line.roomId, decision: null, at: '', actor: null });
     const row = rows.get(line.recId);
     Object.assign(row, { action: line.action, summary: line.summary, state: line.state });
-    if (line.action === 'email_draft') Object.assign(row, { subject: line.subject, domains: line.domains });
+    if (['email_draft', 'send_draft', 'write_draft'].includes(line.action)) Object.assign(row, { subject: line.subject, domains: line.domains });
     // Lines written before decisions carried an actor have none: the owner is filled in below.
     if (typeof line.actor === 'string' && line.actor) row.actor = line.actor;
     const at = typeof line.at === 'string' ? line.at : '';
@@ -5146,7 +5394,7 @@ function decisionsOf(space) {
         actor: r.actor || OWNER_NAME, state: String(r.state || ''), ...(r.via && { via: r.via }),
         ...(rec && { proposer: { key: by, name: by === 'coen' ? 'Coen' : agentName(by) } }),
         chat: { id: r.chatId, ...chatLabel(index.rooms[r.chatId]) },
-        ...(r.action === 'email_draft' && { subject: String(r.subject || ''), domains: strings(r.domains) }),
+        ...(['email_draft', 'send_draft', 'write_draft'].includes(r.action) && { subject: String(r.subject || ''), domains: strings(r.domains) }),
         // An approved draft whose text is still kept: the tab can copy it and remove it, like the card.
         ...(rec && emailKept(rec) && { draft: { to: rec.to, cc: rec.cc || [], subject: rec.subject, body: rec.body, from: rec.from || null }, keepUntil: rec.keepUntil }),
         ...(r.action === 'email_draft'
@@ -5505,7 +5753,7 @@ function slackSettle(rec, error) {
 
 const SLACK_KINDS = {
   dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft', notion_row: 'Notion row',
-  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', create_agent: 'New agent', save_file: 'Saved file',
+  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', send_draft: 'Send a draft', write_draft: 'Write a draft', create_agent: 'New agent', save_file: 'Saved file',
 };
 // Text an agent wrote goes into Slack as text: &, < and > escaped, so it can't mention people or channels or make links.
 const slackText = (t, max = 1500) => String(t == null ? '' : t).replace(/\s+/g, ' ').trim().slice(0, max).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -5522,6 +5770,7 @@ function slackTarget(rec) {
     case 'notion_draft': case 'notion_row': return rec.databaseName;
     case 'notion_page': case 'notion_page_update': return rec.title;
     case 'email_draft': { const to = [...list(rec.to), ...list(rec.cc)]; return to.length ? `To ${to.join(', ')}` : ''; }
+    case 'send_draft': case 'write_draft': { const to = [...list(rec.to), ...list(rec.cc), ...list(rec.bcc)]; return `${to.length ? `To ${to.join(', ')}` : ''}${rec.subject || rec.shownSubject ? ` · ${rec.subject || rec.shownSubject}` : ''}`; }
     case 'save_file': return rec.where && rec.name ? `${rec.where}/${rec.name}` : rec.name;
     case 'create_agent': return rec.agent && rec.agent.name;
     default: return '';
@@ -5537,7 +5786,9 @@ function slackStatus(rec) {
     case 'pending': return '';
     case 'approved': return rec.action === 'email_draft' ? `✅ Approved ${where}. Send it from the Exec Room on your Mac.` : `✅ Approved ${where}.`;
     case 'running': return `✅ Approved ${where}. ${rec.then ? `${slackText(makerInfo(rec.agent).name, 80)} and ${slackText(makerInfo(rec.then).name, 80)} are` : `${slackText(makerInfo(rec.agent).name, 80)} is`} working on it.`;
-    case 'done': return `✅ Approved ${where}. Done.${links.length ? ` ${links.join(' · ')}` : ''}${drafts}${r.shown ? ` Saved as ${slackText(r.shown, 300)}.` : ''}`;
+    case 'done': if (rec.action === 'send_draft') return `✅ Approved ${where}. Sent.`;
+      if (rec.action === 'write_draft') return `✅ Approved ${where}. Saved as a draft in Resend, not sent.`;
+      return `✅ Approved ${where}. Done.${links.length ? ` ${links.join(' · ')}` : ''}${drafts}${r.shown ? ` Saved as ${slackText(r.shown, 300)}.` : ''}`;
     case 'failed': return `⚠️ Approved ${where}, but it didn't work: ${slackText(r.error, 400)}${links.length ? ` (done before that: ${links.join(' · ')})` : ''}`;
     case 'stopped': return `✅ Approved ${where}. The run was stopped.${drafts}`;
     case 'revised': return `↩️ Sent back for a revision ${where}.`;
@@ -5557,10 +5808,13 @@ function slackCard(rec, error) {
     slackText(rec.summary),
     ...(target ? [`_${slackText(target, 500)}_`] : []),
   ];
-  const note = [slackStatus(rec), ...(error ? [`⚠️ Not done: ${slackText(error, 400)}`] : [])].filter(Boolean).join('\n');
+  // An email to send is approved on the page only, where its whole text is on the card: no Approve here.
+  const pageOnly = rec.action === 'send_draft';
+  const note = [slackStatus(rec), ...(pageOnly && rec.state === 'pending' ? ['Approve it on the Exec Room page, where the whole email is shown.'] : []),
+    ...(error ? [`⚠️ Not done: ${slackText(error, 400)}`] : [])].filter(Boolean).join('\n');
   const open = { type: 'button', action_id: 'open', text: { type: 'plain_text', text: 'Open the Exec Room' }, url: `http://127.0.0.1:${PORT}/room.html` };
   const buttons = rec.state === 'pending' ? [
-    { type: 'button', action_id: 'approve', style: 'primary', text: { type: 'plain_text', text: 'Approve' }, value: rec.recId },
+    ...(pageOnly ? [] : [{ type: 'button', action_id: 'approve', style: 'primary', text: { type: 'plain_text', text: 'Approve' }, value: rec.recId }]),
     { type: 'button', action_id: 'dismiss', text: { type: 'plain_text', text: 'Dismiss' }, value: rec.recId },
     open,
   ] : [open];

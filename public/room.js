@@ -544,6 +544,8 @@ function addRecCard(rec) {
     : rec.action === 'notion_draft' ? `Proposal · Notion draft${posts.length > 1 ? `s (${posts.length} posts)` : ''}`
     : rec.action === 'notion_row' ? `Proposal · Notion row${(rec.rows || []).length > 1 ? `s (${rec.rows.length})` : ''}`
     : rec.action === 'email_draft' ? 'Proposal · email draft'
+    : rec.action === 'send_draft' ? `Proposal · send ${rec.kind === 'reply' ? 'a reply' : 'an email'}`
+    : rec.action === 'write_draft' ? `Proposal · write ${rec.kind === 'reply' ? 'a reply' : 'an email'} as a draft`
     : rec.action === 'notion_page' ? 'Proposal · Notion page'
     : rec.action === 'notion_page_update' ? 'Proposal · update a Notion page'
     : rec.action === 'save_file' ? 'Proposal · save a file'
@@ -630,6 +632,25 @@ function addRecCard(rec) {
       } catch { opens = false; }
       if (!opens) card.append(el('p', 'rec-note email-long', 'This draft is too long to open in Outlook or a mail app directly: after approving, use Copy and paste it into a new email.'));
     }
+  } else if (rec.action === 'send_draft') {
+    // A draft already in a Resend inbox, as the server read it from Resend: exactly what approving sends.
+    card.append(recField('Send from', rec.from || 'the Resend inbox'), recField('To', (rec.to || []).join(', ')));
+    if (rec.cc && rec.cc.length) card.append(recField('Cc', rec.cc.join(', ')));
+    if (rec.bcc && rec.bcc.length) card.append(recField('Bcc', rec.bcc.join(', ')));
+    const text = el('details', 'rec-details');
+    text.open = true;
+    text.append(el('summary', null, rec.html ? 'Email text (its HTML version, shown as plain text)' : 'Email text'), el('div', 'post-text', rec.text || ''));
+    card.append(recField('Subject', rec.subject || ''), text,
+      el('p', 'rec-note', `${rec.kind === 'reply' ? 'A reply in its thread, only to people already in it. ' : ''}Approving sends it now from Resend, and a sent email can't be recalled. It is sent only if the draft in Resend is still exactly this; otherwise nothing goes out and this card says why.`));
+  } else if (rec.action === 'write_draft') {
+    // Coen's own text, saved as a draft in the Resend inbox when approved. Nothing is sent from this card.
+    card.append(recField('Draft in', rec.from || 'the Resend inbox'), recField('To', (rec.to || []).join(', ')));
+    if (rec.cc && rec.cc.length) card.append(recField('Cc', rec.cc.join(', ')));
+    const text = el('details', 'rec-details');
+    text.open = true;
+    text.append(el('summary', null, 'Email text'), el('div', 'post-text', rec.body || ''));
+    card.append(recField('Subject', rec.subject || rec.shownSubject || ''), text,
+      el('p', 'rec-note', `${rec.kind === 'reply' ? 'A reply in its thread, only to people already in it. ' : ''}Approving saves this as a draft in the inbox in Resend. Nothing is sent: you can still change it there, and sending it is a card of its own.`));
   } else if (rec.action === 'notion_page') {
     // Link the parent so the destination can be checked before approving.
     const under = el('a', null, 'open the parent page');
@@ -695,6 +716,8 @@ function addRecCard(rec) {
     notion_page: 'Approve · create Notion page',
     notion_page_update: 'Approve · update the page, keep the old version',
     email_draft: 'Approve · nothing is sent',
+    send_draft: 'Approve · send it now',
+    write_draft: 'Approve · save as a draft, nothing is sent',
     github_issue: rec.public ? 'Approve · publish public issue' : 'Approve · create issue',
     github_comment: rec.public ? 'Approve · post public comment' : 'Approve · post comment',
     create_agent: rec.action === 'create_agent' ? `Approve · add ${rec.agent.name} to the room` : '',
@@ -707,7 +730,8 @@ function addRecCard(rec) {
   approve.type = 'button';
   revise.type = 'button';
   dismiss.type = 'button';
-  actions.append(approve, revise, dismiss);
+  // Coen can't change a draft in a Resend inbox, so a send card has no Revise: dismiss it, and ask for a new one.
+  actions.append(...(rec.action === 'send_draft' ? [approve, dismiss] : [approve, revise, dismiss]));
 
   const form = el('form', 'rec-revise');
   form.hidden = true;
@@ -815,7 +839,11 @@ function showRecResult(ev) {
   setRecState(entry, ev.state);
   entry.status.replaceChildren();
   const isNotion = isNotionUrl(ev.url);
-  if (entry.rec.action === 'create_agent' && ev.agent) {
+  if (entry.rec.action === 'write_draft' && (ev.saved || ev.error)) {
+    entry.status.append(ev.saved ? el('span', null, `Saved as a draft in ${entry.rec.from || 'the inbox'}. Nothing was sent.`) : el('span', 'err-text', `Not saved: ${ev.error}`));
+  } else if (entry.rec.action === 'send_draft' && (ev.sent || ev.error)) {
+    entry.status.append(ev.sent ? el('span', null, `Sent from ${entry.rec.from || 'the inbox'}.`) : el('span', 'err-text', `Not sent: ${ev.error}`));
+  } else if (entry.rec.action === 'create_agent' && ev.agent) {
     entry.status.append(el('span', null, `${ev.agent.name} is in the room now.`));
     refreshAgents();
   } else if ((entry.rec.action === 'notion_draft' || entry.rec.action === 'notion_row') && (ev.urls || ev.state === 'done')) {
@@ -3046,7 +3074,7 @@ function mcpSignInStarted(url, name) {
 
 const ACTION_LABELS = {
   dispatch: 'Dispatch to a maker', github_issue: 'GitHub issue', github_comment: 'GitHub comment', notion_draft: 'Notion draft', notion_row: 'Notion row',
-  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', create_agent: 'New agent', save_file: 'Saved file',
+  notion_page: 'Notion page', notion_page_update: 'Notion page update', email_draft: 'Email draft', send_draft: 'Send a draft', write_draft: 'Write a draft', create_agent: 'New agent', save_file: 'Saved file',
 };
 const DECISION_WORDS = { approved: 'approved', revised: 'asked for a revision', dismissed: 'dismissed' };
 const DECISIONS_ABOUT = 'Every proposal you approve, send back for a revision or dismiss in this room is listed here, across all its chats: who decided, what it was, when, and what came of it.';
@@ -3092,6 +3120,7 @@ function decisionRow(d) {
   if (tags.children.length) row.append(tags);
   // An email draft has its subject and the recipients' domains. An approved one whose text the room still keeps can
   // be opened, copied and removed from here too; any other has no addresses or text left.
+  if (d.action === 'send_draft' || d.action === 'write_draft') row.append(el('p', 'rec-note', `Subject: ${d.subject || ''} · to ${(d.domains || []).join(', ')} (domains only)`));
   if (d.action === 'email_draft') {
     row.append(el('p', 'rec-note', `Subject: ${d.subject || ''} · to ${(d.domains || []).join(', ')} (domains only)`));
     if (d.draft && Array.isArray(d.draft.to) && typeof d.draft.body === 'string') {
@@ -3105,6 +3134,8 @@ function decisionRow(d) {
   const words = d.decision === 'dismissed' ? 'Closed, nothing was done.'
     : d.decision === 'revised' ? 'Sent back for a revision.'
     : d.action === 'email_draft' ? 'Nothing was sent from the room.'
+    : d.action === 'send_draft' ? ({ done: 'Sent.', failed: 'Not sent.' }[d.state] || 'Not sent yet.')
+    : d.action === 'write_draft' ? ({ done: 'Saved as a draft. Nothing was sent.', failed: 'Not saved. Nothing was sent.' }[d.state] || 'Nothing was sent.')
     : { done: 'Done.', failed: 'Failed.', stopped: 'Stopped.', running: 'In progress.' }[d.state] || 'No result logged.';
   const outcome = el('div', 'decision-outcome');
   outcome.append(el('span', null, words));

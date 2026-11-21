@@ -50,6 +50,9 @@ with open(os.path.join(os.environ["ROOM_TEST_TMP"], "mcp-calls.ndjson"), "a") as
         "linked_notion": "linked Notion pages" in prompt,
         # The rule for Notion rows, as Coen is told it (the room's databases and the columns agents fill).
         "rows_rule": note[note.find('"notion_row"'):note.find("\n", note.find('"notion_row"'))] if '"notion_row"' in note else None,
+        # The rule for sending a draft from a Resend inbox, as Coen is told it, when the room has Resend on.
+        "send_rule": note[note.find('"send_draft"'):note.find("\n", note.find('"send_draft"'))] if '"send_draft"' in note else None,
+        "write_rule": note[note.find('"write_draft"'):note.find("\n", note.find('"write_draft"'))] if '"write_draft"' in note else None,
         "claude_notion": "blocked" if "mcp__claude_ai_Notion" in flag("--disallowedTools") else "allowed" if any(t.startswith("mcp__claude_ai_Notion__") for t in flag("--allowedTools")) else "neither",
     }) + "\n")
 
