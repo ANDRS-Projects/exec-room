@@ -143,6 +143,10 @@ Agent runs and `gh` are started with a short, fixed set of environment variables
 
 Environment variables are listed in `.env.example`. The server reads them from your shell; it does not load a `.env` file.
 
+**The work folder.** Agent runs start in the room's work folder, and agents write their drafts in its `drafts/`. By default that is the folder you cloned the room into. To keep it apart from the code, start the room with `ROOM_WORK_DIR`, for example `ROOM_WORK_DIR="$HOME/Exec Room" npm run room`: the folder and its `drafts/` are made if they aren't there, and agents no longer see the room's code or `room.config.json` (see [Readable in every room](#your-own-agents)). Move your existing drafts along. It can't be your home folder, `~/Library` or another folder with keys or settings, or inside the data folder: the room then doesn't start and says why. Nor can a room's save folder sit inside it. Chats keep their history and their memory when it moves.
+
+**Claude Code, `gh` and `op`** are found at start-up: on your PATH, or else in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` or `/usr/local/bin`. If one lives somewhere else, set `ROOM_CLAUDE_BIN`, `ROOM_GH_BIN` or `ROOM_OP_BIN` to its full path. At every start the room also checks that Claude Code starts and, on your Claude plan, is signed in; when it isn't, the page says so instead of the first message failing.
+
 ## MCP servers
 
 Exec Room settings (the room menu → Exec Room settings) list the MCP servers the room uses, for every room at once:
@@ -258,7 +262,7 @@ You need a Slack workspace where you can add an app, and 1Password with its comm
 
 **Export.** Agents you build in the room are stored in `data/agents.json`. To use one outside the room too, open it and choose **Export as AGENT.md**: the room saves it in `drafts/` and shows the command to copy it into your own `~/.claude/agents` folder. The room never writes there itself.
 
-**Readable in every room.** Runs start in the folder you cloned the room into, so every agent in every room can read that folder, whatever folders the room has: the room's own code and docs, `room.config.json` (your Notion database ids and the 1Password reference to the token, not the token itself), and `drafts/`, including drafts written in other rooms. Only `data/`, secret-looking files (`.env`, keys and the like) and `.git` are excluded. Every agent can also read `~/.claude/agents`, `~/.claude/skills` and `~/.claude/knowledge` (and what those folders link to). Keep nothing in any of these places that an agent in another room shouldn't see.
+**Readable in every room.** Runs start in the room's work folder, so every agent in every room can read that folder, whatever folders the room has. By default that is the folder you cloned the room into: the room's own code and docs, `room.config.json` (your Notion database ids and the 1Password reference to the token, not the token itself), and `drafts/`, including drafts written in other rooms. With a work folder of its own (`ROOM_WORK_DIR`, see [Configuration](#configuration)), it is only what's in that folder, drafts included. Only `data/`, secret-looking files (`.env`, keys and the like) and `.git` are excluded. Every agent can also read `~/.claude/agents`, `~/.claude/skills` and `~/.claude/knowledge` (and what those folders link to). Keep nothing in any of these places that an agent in another room shouldn't see.
 
 ## Accessibility
 

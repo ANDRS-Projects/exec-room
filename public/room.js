@@ -1644,7 +1644,7 @@ $('agent-export').addEventListener('click', async () => {
     const data = await agentRequest(`/api/agents/${encodeURIComponent(editingKey)}/export`, {});
     editor.close();
     const note = el('div', 'notice export-note');
-    note.append(el('p', null, `Saved ${agent.name} as an AGENT.md in drafts/. To add it to your Claude Code agents:`));
+    note.append(el('p', null, `Saved ${agent.name} as an AGENT.md in drafts/. To add it to your Claude Code agents, run this in a terminal:`));
     if (data.exists) note.append(el('p', 'err-text', `~/.claude/agents/${data.folder.split('/')[1]} already exists: pick another folder name so you don't overwrite that agent.`));
     note.append(el('code', 'install', data.install));
     note.append(el('p', null, 'The room keeps using its own copy; the one in ~/.claude/agents is for Claude Code in the terminal. After editing the agent here, export it again so the two stay the same.'));
@@ -3551,6 +3551,13 @@ $('space-remove').addEventListener('click', async () => {
     if (Array.isArray(room.contextLeak) && room.contextLeak.length) {
       appendToThread(el('div', 'notice', `Heads-up: agents in every room are being given ${room.contextLeak.filter((x) => typeof x === 'string').join(' and ')} that were written for Claude Code, not for the room. The switch that keeps them out stopped working, probably after a Claude Code update. Ask Claude Code to look at the room's start-up check.`));
     }
+    // The start-up check found that agents can't run at all (claudeCheck in room-server.js).
+    const claudeNotes = {
+      missing: "Heads-up: the Exec Room can't find Claude Code on this computer, so agents can't run. Install Claude Code, sign in, and restart the Exec Room. If it is installed somewhere unusual, set ROOM_CLAUDE_BIN to its full path.",
+      broken: "Heads-up: Claude Code is installed but doesn't start, so agents can't run. Update or reinstall it, then restart the Exec Room.",
+      signedOut: "Heads-up: Claude Code isn't signed in to your Claude plan, so agents can't run. Run claude in a terminal, sign in, then restart the Exec Room.",
+    };
+    if (Object.hasOwn(claudeNotes, room.claudeProblem)) appendToThread(el('div', 'notice', claudeNotes[room.claudeProblem]));
     // The room was set up with a Notion token and could not read it when it started (1Password asks for approval
     // when it is locked, and the room waits a minute). Notion drafts and pages can't be saved until a restart.
     if (room.notionTokenMissing === true) {
