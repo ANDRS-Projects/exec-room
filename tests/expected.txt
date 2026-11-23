@@ -973,11 +973,15 @@ W2 the page opens the draft: (200, True)
 W2 a save folder in the work folder is refused: (400, '"<tmp>/w2/Work folder/drafts" is the Exec Room\'s work folder, or inside it (<tmp>/w2/Work folder, where agent runs start and drafts are kept). Agents in every room can read it, so a file saved there wouldn\'t stay with one room: pick a save folder outside it, such as <tmp>/w2/Work folder saves')
 W2 save folder refused: the work folder itself: (400, '"<tmp>/w2/Work folder" is the Exec Room\'s work folder, or inside it (<tmp>/w2/Work folder, where agent runs start and drafts are kept). Agents in every room can read it, so a file saved there wouldn\'t stay with one room: pick a save folder outside it, such as <tmp>/w2/Work folder saves')
 W2 save folder refused: the code folder: (400, '"<root>" is part of the Exec Room itself (its code or data): pick a save folder outside it')
+W2 work folder from room.config.json: True
+W2 work folder ROOM_WORK_DIR wins over room.config.json: True
 W2 start-up refuses a work folder under ~/Library: (1, ['ROOM_WORK_DIR: "<home>/Library/Exec Room" holds keys or settings agents must never read (~/.ssh, ~/.aws, ~/.gnupg, ~/.config, ~/Library, ~/.docker, ~/.kube, ~/.azure, ~/.claude, and what they link to; in ~/.claude only agents, skills, knowledge are allowed): pick another folder'])
 W2 the refused folder it made is gone again: False
 W2 start-up refuses the home folder as work folder: (1, ['ROOM_WORK_DIR: "<home>" is too broad: pick a folder inside your home folder, not the home folder itself'])
 W2 start-up refuses a work folder inside the data folder: (1, ['ROOM_WORK_DIR: "<tmp>/data-w2-refused/work" is inside the data folder, which agents must never read: pick another folder'])
 W2 start-up refuses a program setting that isn't a program: (1, ['ROOM_CLAUDE_BIN is set to "<tmp>/nowhere/claude", which isn\'t a program this computer can run. Give the full path of claude, or leave ROOM_CLAUDE_BIN out and the Exec Room looks for it.'])
+W2 start-up refuses a workFolder that isn't a path: (1, ['"workFolder" in room.config.json must be the path of a folder, such as "~/Documents/Exec Room".'])
+W2 start-up refuses a refused workFolder, named by its key: (1, ['"workFolder" in room.config.json: "<tmp>/data-w2-refused/work" is inside the data folder, which agents must never read: pick another folder'])
 W2 Claude Code signed in: the page says: None
 W2 found outside PATH: its folder is on a run's PATH: True
 W2 Claude Code signed out: the page says: signedOut

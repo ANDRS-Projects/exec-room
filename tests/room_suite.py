@@ -3815,6 +3815,26 @@ try:
     finally:
         s.stop()
 
+    # The same folder from "workFolder" in room.config.json, as setup.sh writes it; ROOM_WORK_DIR wins over it.
+    base_config = json.load(open(os.path.join(TESTS, "room.config.test.json")))
+    from_config = os.path.join(TMP, "w2", "From config")
+    work_config = os.path.join(TMP, "room.config.work.json")
+    with open(work_config, "w") as f:
+        json.dump({**base_config, "workFolder": from_config}, f)
+    for label, extra, expect in [("from room.config.json", {}, from_config), ("ROOM_WORK_DIR wins over room.config.json", {"ROOM_WORK_DIR": work}, work)]:
+        s = Server("workfolder", extra, data_name="data-w2-config", config=work_config)
+        try:
+            wsay()
+            out(f"W2 work folder {label}", wcalls()[-1]["cwd"] == os.path.realpath(expect))
+        finally:
+            s.stop()
+    bad_config = os.path.join(TMP, "room.config.badwork.json")
+    with open(bad_config, "w") as f:
+        json.dump({**base_config, "workFolder": ["~/Exec Room"]}, f)
+    inside_data = os.path.join(TMP, "room.config.datawork.json")
+    with open(inside_data, "w") as f:
+        json.dump({**base_config, "workFolder": os.path.join(TMP, "data-w2-refused", "work")}, f)
+
     def wstart(what, **extra):
         env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "workfolder") + os.pathsep + os.environ["PATH"], PORT=str(PORT), HOME=whome,
                    ROOM_CONTEXT_CHECK="off", ROOM_CLAUDE_CHECK="off", ROOM_DATA_DIR=os.path.join(TMP, "data-w2-refused"), ROOM_NOTION_TOKEN="fake-token",
@@ -3828,6 +3848,8 @@ try:
     wstart("the home folder as work folder", ROOM_WORK_DIR=whome)
     wstart("a work folder inside the data folder", ROOM_WORK_DIR=os.path.join(TMP, "data-w2-refused", "work"))
     wstart("a program setting that isn't a program", ROOM_CLAUDE_BIN=os.path.join(TMP, "nowhere", "claude"))
+    wstart("a workFolder that isn't a path", ROOM_CONFIG_FILE=bad_config)
+    wstart("a refused workFolder, named by its key", ROOM_CONFIG_FILE=inside_data)
 
     # An app opened from Finder has only the system's folders on PATH. Claude Code in ~/.local/bin is still found, and
     # its folder goes first on the PATH of what the Exec Room starts.

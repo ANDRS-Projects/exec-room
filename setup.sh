@@ -67,6 +67,67 @@ else
   echo "✓ Created room.config.json from template"
 fi
 
+# The work folder: agent runs start there and agents keep their drafts in it. Asked once, only when someone is at the
+# terminal; the answer goes into room.config.json as "workFolder". Without one the room keeps using this folder.
+# The room itself checks the folder at every start and refuses one it can't use; the checks here only catch the
+# common mistakes before any draft is moved.
+CURRENT_WORK=$(node -e 'try { const c = JSON.parse(require("fs").readFileSync("room.config.json", "utf8")); if (typeof c.workFolder === "string") process.stdout.write(c.workFolder); } catch {}')
+if [ -n "$CURRENT_WORK" ]; then
+  echo "✓ Work folder: $CURRENT_WORK (skipped; it is \"workFolder\" in room.config.json)"
+elif [ -t 0 ] && [ -t 1 ]; then
+  echo ""
+  echo "Where should the room keep its work folder? Agents work there and keep their drafts in it. Every agent in"
+  echo "every room can read it, so keep it apart from this folder. On a Mac, Documents may be synced to iCloud."
+  read -r -p "Work folder [~/Documents/Exec Room]: " WORK || WORK=""
+  WORK="${WORK:-~/Documents/Exec Room}"
+  WORK_ABS="${WORK/#\~/$HOME}"
+  WORK_ABS="${WORK_ABS%/}"
+  case "$WORK_ABS" in
+    /*) WORK_OK=yes ;;
+    *) WORK_OK="give a full path, such as ~/Documents/Exec Room" ;;
+  esac
+  if [ "$WORK_OK" = yes ]; then
+    case "$WORK_ABS/" in
+      "$HOME/") WORK_OK="that is your home folder itself" ;;
+      "$HOME/Library/"*|"$HOME/."*) WORK_OK="that folder holds settings or keys agents must not read" ;;
+      "$PWD/data/"*) WORK_OK="that is inside the room's data folder" ;;
+    esac
+  fi
+  if [ "$WORK_OK" != yes ]; then
+    echo -e "${RED}! Not used: $WORK_OK.${NC} The room keeps using this folder; run ./setup.sh again to choose one."
+  else
+    mkdir -p "$WORK_ABS/drafts"
+    node -e 'const fs = require("fs"); const c = JSON.parse(fs.readFileSync("room.config.json", "utf8")); c.workFolder = process.argv[1]; fs.writeFileSync("room.config.json", JSON.stringify(c, null, 2) + "\n");' "$WORK"
+    echo "✓ Work folder: $WORK (saved as \"workFolder\" in room.config.json)"
+    # Drafts already in this folder: links to them in old chats only open where the room now looks for them.
+    OLD=()
+    if [ -d drafts ]; then
+      for f in drafts/*; do
+        [ -f "$f" ] || continue
+        git ls-files --error-unmatch "$f" >/dev/null 2>&1 && continue
+        OLD+=("$f")
+      done
+    fi
+    if [ "${#OLD[@]}" -gt 0 ]; then
+      read -r -p "Move the ${#OLD[@]} drafts in drafts/ there too? [Y/n] " MOVE || MOVE=n
+      case "$MOVE" in
+        [nN]*) echo "  Left in drafts/. Old chats link to them by name; move them to $WORK/drafts to open them again." ;;
+        *)
+          MOVED=0
+          KEPT=0
+          for f in "${OLD[@]}"; do
+            if [ -e "$WORK_ABS/drafts/$(basename "$f")" ]; then KEPT=$((KEPT + 1)); else mv "$f" "$WORK_ABS/drafts/" && MOVED=$((MOVED + 1)); fi
+          done
+          echo "✓ Moved $MOVED drafts to $WORK/drafts"
+          if [ "$KEPT" -gt 0 ]; then echo "  $KEPT left in drafts/: a draft with the same name is already there."; fi
+          ;;
+      esac
+    fi
+  fi
+else
+  echo "✓ Work folder: this folder (set \"workFolder\" in room.config.json to move it; see README.md)"
+fi
+
 echo ""
 echo -e "${GREEN}=== Setup complete! ===${NC}"
 echo ""

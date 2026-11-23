@@ -50,11 +50,14 @@ const SPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const JOBS_FILE = path.join(DATA_DIR, 'jobs.ndjson');
 const RECS_FILE = path.join(DATA_DIR, 'recommendations.json');
 // The work folder: where agent runs start, with drafts/ in it. Agents may write drafts/ only, a path
-// relative to the folder a run starts in, so the two stay together. ROOM_WORK_DIR puts it outside the code folder (a
-// packaged app can't write into its own code); without it, it is the code folder, as before. Checked live on
+// relative to the folder a run starts in, so the two stay together. "workFolder" in room.config.json (asked by
+// setup.sh) or ROOM_WORK_DIR, which wins (a sandbox), puts it outside the code folder (a packaged app can't write into
+// its own code); without either, it is the code folder, as before. Checked live on
 // 2026-11-22 with Claude Code 2.1.323: a chat started in one folder resumes from another, so moving it keeps chats.
 // Whether the folder may be used is checked once the rules for folders are defined (checkWorkFolder).
-const WORK_SET = (process.env.ROOM_WORK_DIR || '').trim();
+if (CONFIG.workFolder !== undefined && typeof CONFIG.workFolder !== 'string') stopStart('"workFolder" in room.config.json must be the path of a folder, such as "~/Documents/Exec Room".');
+const WORK_FROM = (process.env.ROOM_WORK_DIR || '').trim() ? 'ROOM_WORK_DIR' : '"workFolder" in room.config.json';
+const WORK_SET = ((process.env.ROOM_WORK_DIR || '').trim() || (CONFIG.workFolder || '')).trim();
 let WORK_MADE = false;
 function workFolder() {
   if (!WORK_SET) return __dirname;
@@ -65,7 +68,7 @@ function workFolder() {
     fs.mkdirSync(path.join(dir, 'drafts'), { recursive: true });
     return fs.realpathSync(dir);
   } catch (err) {
-    return stopStart(`ROOM_WORK_DIR: the work folder ${dir} couldn't be made: ${err.message}`);
+    return stopStart(`${WORK_FROM}: the work folder ${dir} couldn't be made: ${err.message}`);
   }
 }
 const WORK_DIR = workFolder();
@@ -1813,14 +1816,14 @@ function saveFolder(f) {
   const real = roomFolder(f, 'to save to');
   const r = real.toLowerCase();
   const inside = (d) => { const own = (realOr(d) || path.resolve(d)).toLowerCase(); return r === own || r.startsWith(own + '/'); };
-  // A work folder of its own (ROOM_WORK_DIR) gets its own reason: every agent in every room can read it.
+  // A work folder of its own (workFolder or ROOM_WORK_DIR) gets its own reason: every agent in every room can read it.
   if (WORK_SET && inside(WORK_DIR)) throw new Error(`"${f}" is the Exec Room's work folder, or inside it (${tilde(WORK_DIR)}, where agent runs start and drafts are kept). Agents in every room can read it, so a file saved there wouldn't stay with one room: pick a save folder outside it, such as ${tilde(WORK_DIR)} saves`);
   if (inside(__dirname) || inside(DATA_DIR)) throw new Error(`"${f}" is part of the Exec Room itself (its code${WORK_SET ? '' : ', drafts/'} or data): pick a save folder outside it`);
   if (r.split('/').some((part) => part === '.git' || part === CLAUDE_DIR)) throw new Error(`"${f}" is inside a .git or .claude folder, which holds settings and hooks: pick another save folder`);
   return real;
 }
 
-// A work folder set with ROOM_WORK_DIR follows the rules of a room folder: every agent in every room may read the
+// A work folder set with workFolder or ROOM_WORK_DIR follows the rules of a room folder: every agent in every room may read the
 // folder its run starts in, so it can't be the home folder, a system folder, one with keys or settings (~/Library
 // included, where agents would be refused their own drafts) or the attachments folder. Nor may it sit inside the
 // data folder; the data folder may sit inside it, as it does in the code folder, since data is never readable
@@ -1837,7 +1840,7 @@ function checkWorkFolder() {
     if (w === data || w.startsWith(data + '/')) throw new Error(`"${WORK_DIR}" is inside the data folder, which agents must never read: pick another folder`);
   } catch (err) {
     if (WORK_MADE) try { fs.rmdirSync(DRAFTS_DIR); fs.rmdirSync(WORK_DIR); } catch { /* not empty: left as it is */ }
-    stopStart(`ROOM_WORK_DIR: ${err.message}`);
+    stopStart(`${WORK_FROM}: ${err.message}`);
   }
 }
 checkWorkFolder();
