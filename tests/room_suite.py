@@ -111,7 +111,7 @@ class Server:
         env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", scenario) + os.pathsep + os.environ["PATH"],
                    PORT=str(PORT), ROOM_DATA_DIR=data, ROOM_TEST_TMP=TMP,
                    ROOM_CONFIG_FILE=config or os.path.join(TESTS, "room.config.test.json"),
-                   **{"ROOM_NOTION_TOKEN": "fake-token", "ROOM_CONTEXT_CHECK": "off", **(extra or {})})
+                   **{"ROOM_NOTION_TOKEN": "fake-token", "ROOM_CONTEXT_CHECK": "off", "ROOM_CLAUDE_CHECK": "off", **(extra or {})})
         self.p = subprocess.Popen(["node", "room-server.js"], cwd=opts.root, env=env, stdout=subprocess.DEVNULL,
                                   stderr=subprocess.PIPE, text=True, start_new_session=True)
         for _ in range(100):
@@ -477,7 +477,7 @@ try:
         exp = json.loads(body)
         draft = os.path.join(opts.root, "drafts", exp["name"])
         out("H export", (code, exp["name"][10:], exp["folder"], exp["exists"]))
-        out("H export install", (exp["install"].startswith("mkdir -p ~/.claude/agents/nova && cp "), exp["install"].endswith("/public/avatars/presets/lion.svg ~/.claude/agents/nova/avatar.svg")))
+        out("H export install", (exp["install"].startswith("mkdir -p ~/.claude/agents/nova && cp "), exp["install"].endswith("/public/avatars/presets/lion.svg' ~/.claude/agents/nova/avatar.svg")))
         out("H export AGENT.md", open(draft).read().splitlines())
         os.remove(draft)
         out("H export unknown", call("/api/agents/ghost/export", {})[:2])
@@ -1292,7 +1292,7 @@ try:
         folder = os.path.join(tmpd, f"exec-room-attachments-{PORT}")
         make(folder)
         env = dict(os.environ, PORT=str(PORT), TMPDIR=tmpd, ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token",
-                   ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"), ROOM_CONTEXT_CHECK="off")
+                   ROOM_CONFIG_FILE=os.path.join(TESTS, "room.config.test.json"), ROOM_CONTEXT_CHECK="off", ROOM_CLAUDE_CHECK="off")
         done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
         out(f"K start-up refuses {what}", (done.returncode, done.stderr.replace(folder, "<attach>").strip().splitlines()))
 
@@ -2231,7 +2231,7 @@ try:
 
     def key_start(what, **extra):
         tmpd = os.path.join(TMP, f"key-start-{what.replace(' ', '-')}")
-        env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "keymode") + os.pathsep + os.environ["PATH"], PORT=str(PORT), ROOM_CONTEXT_CHECK="off",
+        env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "keymode") + os.pathsep + os.environ["PATH"], PORT=str(PORT), ROOM_CONTEXT_CHECK="off", ROOM_CLAUDE_CHECK="off",
                    ROOM_DATA_DIR=os.path.join(tmpd, "data"), ROOM_NOTION_TOKEN="fake-token", **{"ROOM_CONFIG_FILE": os.path.join(TESTS, "room.config.test.json"), **extra})
         done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
         out(f"Q start-up refuses {what}", (done.returncode, done.stderr.strip().splitlines()))
@@ -3754,6 +3754,109 @@ try:
     finally:
         s.stop()
     fake_slack.shutdown()
+
+    # W2: the work folder. ROOM_WORK_DIR puts the folder runs start in, with its drafts/, outside the code
+    # folder, as a packaged app needs; without it nothing changes. Programs are found outside PATH, as for an app opened
+    # from Finder, and the start-up check says on the page when Claude Code is missing, doesn't start or is signed out.
+    wcalls = lambda: [json.loads(l) for l in open(os.path.join(TMP, "work-calls.ndjson"))]
+    # Its own throwaway home (Coen comes from the repo's agents/ folder, so it needs nothing in it), and a folder with
+    # only node and python3, for the PATH of an app opened from Finder.
+    whome = os.path.join(TMP, "w2-home")
+    os.makedirs(whome)
+    wbin = os.path.join(TMP, "w2-bin")
+    os.makedirs(wbin)
+    os.symlink(subprocess.run(["node", "-p", "process.execPath"], capture_output=True, text=True, check=True).stdout.strip(), os.path.join(wbin, "node"))
+    os.symlink(sys.executable, os.path.join(wbin, "python3"))
+
+    def wclean(text):
+        for real, shown in [(os.path.realpath(whome), "<home>"), (whome, "<home>"), (os.path.realpath(TMP), "<tmp>"), (TMP, "<tmp>")]:
+            text = text.replace(real, shown)
+        return text
+
+    def wsay():
+        call("/api/coen", {"text": "work"})
+        return events(call("/api/stream")[1])
+
+    def wproblem(expect, seconds=8):
+        """The page's claudeProblem once the start-up check has given `expect` (or after `seconds`)."""
+        got = None
+        for _ in range(int(seconds * 20)):
+            got = json.loads(call("/api/room")[1]).get("claudeProblem")
+            if got == expect:
+                break
+            time.sleep(0.05)
+        return got
+
+    s = Server("workfolder")
+    try:
+        wsay()
+        out("W2 without a work folder, runs start in the code folder", (wcalls()[-1]["in_the_repo"], wcalls()[-1]["cwd"] == os.path.realpath(opts.root)))
+    finally:
+        s.stop()
+
+    work = os.path.join(TMP, "w2", "Work folder")  # not there yet, and with a space, as in ~/Exec Room
+    name = "2026-11-22-coen-work.md"
+    s = Server("workfolder", {"ROOM_WORK_DIR": work, "ROOM_TEST_WRITE": "yes"}, data_name="data-w2")
+    try:
+        out("W2 the work folder is made, with drafts/", (os.path.isdir(work), os.path.isdir(os.path.join(work, "drafts"))))
+        evs = wsay()
+        out("W2 runs start in the work folder", (wcalls()[-1]["cwd"] == os.path.realpath(work), wcalls()[-1]["in_the_repo"]))
+        out("W2 the draft is in the work folder, not the code folder", (os.path.isfile(os.path.join(work, "drafts", name)), os.path.exists(os.path.join(opts.root, "drafts", name))))
+        out("W2 the chat shows the draft", [e["name"] for e in evs if e["type"] == "draft"])
+        code, body, _ = call(f"/api/drafts/{name}")
+        out("W2 the page opens the draft", (code, "# Work" in body))
+        room = json.loads(call("/api/workspaces")[1])["workspaces"][0]
+        keep = {k: v for k, v in room["targets"].items() if k != "saveFolders"}
+        code, body, _ = call("/api/workspaces/exec", {"name": "Exec room", "members": None, "targets": {**keep, "saveFolders": [os.path.join(work, "drafts")]}})
+        out("W2 a save folder in the work folder is refused", (code, wclean(json.loads(body).get("error", ""))))
+        for label, folder in [("the work folder itself", work), ("the code folder", opts.root)]:
+            code, body, _ = call("/api/workspaces/exec", {"name": "Exec room", "members": None, "targets": {**keep, "saveFolders": [folder]}})
+            out(f"W2 save folder refused: {label}", (code, wclean(json.loads(body).get("error", "").replace(opts.root, "<root>"))))
+    finally:
+        s.stop()
+
+    def wstart(what, **extra):
+        env = dict(os.environ, PATH=os.path.join(TESTS, "fakes", "workfolder") + os.pathsep + os.environ["PATH"], PORT=str(PORT), HOME=whome,
+                   ROOM_CONTEXT_CHECK="off", ROOM_CLAUDE_CHECK="off", ROOM_DATA_DIR=os.path.join(TMP, "data-w2-refused"), ROOM_NOTION_TOKEN="fake-token",
+                   **{"ROOM_CONFIG_FILE": os.path.join(TESTS, "room.config.test.json"), **extra})
+        done = subprocess.run(["node", "room-server.js"], cwd=opts.root, env=env, capture_output=True, text=True, timeout=30)
+        out(f"W2 start-up refuses {what}", (done.returncode, [wclean(l) for l in done.stderr.strip().splitlines()]))
+
+    in_library = os.path.join(whome, "Library", "Exec Room")
+    wstart("a work folder under ~/Library", ROOM_WORK_DIR=in_library)
+    out("W2 the refused folder it made is gone again", os.path.exists(in_library))
+    wstart("the home folder as work folder", ROOM_WORK_DIR=whome)
+    wstart("a work folder inside the data folder", ROOM_WORK_DIR=os.path.join(TMP, "data-w2-refused", "work"))
+    wstart("a program setting that isn't a program", ROOM_CLAUDE_BIN=os.path.join(TMP, "nowhere", "claude"))
+
+    # An app opened from Finder has only the system's folders on PATH. Claude Code in ~/.local/bin is still found, and
+    # its folder goes first on the PATH of what the Exec Room starts.
+    local_bin = os.path.join(whome, ".local", "bin")
+    os.makedirs(local_bin)
+    shutil.copy(os.path.join(TESTS, "fakes", "workfolder", "claude"), os.path.join(local_bin, "claude"))
+    path_before = os.environ["PATH"]
+    os.environ["PATH"] = os.pathsep.join([wbin, "/usr/bin", "/bin"])
+    try:
+        for label, extra, expect in [("signed in", {}, None), ("signed out", {"ROOM_TEST_SIGNED_IN": "no"}, "signedOut"),
+                                     ("doesn't start", {"ROOM_TEST_BROKEN": "1"}, "broken")]:
+            s = Server("nowhere", {"HOME": whome, "ROOM_CLAUDE_CHECK": "on", **extra}, data_name="data-w2-check")
+            try:
+                out(f"W2 Claude Code {label}: the page says", wproblem(expect, 1.5 if expect is None else 8))
+                if expect is None:
+                    wsay()
+                    out("W2 found outside PATH: its folder is on a run's PATH", os.path.join(whome, ".local", "bin") in wcalls()[-1]["path"])
+            finally:
+                s.stop()
+        os.remove(os.path.join(local_bin, "claude"))
+        s = Server("nowhere", {"HOME": whome, "ROOM_CLAUDE_CHECK": "on"}, data_name="data-w2-check")
+        try:
+            out("W2 Claude Code missing: the page says", wproblem("missing"))
+            wsay()
+            out("W2 Claude Code missing: a message says why it can't start", [e["error"] for e in json.loads(call("/api/room")[1])["events"] if e["type"] == "error"])
+        finally:
+            s.stop()
+    finally:
+        os.environ["PATH"] = path_before
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 

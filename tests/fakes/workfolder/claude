@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+# Test double for `claude` in scenario W2 (the work folder). Answers the start-up check's two questions:
+# `--version`, and `auth status --json`, signed in unless $ROOM_TEST_SIGNED_IN is "no". $ROOM_TEST_BROKEN makes it
+# fail at everything, as a Claude Code that doesn't start. Otherwise it plays a run: logs the folder it started in and
+# the folders on its PATH to $ROOM_TEST_TMP/work-calls.ndjson and, with $ROOM_TEST_WRITE set (never in the code folder,
+# which it would leave a file in), writes a draft into drafts/ there. Emits stream-json.
+import json, os, sys
+
+args = sys.argv[1:]
+if os.environ.get("ROOM_TEST_BROKEN"):
+    sys.exit(3)
+if args == ["--version"]:
+    print("9.9.9 (Claude Code)")
+    sys.exit(0)
+if args[:2] == ["auth", "status"]:
+    yes = os.environ.get("ROOM_TEST_SIGNED_IN", "yes") != "no"
+    print(json.dumps({"loggedIn": yes, "authMethod": "claude.ai" if yes else "none", **({"subscriptionType": "max"} if yes else {})}))
+    sys.exit(0 if yes else 1)
+
+with open(os.path.join(os.environ["ROOM_TEST_TMP"], "work-calls.ndjson"), "a") as log:
+    log.write(json.dumps({"cwd": os.getcwd(), "in_the_repo": os.path.exists("room-server.js"),
+                          "path": os.environ.get("PATH", "").split(os.pathsep)}) + "\n")
+out = lambda o: print(json.dumps(o), flush=True)
+out({"type": "system", "subtype": "init", "session_id": "work-session"})
+if os.environ.get("ROOM_TEST_WRITE"):
+    name = "2026-11-22-coen-work.md"
+    path = os.path.join(os.getcwd(), "drafts", name)
+    with open(path, "w") as f:
+        f.write("# Work\n")
+    out({"type": "assistant", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_use", "id": "W1", "name": "Write", "input": {"file_path": path, "content": "# Work\n"}}]}})
+    out({"type": "user", "parent_tool_use_id": None, "message": {"content": [{"type": "tool_result", "tool_use_id": "W1", "content": "ok"}]}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "message_start"}})
+out({"type": "stream_event", "parent_tool_use_id": None, "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Done."}}})
+out({"type": "result", "is_error": False, "num_turns": 1, "total_cost_usd": 0.01, "session_id": "work-session"})

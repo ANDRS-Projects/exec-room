@@ -49,7 +49,27 @@ const INDEX_FILE = path.join(ROOMS_DIR, 'index.json');
 const SPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
 const JOBS_FILE = path.join(DATA_DIR, 'jobs.ndjson');
 const RECS_FILE = path.join(DATA_DIR, 'recommendations.json');
-const DRAFTS_DIR = path.join(__dirname, 'drafts');
+// The work folder: where agent runs start, with drafts/ in it. Agents may write drafts/ only, a path
+// relative to the folder a run starts in, so the two stay together. ROOM_WORK_DIR puts it outside the code folder (a
+// packaged app can't write into its own code); without it, it is the code folder, as before. Checked live on
+// 2026-11-22 with Claude Code 2.1.323: a chat started in one folder resumes from another, so moving it keeps chats.
+// Whether the folder may be used is checked once the rules for folders are defined (checkWorkFolder).
+const WORK_SET = (process.env.ROOM_WORK_DIR || '').trim();
+let WORK_MADE = false;
+function workFolder() {
+  if (!WORK_SET) return __dirname;
+  const home = process.env.HOME || os.homedir();
+  const dir = path.resolve(WORK_SET.startsWith('~') ? path.join(home, WORK_SET.slice(1)) : WORK_SET);
+  WORK_MADE = !fs.existsSync(dir);
+  try {
+    fs.mkdirSync(path.join(dir, 'drafts'), { recursive: true });
+    return fs.realpathSync(dir);
+  } catch (err) {
+    return stopStart(`ROOM_WORK_DIR: the work folder ${dir} couldn't be made: ${err.message}`);
+  }
+}
+const WORK_DIR = workFolder();
+const DRAFTS_DIR = path.join(WORK_DIR, 'drafts');
 // Draft names as the execs are told to write them; no leading dot, no path separators.
 const DRAFT_NAME = /^[\w-][\w.-]*\.md$/;
 const DRAFT_MAX_BYTES = 512 * 1024;
@@ -145,6 +165,33 @@ const AUTH = process.env.ROOM_AUTH || 'subscription';
 if (!['subscription', 'api-key'].includes(AUTH)) stopStart(`ROOM_AUTH must be "subscription" (the Claude plan, the default) or "api-key", not "${AUTH}".`);
 const KEY_MODE = AUTH === 'api-key';
 
+// The programs the Exec Room starts, found once at start-up and then started by full path. An app
+// opened from Finder gets only the system's own folders on its PATH (/usr/bin:/bin:/usr/sbin:/sbin), where none of
+// them is (checked on 2026-11-22). So after PATH, the folders their installers use are tried, and a folder found that
+// way is added to PATH, for what those programs start in turn. ROOM_CLAUDE_BIN, ROOM_GH_BIN and ROOM_OP_BIN name a
+// program's file directly. One not found keeps its bare name, so its errors read as before.
+const PROGRAM_DIRS = [path.join(os.homedir(), '.local', 'bin'), path.join(os.homedir(), '.claude', 'local'), '/opt/homebrew/bin', '/usr/local/bin'];
+function findProgram(name, setting) {
+  const runs = (f) => { try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile(); } catch { return false; } };
+  const set = (process.env[setting] || '').trim();
+  if (set) {
+    if (path.isAbsolute(set) && runs(set)) return set;
+    stopStart(`${setting} is set to "${set}", which isn't a program this computer can run. Give the full path of ${name}, or leave ${setting} out and the Exec Room looks for it.`);
+  }
+  const onPath = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  for (const d of onPath) if (runs(path.join(d, name))) return path.join(d, name);
+  for (const d of PROGRAM_DIRS) {
+    if (!runs(path.join(d, name))) continue;
+    process.env.PATH = [d, ...onPath].join(path.delimiter);
+    return path.join(d, name);
+  }
+  return null;
+}
+const PROGRAMS = { claude: findProgram('claude', 'ROOM_CLAUDE_BIN'), gh: findProgram('gh', 'ROOM_GH_BIN'), op: findProgram('op', 'ROOM_OP_BIN') };
+const CLAUDE_BIN = PROGRAMS.claude || 'claude';
+const GH_BIN = PROGRAMS.gh || 'gh';
+const OP_BIN = PROGRAMS.op || 'op';
+
 // The key is read once at start-up, from ROOM_ANTHROPIC_API_KEY or from 1Password (ROOM_ANTHROPIC_API_KEY_REF, an
 // op:// reference), and kept in memory only: it goes to the `claude` runs and nowhere else (not to data/, the job
 // log, the page or an error text).
@@ -152,13 +199,13 @@ function readApiKey() {
   if (process.env.ROOM_ANTHROPIC_API_KEY) return process.env.ROOM_ANTHROPIC_API_KEY.trim();
   if (!process.env.ROOM_ANTHROPIC_API_KEY_REF) return '';
   try {
-    return execFileSync('op', ['read', process.env.ROOM_ANTHROPIC_API_KEY_REF], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync(OP_BIN, ['read', process.env.ROOM_ANTHROPIC_API_KEY_REF], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return '';
   }
 }
 const API_KEY = KEY_MODE ? readApiKey() : '';
-if (KEY_MODE && !API_KEY) stopStart('ROOM_AUTH is "api-key" but no key was found. Set ROOM_ANTHROPIC_API_KEY, or ROOM_ANTHROPIC_API_KEY_REF to its 1Password reference (op://…), or start the room on the Claude plan with `npm run room`.');
+if (KEY_MODE && !API_KEY) stopStart('ROOM_AUTH is "api-key" but no key was found. Set ROOM_ANTHROPIC_API_KEY, or ROOM_ANTHROPIC_API_KEY_REF to its 1Password reference (op://…), or start the Exec Room without ROOM_AUTH, on the Claude plan (`npm run room` in a terminal).');
 // From here on the key, and everything else that decides how a run is paid, is out of the server's own environment:
 // what the server starts besides `claude` (gh, and op for the Notion token) inherits that environment and has no
 // use for any of it. runEnv() puts the key into the environment of a `claude` run and nowhere else.
@@ -445,7 +492,7 @@ function readMcpToken(s) {
     return value;
   }
   try {
-    return execFileSync('op', ['read', s.tokenFrom], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync(OP_BIN, ['read', s.tokenFrom], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return '';
   }
@@ -454,7 +501,7 @@ function readMcpToken(s) {
 // the room keeps answering meanwhile.
 function readMcpTokenLater(ref) {
   return new Promise((resolve) => {
-    execFile('op', ['read', ref], { encoding: 'utf8', timeout: 120000 }, (err, out) => resolve(err ? '' : String(out).trim()));
+    execFile(OP_BIN, ['read', ref], { encoding: 'utf8', timeout: 120000 }, (err, out) => resolve(err ? '' : String(out).trim()));
   });
 }
 
@@ -1087,7 +1134,7 @@ function readNotionToken() {
   if (process.env.ROOM_NOTION_TOKEN) return process.env.ROOM_NOTION_TOKEN;
   if (!NOTION_TOKEN_REF) return null;
   try {
-    return execFileSync('op', ['read', NOTION_TOKEN_REF], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync(OP_BIN, ['read', NOTION_TOKEN_REF], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     console.warn('Notion token not available from 1Password: the Notion draft action is disabled.');
     return null;
@@ -1764,12 +1811,36 @@ function roomFolder(f, what = 'to read') {
 // Files are only ever saved directly in it, never in a folder under it.
 function saveFolder(f) {
   const real = roomFolder(f, 'to save to');
-  const own = [__dirname, DATA_DIR].map((d) => (realOr(d) || path.resolve(d)).toLowerCase());
   const r = real.toLowerCase();
-  if (own.some((d) => r === d || r.startsWith(d + '/'))) throw new Error(`"${f}" is part of the Exec Room itself (its code, drafts/ or data): pick a save folder outside it`);
+  const inside = (d) => { const own = (realOr(d) || path.resolve(d)).toLowerCase(); return r === own || r.startsWith(own + '/'); };
+  // A work folder of its own (ROOM_WORK_DIR) gets its own reason: every agent in every room can read it.
+  if (WORK_SET && inside(WORK_DIR)) throw new Error(`"${f}" is the Exec Room's work folder, or inside it (${tilde(WORK_DIR)}, where agent runs start and drafts are kept). Agents in every room can read it, so a file saved there wouldn't stay with one room: pick a save folder outside it, such as ${tilde(WORK_DIR)} saves`);
+  if (inside(__dirname) || inside(DATA_DIR)) throw new Error(`"${f}" is part of the Exec Room itself (its code${WORK_SET ? '' : ', drafts/'} or data): pick a save folder outside it`);
   if (r.split('/').some((part) => part === '.git' || part === CLAUDE_DIR)) throw new Error(`"${f}" is inside a .git or .claude folder, which holds settings and hooks: pick another save folder`);
   return real;
 }
+
+// A work folder set with ROOM_WORK_DIR follows the rules of a room folder: every agent in every room may read the
+// folder its run starts in, so it can't be the home folder, a system folder, one with keys or settings (~/Library
+// included, where agents would be refused their own drafts) or the attachments folder. Nor may it sit inside the
+// data folder; the data folder may sit inside it, as it does in the code folder, since data is never readable
+// (dataDenied). A folder the check made and then refused is removed again.
+function checkWorkFolder() {
+  if (!WORK_SET) return;
+  try {
+    roomFolder(WORK_DIR, 'to work in');
+    // roomFolder compares with HOME as set; here also with its real path, for a home reached through a link.
+    const home = (realOr(process.env.HOME) || '').toLowerCase();
+    if (home && (WORK_DIR.toLowerCase() === home || home.startsWith(WORK_DIR.toLowerCase() + '/'))) throw new Error(`"${WORK_DIR}" is too broad: pick a folder inside your home folder, not the home folder itself`);
+    const data = (realOr(DATA_DIR) || path.resolve(DATA_DIR)).toLowerCase();
+    const w = WORK_DIR.toLowerCase();
+    if (w === data || w.startsWith(data + '/')) throw new Error(`"${WORK_DIR}" is inside the data folder, which agents must never read: pick another folder`);
+  } catch (err) {
+    if (WORK_MADE) try { fs.rmdirSync(DRAFTS_DIR); fs.rmdirSync(WORK_DIR); } catch { /* not empty: left as it is */ }
+    stopStart(`ROOM_WORK_DIR: ${err.message}`);
+  }
+}
+checkWorkFolder();
 
 // Folders must be real directories; the whole disk, the home folder and anything above it are too broad
 // (they'd include ~/.ssh and credentials). Symlinks are resolved, so the rule matches what is really read.
@@ -2793,7 +2864,7 @@ function hasMisfiledRec(text) {
 // Runs gh with fixed arguments (flags as --x=value), optional stdin, and a timeout; resolves with stdout.
 function ghRun(args, stdin = '', timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const child = spawn('gh', args, { env: passedOn([...BASE_ENV, ...GH_ENV]), stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs });
+    const child = spawn(GH_BIN, args, { env: passedOn([...BASE_ENV, ...GH_ENV]), stdio: ['pipe', 'pipe', 'pipe'], timeout: timeoutMs });
     let out = '';
     let err = '';
     child.stdout.on('data', (c) => { out += c; });
@@ -4044,7 +4115,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     // buildArgs refuses a tool list outside SAFE_TOOLS: the run then ends as a failed one, with the reason on the page.
     let args;
     try { args = buildArgs(prompt, resumeId, agentKey, space, job.attachRead, job.jobId); } catch (err) { fail(err.message); return; }
-    const child = spawn('claude', args, { cwd: __dirname, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(CLAUDE_BIN, args, { cwd: WORK_DIR, env, stdio: ['ignore', 'pipe', 'pipe'] });
     job.child = child;
 
     let resumeMissing = false;        // --resume pointed at a session that no longer exists
@@ -4066,7 +4137,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
     function countTool(block) {
       job.toolCounts[block.name] = (job.toolCounts[block.name] || 0) + 1;
       const file = block.input && block.input.file_path;
-      if ((block.name === 'Write' || block.name === 'Edit') && file && path.dirname(path.resolve(__dirname, file)) === DRAFTS_DIR) {
+      if ((block.name === 'Write' || block.name === 'Edit') && file && path.dirname(path.resolve(WORK_DIR, file)) === DRAFTS_DIR) {
         pendingDrafts.set(block.id, path.basename(file));
       }
     }
@@ -4202,7 +4273,7 @@ function startJob(text, dispatch = null, auto = false, maker = null, room = curr
       if (stderr.length < STDERR_CAP + API_KEY.length) stderr = (stderr + chunk).slice(0, STDERR_CAP + API_KEY.length);
     });
     child.on('error', (err) => {
-      fail(`Couldn't start Claude: ${err.message}`);
+      fail(err.code === 'ENOENT' ? "Couldn't start Claude: Claude Code isn't installed on this computer, or the Exec Room can't find it. Install it, sign in, and restart the Exec Room (or set ROOM_CLAUDE_BIN to its full path)." : `Couldn't start Claude: ${err.message}`);
     });
     child.on('close', (code) => {
       if (job.done) return;
@@ -4311,6 +4382,8 @@ app.get('/api/room', (req, res) => {
     auth: AUTH, ...(KEY_MODE && { caps: { run: RUN_CAP_USD, day: DAY_CAP_USD } }),
     // Only when the start-up check found that agents are getting files the room means to keep from them.
     ...(contextLeak && contextLeak.length && { contextLeak }),
+    // Only when the start-up check found Claude Code missing, not starting, or (on the plan) signed out.
+    ...(claudeProblem && { claudeProblem }),
     // A token was set up (a 1Password reference) and could not be read at start-up: the page says so, as the
     // terminal's line about it goes unread.
     // Not said once Notion is connected: saving then goes through the connection.
@@ -4836,8 +4909,10 @@ app.post('/api/agents/:key/export', (req, res) => {
   fs.mkdirSync(DRAFTS_DIR, { recursive: true });
   fs.writeFileSync(path.join(DRAFTS_DIR, name), agentMarkdown(a));
   const target = path.join('~/.claude/agents', a.key);
-  const steps = [`mkdir -p ${target}`, `cp ${path.join(__dirname, 'drafts', name)} ${target}/AGENT.md`];
-  if (a.avatar) steps.push(`cp ${path.join(__dirname, 'public', 'avatars', 'presets', `${a.avatar}.svg`)} ${target}/avatar.svg`);
+  // Quoted: a work folder or an app's own folder may have a space in its name (~/Exec Room).
+  const q = (f) => `'${f.replace(/'/g, `'\\''`)}'`;
+  const steps = [`mkdir -p ${target}`, `cp ${q(path.join(DRAFTS_DIR, name))} ${target}/AGENT.md`];
+  if (a.avatar) steps.push(`cp ${q(path.join(__dirname, 'public', 'avatars', 'presets', `${a.avatar}.svg`))} ${target}/avatar.svg`);
   logAgentChange('exported', a);
   res.json({ name, folder: `agents/${a.key}`, exists: fs.existsSync(path.join(AGENTS_DIR, a.key)), install: steps.join(' && ') });
 });
@@ -5515,6 +5590,42 @@ function shutDown() {
 process.on('SIGINT', shutDown);
 process.on('SIGTERM', shutDown);
 
+// ---- Start-up check: is Claude Code there, does it start, and (on the plan) is it signed in? Without it
+// no agent can run, and the first sign used to be an error at the first message. `claudeProblem`: null when all is
+// well or not known, else 'missing', 'broken' or 'signedOut', which the page explains. `claude auth status` asks no
+// model and costs nothing (tried on 2026-11-22 with Claude Code 2.1.323: JSON with loggedIn and authMethod, exit 0).
+// On a key there is no sign-in to check. ROOM_CLAUDE_CHECK=off skips it: the suite does, as its stand-ins for
+// `claude` play runs, not these questions.
+let claudeProblem = null;
+function claudeCheck() {
+  if (process.env.ROOM_CLAUDE_CHECK === 'off') return;
+  if (!PROGRAMS.claude) {
+    claudeProblem = 'missing';
+    console.warn(`Claude Code isn't installed, or isn't in ${['PATH', ...PROGRAM_DIRS.map(tilde)].join(', ')}. Agents can't run until it is: install it, sign in, and restart the Exec Room, or set ROOM_CLAUDE_BIN to its full path.`);
+    return;
+  }
+  const opts = { env: runEnv(), encoding: 'utf8', timeout: 30000 };
+  execFile(CLAUDE_BIN, ['--version'], opts, (err, out) => {
+    if (err) {
+      claudeProblem = 'broken';
+      console.warn(`Claude Code at ${tilde(CLAUDE_BIN)} doesn't start (${err.killed ? 'it took too long to answer' : `it stopped with exit code ${err.code}`}). Agents can't run until it does: update or reinstall it, and restart the Exec Room.`);
+      return;
+    }
+    const found = `Claude Code ${String(out).trim().split(/\s+/)[0]} at ${tilde(CLAUDE_BIN)}`;
+    if (KEY_MODE) { console.log(`${found}.`); return; }
+    execFile(CLAUDE_BIN, ['auth', 'status', '--json'], opts, (err2, out2) => {
+      let status = null;
+      try { status = JSON.parse(out2); } catch { /* an older Claude Code: the exit code says it */ }
+      if (status ? status.loggedIn !== true : err2) {
+        claudeProblem = 'signedOut';
+        console.warn(`${found} isn't signed in to a Claude plan. Agents can't run until it is: run \`claude\` in a terminal, sign in, and restart the Exec Room.`);
+        return;
+      }
+      console.log(`${found}, signed in${status && typeof status.subscriptionType === 'string' ? ` (Claude ${status.subscriptionType})` : ''}.`);
+    });
+  });
+}
+
 // ---- Start-up check: do the two switches in OWN_CONTEXT_ENV still keep Claude Code's own files from room agents?
 // A Claude Code update could rename or drop them without a word, and the room would be back to handing every agent
 // those files. So each start runs one small `claude` the way a job does, in a throwaway folder that holds a
@@ -5552,7 +5663,7 @@ function contextCheck() {
     '--tools', '', '--strict-mcp-config',
     ...(KEY_MODE ? ['--max-budget-usd', String(CHECK_CAP_USD)] : []),
   ];
-  const child = spawn('claude', args, { cwd: dir, env: runEnv(), stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(CLAUDE_BIN, args, { cwd: dir, env: runEnv(), stdio: ['ignore', 'pipe', 'ignore'] });
   const timer = setTimeout(() => child.kill('SIGTERM'), CHECK_TIMEOUT_MS);
   let out = '';
   let failed = '';
@@ -5620,7 +5731,7 @@ const slack = { state: 'off', reason: '', bot: null, app: null, approver: null, 
   const read = (env, key) => {
     if (process.env[env]) return process.env[env];
     try {
-      return execFileSync('op', ['read', SLACK_CONFIG[key]], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+      return execFileSync(OP_BIN, ['read', SLACK_CONFIG[key]], { encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
     } catch {
       return null;
     }
@@ -5845,12 +5956,14 @@ app.listen(PORT, HOST, () => {
   else if (slack.state === 'failed') console.warn(`Slack: not connected: ${slack.reason}. New cards aren't sent to Slack until this is fixed and the room restarted.`);
   else if (SLACK_CONFIG) console.log(`Slack: off (${slack.reason}).`);
   if (SAVE_TEST_HOST) console.log(`Test setting ROOM_TEST_SAVE_HOST is on: approved downloads may use plain http from ${SAVE_TEST_HOST} on this computer. Never set it for a real room.`);
+  if (WORK_SET) console.log(`Work folder: ${tilde(WORK_DIR)} (agent runs start here; drafts are in its drafts/ folder).`);
+  claudeCheck();
   contextCheck();
   // Said after the servers' check: how agents read Notion depends on whether the Notion sign-in works.
   checkMcpServers().then(() => { if (KEY_MODE) console.log(`Runs are paid with an API key (pay-as-you-go), at most $${RUN_CAP_USD.toFixed(2)} a run and $${DAY_CAP_USD.toFixed(2)} a day. Agents have no Microsoft 365 tools in this mode, and read Notion ${notionReader() ? 'through its Connect sign-in' : NOTION_TOKEN ? 'only through pages linked in a message (connect Notion on the Exec Room settings page to give them all of it)' : 'not at all (connect Notion on the Exec Room settings page)'}.`); });
 }).on('error', (err) => {
   if (err.code !== 'EADDRINUSE') throw err;
   console.error(`The room is already running at http://localhost:${PORT}/room.html (port ${PORT} is in use).`);
-  console.error('Open that address, or stop the running room first (Ctrl-C in its terminal) and start it again.');
+  console.error('Open that address, or stop the Exec Room that is running (Ctrl-C in the terminal it runs in) and start it again.');
   process.exit(1);
 });
