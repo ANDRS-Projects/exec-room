@@ -365,6 +365,9 @@ I pr notice: ["Read for Coen: Example-Org/example-app#74 (pull request), Example
 I pr gh args: [['pr', 'diff', '404'], ['pr', 'diff', '74'], ['pr', 'diff', '75'], ['pr', 'view', '404'], ['pr', 'view', '74'], ['pr', 'view', '75']]
 I pr 74: ('pull request', 'PR 74', 'main', 'fix/x', [{'path': 'room-server.js', 'additions': 40, 'deletions': 2}, {'path': 'SECURITY.md', 'additions': 1, 'deletions': 0}], [{'author': 'tess', 'state': 'APPROVED', 'body': 'Go.'}], 1, 'diff --git a/room-server.js b/room-server.js', None)
 I pr 75 capped: (True, True, 1)
+I pr asks for checks: [True, True, True]
+I pr 74 checks: ([{'name': 'npm test (Node 25)', 'workflow': 'Tests', 'result': 'success'}, {'name': 'Trivy', 'workflow': 'Trivy Security Scan', 'result': 'in progress'}, {'name': 'Gitleaks', 'workflow': 'Gitleaks Secret Scan', 'result': 'failure'}, {'name': 'ci/legacy', 'result': 'pending'}], None, None)
+I pr 75 checks, tests changed: ([{'name': 'npm test (Node 25)', 'workflow': 'Tests', 'result': 'success'}], 'This pull request changes tests or workflows, and its checks ran with those changes: a pass shows its own tests pass, not that they test the right thing.')
 I pr failure: ["Couldn't read Example-Org/example-app#404 (pull request): no such pull request. Don't guess what it says; tell the owner."]
 I stop while reading: 200
 I stopped before Claude: (['stopped'], True)
