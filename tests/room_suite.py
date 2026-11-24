@@ -1051,6 +1051,10 @@ try:
         small, big = map(json.loads, prompt.split(f"<<<GITHUB-ISSUES-{tag}\n")[1].split(f"\nGITHUB-ISSUES-{tag}>>>")[0].split("\n"))
         out("I pr 74", (small["kind"], small["title"], small["base"], small["head"], small["files"], small["reviews"], len(small["comments"]), small["diff"].splitlines()[0], small.get("diffCut")))
         out("I pr 75 capped", (len(json.dumps(big, ensure_ascii=False, separators=(",", ":"))) <= 30000, big.get("diffCut"), len(big["comments"])))
+        # Checks come from gh with the rest (statusCheckRollup): finished, running, failed, and an older-style status.
+        out("I pr asks for checks", [a[4].endswith(",statusCheckRollup") for a in gh_calls()[n_calls:] if a[:2] == ["pr", "view"]])
+        out("I pr 74 checks", (small["checks"], small.get("checksNote"), small.get("checksLeftOut")))
+        out("I pr 75 checks, tests changed", (big["checks"], big.get("checksNote")))
         out("I pr failure", [l for l in prompt.split("\n") if l.startswith("Couldn't")])
         before = len(runs())
         call("/api/coen", {"text": f"{GH}Example-Org/example-app/issues/7"})
