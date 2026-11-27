@@ -146,7 +146,9 @@ Environment variables are listed in `.env.example`. The server reads them from y
 
 **The work folder.** Agent runs start in the room's work folder, and agents write their drafts in its `drafts/`. `setup.sh` asks where it should be (suggesting `~/Documents/Exec Room`; on a Mac, Documents may be synced to iCloud), saves the answer as `workFolder` in `room.config.json`, and offers to move drafts you already have. Without it, the work folder is the folder you cloned the room into, as in rooms set up before this question existed: run `./setup.sh` again to choose one. `ROOM_WORK_DIR` wins over `workFolder`, for example for a test copy: `ROOM_WORK_DIR="$HOME/Exec Room test" npm run room`. The folder and its `drafts/` are made if they aren't there, and agents no longer see the room's code or `room.config.json` (see [Readable in every room](#your-own-agents)). Move your existing drafts along. It can't be your home folder, `~/Library` or another folder with keys or settings, or inside the data folder: the room then doesn't start and says why. Nor can a room's save folder sit inside it. Chats keep their history and their memory when it moves.
 
-**Claude Code, `gh` and `op`** are found at start-up: on your PATH, or else in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` or `/usr/local/bin`. If one lives somewhere else, set `ROOM_CLAUDE_BIN`, `ROOM_GH_BIN` or `ROOM_OP_BIN` to its full path. At every start the room also checks that Claude Code starts and, on your Claude plan, is signed in; when it isn't, the page says so instead of the first message failing.
+**Claude Code, `gh` and `op`** are found at start-up: on your PATH, or else in `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` or `/usr/local/bin`. If one lives somewhere else, set `ROOM_CLAUDE_BIN`, `ROOM_GH_BIN` or `ROOM_OP_BIN` to its full path. At every start the room also checks that Claude Code starts and, on your Claude plan, is signed in; when it isn't, the page says so instead of the first message failing, with a **Sign in to Claude** button that opens Claude Code's own sign-in in your browser (the same as running `claude` in a terminal and signing in). The room never sees or keeps your Claude login.
+
+**Running as an app (`ROOM_APP=1`).** For a packaged app that starts the room: settings and `data/` then live in `~/Library/Application Support/Exec Room` instead of the code folder (an installed app can't write inside itself), and a work folder is required, from `workFolder` in that folder's `room.config.json` or `ROOM_WORK_DIR`; without one the room doesn't start. `ROOM_CONFIG_FILE` and `ROOM_DATA_DIR` still win. You don't need this when you run the room from a clone.
 
 ## MCP servers
 
@@ -283,7 +285,7 @@ The room is built to be usable with a keyboard and a screen reader. It has not b
 npm test
 ```
 
-908 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 908 checks match tests/expected.txt`.
+1009 checks run the server against fake `claude`, `gh` and Notion stand-ins in `tests/fakes/`, so they need no network, accounts or credits. Expected output: `ok: all 1009 checks match tests/expected.txt`.
 
 ## Security
 

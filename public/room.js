@@ -1249,6 +1249,53 @@ async function attach() {
   if (followup && ended) await attach();
 }
 
+// Claude Code is signed out (the start-up check): a notice with a button that starts Claude Code's own sign-in, which
+// opens Anthropic's sign-in page in the browser. The room never sees the login; it asks every few seconds whether
+// Claude Code is signed in yet, and the notice says how it ended.
+function claudeSignInNotice() {
+  const box = el('div', 'notice');
+  const text = el('span', null, "Heads-up: Claude Code isn't signed in to a Claude plan, so agents can't run. ");
+  const button = el('button', 'ghost', 'Sign in to Claude');
+  button.type = 'button';
+  box.append(text, button);
+  const show = (line, withButton) => {
+    text.textContent = line;
+    button.hidden = !withButton;
+    sayNow = true;
+    say(line);
+  };
+  const follow = async () => {
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      let state;
+      try {
+        const res = await fetch('/api/claude');
+        if (!res.ok) continue;
+        state = await res.json();
+      } catch { continue; } // the room may be restarting: ask again
+      if (state.signingIn) continue;
+      if (state.problem === null) return show('Claude Code is signed in. Agents can run now.', false);
+      return show("Signing in didn't finish, so agents still can't run. ", true);
+    }
+  };
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      const res = await fetch('/api/claude/sign-in', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const state = await res.json().catch(() => ({}));
+      if (res.status === 409 && state.problem === null) return show('Claude Code is signed in. Agents can run now.', false);
+      if (!res.ok) return show(`${state.error || "The sign-in couldn't start."} `, true);
+      show('A Claude sign-in page has opened in your browser. Sign in there; this note changes once you have.', false);
+      await follow();
+    } catch {
+      show("The sign-in couldn't start: the room didn't answer. ", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  return box;
+}
+
 // The page checks on its own whether it missed something in its chat: a turn that ran while it wasn't following
 // (a dropped connection, a sleeping Mac, a follow-up that started unseen), or one running now that it isn't
 // following. What it missed is drawn in place, so what's typed in the message box stays.
@@ -3555,9 +3602,9 @@ $('space-remove').addEventListener('click', async () => {
     const claudeNotes = {
       missing: "Heads-up: the Exec Room can't find Claude Code on this computer, so agents can't run. Install Claude Code, sign in, and restart the Exec Room. If it is installed somewhere unusual, set ROOM_CLAUDE_BIN to its full path.",
       broken: "Heads-up: Claude Code is installed but doesn't start, so agents can't run. Update or reinstall it, then restart the Exec Room.",
-      signedOut: "Heads-up: Claude Code isn't signed in to your Claude plan, so agents can't run. Run claude in a terminal, sign in, then restart the Exec Room.",
     };
-    if (Object.hasOwn(claudeNotes, room.claudeProblem)) appendToThread(el('div', 'notice', claudeNotes[room.claudeProblem]));
+    if (room.claudeProblem === 'signedOut') appendToThread(claudeSignInNotice());
+    else if (Object.hasOwn(claudeNotes, room.claudeProblem)) appendToThread(el('div', 'notice', claudeNotes[room.claudeProblem]));
     // The room was set up with a Notion token and could not read it when it started (1Password asks for approval
     // when it is locked, and the room waits a minute). Notion drafts and pages can't be saved until a restart.
     if (room.notionTokenMissing === true) {

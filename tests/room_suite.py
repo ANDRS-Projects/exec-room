@@ -91,7 +91,7 @@ def default_rooms():
 class Server:
     """room-server.js with one scenario's fakes first on PATH and a throwaway data folder."""
 
-    def __init__(self, scenario, extra=None, fresh=False, data_name=None, seed=True, config=None):
+    def __init__(self, scenario, extra=None, fresh=False, data_name=None, seed=True, config=None, drop=()):
         data = os.path.join(TMP, data_name or f"data-{scenario}{'-fresh' if fresh else ''}")
         # Most scenarios need a default room that may use and propose things, with one chat in it. The server gives a
         # room nothing by itself, so they get it from a rooms file written here (default_rooms).
@@ -112,6 +112,8 @@ class Server:
                    PORT=str(PORT), ROOM_DATA_DIR=data, ROOM_TEST_TMP=TMP,
                    ROOM_CONFIG_FILE=config or os.path.join(TESTS, "room.config.test.json"),
                    **{"ROOM_NOTION_TOKEN": "fake-token", "ROOM_CONTEXT_CHECK": "off", "ROOM_CLAUDE_CHECK": "off", **(extra or {})})
+        for name in drop:  # settings this server must start without (the Mac app's, which sets neither folder)
+            env.pop(name, None)
         self.p = subprocess.Popen(["node", "room-server.js"], cwd=opts.root, env=env, stdout=subprocess.DEVNULL,
                                   stderr=subprocess.PIPE, text=True, start_new_session=True)
         for _ in range(100):
@@ -3773,7 +3775,8 @@ try:
     os.symlink(sys.executable, os.path.join(wbin, "python3"))
 
     def wclean(text):
-        for real, shown in [(os.path.realpath(whome), "<home>"), (whome, "<home>"), (os.path.realpath(TMP), "<tmp>"), (TMP, "<tmp>")]:
+        for real, shown in [(os.path.realpath(whome), "<home>"), (whome, "<home>"), (os.path.realpath(TMP), "<tmp>"), (TMP, "<tmp>"),
+                            (os.path.realpath(opts.root), "<code>"), (os.path.abspath(opts.root), "<code>")]:  # the settings file is in tests/ here
             text = text.replace(real, shown)
         return text
 
@@ -3855,6 +3858,29 @@ try:
     wstart("a workFolder that isn't a path", ROOM_CONFIG_FILE=bad_config)
     wstart("a refused workFolder, named by its key", ROOM_CONFIG_FILE=inside_data)
 
+    # The Mac app (ROOM_APP=1) sets neither folder: its settings and data/ live in ~/Library/Application Support/Exec
+    # Room, and the work folder comes from the settings file the app writes there before it starts the room. Without
+    # a work folder the room doesn't start (there is no code folder to fall back on inside an app).
+    wstart("app mode without a work folder", ROOM_APP="1")
+    app_dir = os.path.join(whome, "Library", "Application Support", "Exec Room")
+    app_work = os.path.join(TMP, "w2", "App work")
+    os.makedirs(os.path.join(app_dir, "data", "rooms"))
+    with open(os.path.join(app_dir, "room.config.json"), "w") as f:
+        json.dump({**base_config, "workFolder": app_work}, f)
+    with open(os.path.join(app_dir, "data", "rooms", "index.json"), "w") as f:
+        json.dump({"current": "old-chat", "rooms": {"old-chat": {"roomId": "old-chat", "claudeSessionId": None, "title": None,
+                   "createdAt": "2026-09-01T00:00:00.000Z", "updatedAt": "2026-09-01T00:00:00.000Z"}}}, f)
+    with open(os.path.join(app_dir, "data", "workspaces.json"), "w") as f:
+        json.dump(default_rooms(), f)
+    s = Server("workfolder", {"HOME": whome, "ROOM_APP": "1"}, data_name="data-w2-app-unused", drop=("ROOM_DATA_DIR", "ROOM_CONFIG_FILE"))
+    try:
+        wsay()
+        out("W2 app mode: runs start in the work folder from the app's settings", wcalls()[-1]["cwd"] == os.path.realpath(app_work))
+        out("W2 app mode: the job log is in the app's data folder", os.path.isfile(os.path.join(app_dir, "data", "jobs.ndjson")))
+        out("W2 app mode: the settings page names the app's settings file", json.loads(call("/api/mcp")[1]).get("configFile"))
+    finally:
+        s.stop()
+
     # An app opened from Finder has only the system's folders on PATH. Claude Code in ~/.local/bin is still found, and
     # its folder goes first on the PATH of what the Exec Room starts.
     local_bin = os.path.join(whome, ".local", "bin")
@@ -3873,6 +3899,40 @@ try:
                     out("W2 found outside PATH: its folder is on a run's PATH", os.path.join(whome, ".local", "bin") in wcalls()[-1]["path"])
             finally:
                 s.stop()
+
+        # Signing in from the page (the app has no terminal): the room starts Claude Code's own `auth login`, which the
+        # stand-in answers by signing in, and checks again once it ends. Only the room's own page may start it.
+        def wsignin():
+            state = None
+            for _ in range(200):
+                state = json.loads(call("/api/claude")[1])
+                if not state["signingIn"]:
+                    break
+                time.sleep(0.05)
+            return state
+
+        s = Server("nowhere", {"HOME": whome, "ROOM_CLAUDE_CHECK": "on", "ROOM_TEST_SIGNED_IN": "no"}, data_name="data-w2-check")
+        try:
+            wproblem("signedOut")
+            out("W2 sign-in: the room says", json.loads(call("/api/claude")[1]))
+            out("W2 sign-in from another site is refused", call("/api/claude/sign-in", {}, headers={"Origin": "http://elsewhere.example"})[0])
+            code, body, _ = call("/api/claude/sign-in", {})
+            out("W2 sign-in starts", (code, json.loads(body)))
+            out("W2 sign-in: once Claude Code's sign-in ends", wsignin())
+            out("W2 sign-in: the page's notice goes", json.loads(call("/api/room")[1]).get("claudeProblem"))
+            code, body, _ = call("/api/claude/sign-in", {})
+            out("W2 sign-in again once signed in is refused", (code, json.loads(body).get("error")))
+        finally:
+            s.stop()
+        if os.path.exists(os.path.join(TMP, "w2-signed-in")):
+            os.remove(os.path.join(TMP, "w2-signed-in"))
+        s = Server("nowhere", {"HOME": whome, "ROOM_CLAUDE_CHECK": "on", "ROOM_TEST_SIGNED_IN": "no", "ROOM_TEST_LOGIN_FAIL": "1"}, data_name="data-w2-check")
+        try:
+            wproblem("signedOut")
+            call("/api/claude/sign-in", {})
+            out("W2 sign-in that doesn't finish: the room says", wsignin())
+        finally:
+            s.stop()
         os.remove(os.path.join(local_bin, "claude"))
         s = Server("nowhere", {"HOME": whome, "ROOM_CLAUDE_CHECK": "on"}, data_name="data-w2-check")
         try:

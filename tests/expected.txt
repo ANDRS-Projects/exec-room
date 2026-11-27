@@ -985,12 +985,25 @@ W2 start-up refuses a work folder inside the data folder: (1, ['ROOM_WORK_DIR: "
 W2 start-up refuses a program setting that isn't a program: (1, ['ROOM_CLAUDE_BIN is set to "<tmp>/nowhere/claude", which isn\'t a program this computer can run. Give the full path of claude, or leave ROOM_CLAUDE_BIN out and the Exec Room looks for it.'])
 W2 start-up refuses a workFolder that isn't a path: (1, ['"workFolder" in room.config.json must be the path of a folder, such as "~/Documents/Exec Room".'])
 W2 start-up refuses a refused workFolder, named by its key: (1, ['"workFolder" in room.config.json: "<tmp>/data-w2-refused/work" is inside the data folder, which agents must never read: pick another folder'])
+W2 start-up refuses app mode without a work folder: (1, ['ROOM_APP is set (the Mac app starts the Exec Room) but no work folder was given: set "workFolder" in <code>/tests/room.config.test.json or ROOM_WORK_DIR. The app asks for it when it first starts.'])
+W2 app mode: runs start in the work folder from the app's settings: True
+W2 app mode: the job log is in the app's data folder: True
+W2 app mode: the settings page names the app's settings file: ~/Library/Application Support/Exec Room/room.config.json
 W2 Claude Code signed in: the page says: None
 W2 found outside PATH: its folder is on a run's PATH: True
 W2 Claude Code signed out: the page says: signedOut
-server stderr: Claude Code 9.9.9 at ~/.local/bin/claude isn't signed in to a Claude plan. Agents can't run until it is: run `claude` in a terminal, sign in, and restart the Exec Room.
+server stderr: Claude Code 9.9.9 at ~/.local/bin/claude isn't signed in to a Claude plan. Agents can't run until it is: use "Sign in to Claude" on the room's page, or run `claude` in a terminal and sign in.
 W2 Claude Code doesn't start: the page says: broken
 server stderr: Claude Code at ~/.local/bin/claude doesn't start (it stopped with exit code 3). Agents can't run until it does: update or reinstall it, and restart the Exec Room.
+W2 sign-in: the room says: {'problem': 'signedOut', 'signingIn': False}
+W2 sign-in from another site is refused: 403
+W2 sign-in starts: (202, {'problem': 'signedOut', 'signingIn': True})
+W2 sign-in: once Claude Code's sign-in ends: {'problem': None, 'signingIn': False}
+W2 sign-in: the page's notice goes: None
+W2 sign-in again once signed in is refused: (409, "Claude Code isn't waiting for a sign-in.")
+server stderr: Claude Code 9.9.9 at ~/.local/bin/claude isn't signed in to a Claude plan. Agents can't run until it is: use "Sign in to Claude" on the room's page, or run `claude` in a terminal and sign in.
+W2 sign-in that doesn't finish: the room says: {'problem': 'signedOut', 'signingIn': False, 'signInFailed': True}
+server stderr: Claude Code 9.9.9 at ~/.local/bin/claude isn't signed in to a Claude plan. Agents can't run until it is: use "Sign in to Claude" on the room's page, or run `claude` in a terminal and sign in.
 W2 Claude Code missing: the page says: missing
 W2 Claude Code missing: a message says why it can't start: ["Couldn't start Claude: Claude Code isn't installed on this computer, or the Exec Room can't find it. Install it, sign in, and restart the Exec Room (or set ROOM_CLAUDE_BIN to its full path)."]
 server stderr: Claude Code isn't installed, or isn't in PATH, ~/.local/bin, ~/.claude/local, /opt/homebrew/bin, /usr/local/bin. Agents can't run until it is: install it, sign in, and restart the Exec Room, or set ROOM_CLAUDE_BIN to its full path.
