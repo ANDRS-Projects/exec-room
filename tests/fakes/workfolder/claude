@@ -12,8 +12,17 @@ if os.environ.get("ROOM_TEST_BROKEN"):
 if args == ["--version"]:
     print("9.9.9 (Claude Code)")
     sys.exit(0)
+# `auth login` (the page's "Sign in to Claude"): signs in by leaving a marker file, which `auth status` then reads,
+# unless $ROOM_TEST_LOGIN_FAIL is set (a sign-in that was closed or failed).
+signed_in_file = os.path.join(os.environ.get("ROOM_TEST_TMP", "/nonexistent"), "w2-signed-in")
+if args[:2] == ["auth", "login"]:
+    if os.environ.get("ROOM_TEST_LOGIN_FAIL"):
+        sys.exit(1)
+    open(signed_in_file, "w").close()
+    print("Login successful.")
+    sys.exit(0)
 if args[:2] == ["auth", "status"]:
-    yes = os.environ.get("ROOM_TEST_SIGNED_IN", "yes") != "no"
+    yes = os.environ.get("ROOM_TEST_SIGNED_IN", "yes") != "no" or os.path.exists(signed_in_file)
     print(json.dumps({"loggedIn": yes, "authMethod": "claude.ai" if yes else "none", **({"subscriptionType": "max"} if yes else {})}))
     sys.exit(0 if yes else 1)
 

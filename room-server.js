@@ -19,10 +19,19 @@ import zlib from 'zlib';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Started by the Mac app (ROOM_APP=1, which only the app sets): the code sits inside the app, which can't be written
+// into, so the settings and data/ live in the app's own folder, ~/Library/Application Support/Exec Room, unless
+// ROOM_CONFIG_FILE or ROOM_DATA_DIR say otherwise. Agents never read either (~/Library is closed to them). The app
+// asks for the work folder before it starts the room, so in app mode there is no falling back to the code folder.
+const APP_MODE = process.env.ROOM_APP === '1';
+const APP_DIR = path.join(process.env.HOME || os.homedir(), 'Library', 'Application Support', 'Exec Room');
+const HOME_DIR = APP_MODE ? APP_DIR : __dirname;
+const CONFIG_FILE = process.env.ROOM_CONFIG_FILE || path.join(HOME_DIR, 'room.config.json');
+
 // Load configuration: what the whole install needs (the Notion databases and token, connectors to hide).
 // Everything else is set per room, in the room.
 function loadConfig() {
-  const configPath = process.env.ROOM_CONFIG_FILE || path.join(__dirname, 'room.config.json');
+  const configPath = CONFIG_FILE;
   if (!fs.existsSync(configPath)) {
     // New install: use minimal defaults
     return {
@@ -43,7 +52,7 @@ const PORT = Number(process.env.PORT || 4179);
 const HOST = '127.0.0.1';
 const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`]);
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((h) => `http://${h}`));
-const DATA_DIR = process.env.ROOM_DATA_DIR || path.join(__dirname, 'data');
+const DATA_DIR = process.env.ROOM_DATA_DIR || path.join(HOME_DIR, 'data');
 const ROOMS_DIR = path.join(DATA_DIR, 'rooms');
 const INDEX_FILE = path.join(ROOMS_DIR, 'index.json');
 const SPACES_FILE = path.join(DATA_DIR, 'workspaces.json');
@@ -60,6 +69,7 @@ const WORK_FROM = (process.env.ROOM_WORK_DIR || '').trim() ? 'ROOM_WORK_DIR' : '
 const WORK_SET = ((process.env.ROOM_WORK_DIR || '').trim() || (CONFIG.workFolder || '')).trim();
 let WORK_MADE = false;
 function workFolder() {
+  if (!WORK_SET && APP_MODE) return stopStart(`ROOM_APP is set (the Mac app starts the Exec Room) but no work folder was given: set "workFolder" in ${CONFIG_FILE} or ROOM_WORK_DIR. The app asks for it when it first starts.`);
   if (!WORK_SET) return __dirname;
   const home = process.env.HOME || os.homedir();
   const dir = path.resolve(WORK_SET.startsWith('~') ? path.join(home, WORK_SET.slice(1)) : WORK_SET);
@@ -5071,7 +5081,7 @@ app.get('/api/mcp', (req, res) => {
     // The Popular grid: each catalog service, how it can be set up, and whether it already is.
     catalog: Object.entries(MCP_CATALOG).map(([id, c]) => ({ id, name: c.name, by: c.by || '', description: c.description || '',
       connect: Boolean(c.connect && c.connect.url), tokenWhere: c.token && c.token.url ? c.token.where || '' : null, setUp: Object.hasOwn(MCP_SERVERS, id) })),
-    configFile: tilde(process.env.ROOM_CONFIG_FILE || path.join(__dirname, 'room.config.json')),
+    configFile: tilde(CONFIG_FILE),
   });
 });
 
@@ -5589,6 +5599,7 @@ let stopping = false;
 function shutDown() {
   if (stopping) process.exit(1);
   stopping = true;
+  if (signIn) signIn.child.kill('SIGTERM'); // a sign-in still waiting for the browser
   const signalled = new Set();
   const started = Date.now();
   const tick = () => {
@@ -5618,34 +5629,75 @@ process.on('SIGTERM', shutDown);
 // On a key there is no sign-in to check. ROOM_CLAUDE_CHECK=off skips it: the suite does, as its stand-ins for
 // `claude` play runs, not these questions.
 let claudeProblem = null;
-function claudeCheck() {
-  if (process.env.ROOM_CLAUDE_CHECK === 'off') return;
+// `done` runs once the check has its answer (the sign-in below waits for it).
+function claudeCheck(done = () => {}) {
+  if (process.env.ROOM_CLAUDE_CHECK === 'off') return done();
   if (!PROGRAMS.claude) {
     claudeProblem = 'missing';
     console.warn(`Claude Code isn't installed, or isn't in ${['PATH', ...PROGRAM_DIRS.map(tilde)].join(', ')}. Agents can't run until it is: install it, sign in, and restart the Exec Room, or set ROOM_CLAUDE_BIN to its full path.`);
-    return;
+    return done();
   }
   const opts = { env: runEnv(), encoding: 'utf8', timeout: 30000 };
   execFile(CLAUDE_BIN, ['--version'], opts, (err, out) => {
     if (err) {
       claudeProblem = 'broken';
       console.warn(`Claude Code at ${tilde(CLAUDE_BIN)} doesn't start (${err.killed ? 'it took too long to answer' : `it stopped with exit code ${err.code}`}). Agents can't run until it does: update or reinstall it, and restart the Exec Room.`);
-      return;
+      return done();
     }
     const found = `Claude Code ${String(out).trim().split(/\s+/)[0]} at ${tilde(CLAUDE_BIN)}`;
-    if (KEY_MODE) { console.log(`${found}.`); return; }
+    if (KEY_MODE) { console.log(`${found}.`); return done(); }
     execFile(CLAUDE_BIN, ['auth', 'status', '--json'], opts, (err2, out2) => {
       let status = null;
       try { status = JSON.parse(out2); } catch { /* an older Claude Code: the exit code says it */ }
       if (status ? status.loggedIn !== true : err2) {
         claudeProblem = 'signedOut';
-        console.warn(`${found} isn't signed in to a Claude plan. Agents can't run until it is: run \`claude\` in a terminal, sign in, and restart the Exec Room.`);
-        return;
+        console.warn(`${found} isn't signed in to a Claude plan. Agents can't run until it is: use "Sign in to Claude" on the room's page, or run \`claude\` in a terminal and sign in.`);
+        return done();
       }
-      console.log(`${found}, signed in${status && typeof status.subscriptionType === 'string' ? ` (Claude ${status.subscriptionType})` : ''}.`);
+      // No plan name: Claude Code only learns of a plan change when its sign-in renews, so it can be out of date.
+      claudeProblem = null;
+      console.log(`${found}, signed in.`);
+      done();
     });
   });
 }
+
+// ---- Signing in to Claude from the page (the Mac app has no terminal). The room starts Claude Code's own
+// `claude auth login`, which opens Anthropic's sign-in page in the browser and finishes once the person has signed in
+// there; the room never sees the login (Anthropic's conditions, 2026-11-27: sign-in completes through Claude Code's own
+// flow). Only on the plan, only while the start-up check says signed out, one at a time; then the check runs again.
+// Tried on 2026-11-26 with Claude Code 2.1.323: without a terminal it opens the browser and exits 0 once signed in.
+const SIGN_IN_TIMEOUT_MS = Number(process.env.ROOM_SIGN_IN_TIMEOUT_MS) || 10 * 60 * 1000;
+let signIn = null; // { child, timer } while `claude auth login` runs
+let signInFailed = false;
+const claudeState = () => ({ problem: claudeProblem, signingIn: Boolean(signIn), ...(signInFailed && { signInFailed: true }) });
+app.get('/api/claude', (req, res) => res.json(claudeState()));
+app.post('/api/claude/sign-in', (req, res) => {
+  if (KEY_MODE) return res.status(400).json({ error: 'The room runs on an API key, so there is no Claude sign-in to do.' });
+  if (claudeProblem !== 'signedOut') return res.status(409).json({ error: "Claude Code isn't waiting for a sign-in.", ...claudeState() });
+  if (signIn) return res.status(202).json(claudeState());
+  signInFailed = false;
+  const child = spawn(CLAUDE_BIN, ['auth', 'login'], { env: runEnv(), stdio: ['ignore', 'ignore', 'ignore'] });
+  const timer = setTimeout(() => child.kill('SIGTERM'), SIGN_IN_TIMEOUT_MS);
+  signIn = { child, timer };
+  // Still "signing in" until the check has run again, so the page never sees signed out in between.
+  const finished = (ok) => {
+    if (!signIn || signIn.child !== child || signIn.checking) return;
+    clearTimeout(timer);
+    signIn.checking = true;
+    claudeCheck(() => {
+      signIn = null;
+      if (!ok || claudeProblem === 'signedOut') {
+        signInFailed = true;
+        console.warn("Signing in to Claude from the page didn't finish (stopped, timed out, or Claude Code gave an error).");
+      }
+    });
+  };
+  child.on('error', () => finished(false));
+  child.on('close', (code) => finished(code === 0));
+  console.log('Signing in to Claude: Claude Code opened its sign-in page in the browser.');
+  res.status(202).json(claudeState());
+});
 
 // ---- Start-up check: do the two switches in OWN_CONTEXT_ENV still keep Claude Code's own files from room agents?
 // A Claude Code update could rename or drop them without a word, and the room would be back to handing every agent
@@ -5985,6 +6037,6 @@ app.listen(PORT, HOST, () => {
 }).on('error', (err) => {
   if (err.code !== 'EADDRINUSE') throw err;
   console.error(`The room is already running at http://localhost:${PORT}/room.html (port ${PORT} is in use).`);
-  console.error('Open that address, or stop the Exec Room that is running (Ctrl-C in the terminal it runs in) and start it again.');
+  console.error(APP_MODE ? 'Open that address, or quit the Exec Room that is running and open the app again.' : 'Open that address, or stop the Exec Room that is running (Ctrl-C in the terminal it runs in) and start it again.');
   process.exit(1);
 });
