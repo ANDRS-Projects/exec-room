@@ -104,6 +104,7 @@ F stop maker: 200
 F nudges after stop: 1
 F stopped proposal: ['stopped']
 C history: (None, True)
+C after runs, no questions to start with: None
 C error shows Claude's reason: [('error', "You've hit your session limit · resets 12pm (Europe/Amsterdam)"), ('end', None)]
 C job log keeps the reason: ('error', "You've hit your session limit · resets 12pm (Europe/Amsterdam)", ['error'])
 server stderr: SyntaxError: Expected property name or '}' in JSON at position 1
@@ -503,6 +504,7 @@ M2 stored after start-up: {'rec-before': ['domains'], 'rec-due': ['domains'], 'r
 M2 chat after start-up: {'rec-before': (False, False, ['client.example']), 'rec-due': (False, False, ['client.example']), 'rec-undated': (False, False, ['client.example']), 'rec-kept': (True, True, None)}
 M2 remove from the old shape: (200, '{"ok":true,"domains":["client.example"]}')
 Z fresh install default room: ('exec', {'files': [], 'webSearch': False, 'sites': [], 'notion': False, 'm365': False, 'mcp': {}}, {'repos': [], 'publicRepos': [], 'notionDatabases': [], 'notionPlaces': [], 'allowedRecipients': [], 'sendFrom': '', 'saveFolders': []})
+Z fresh install offers the questions to start with: True
 Y start-up folder check: [('risky', 'Risky', ['~/.claude'])]
 Y settings unchanged: [1, 2, 0]
 Y server started despite a broken room: 200
