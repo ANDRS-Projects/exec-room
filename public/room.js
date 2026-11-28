@@ -112,6 +112,10 @@ function el(tag, cls, text) {
   return node;
 }
 
+// Nothing has ever run in this install (firstStart from /api/room): only then does an empty chat offer the two
+// questions to start with, so only the first empty chat after setup has them. Sending a message ends it here too.
+let firstStart = false;
+
 function appendToThread(node) {
   const empty = $('empty');
   if (empty) empty.remove();
@@ -1164,6 +1168,7 @@ async function send() {
       setBusy(false);
       return;
     }
+    firstStart = false;
   } catch (err) {
     appendToThread(el('div', 'bubble err', err.message));
     sayNow = true;
@@ -1909,11 +1914,41 @@ function applyMembership() {
     const list = advisors.length > 1 ? `${advisors.slice(0, -1).join(', ')} or ${advisors.at(-1)}` : advisors[0];
     empty.textContent = `Message the team. It lands with Coen first${list ? `, and he brings in ${list} when he needs them` : ''}.`;
   }
-  // An empty chat opens with what the room is for.
+  // An empty chat opens with what the room is for, and two questions to start with.
   if (empty) {
     empty.querySelectorAll('.empty-about').forEach((n) => n.remove());
     if (space && space.description) empty.prepend(el('span', 'empty-about', space.description));
+    drawSuggestions();
   }
+}
+
+// The questions to start with, only in an install where nothing has run yet (see firstStart above).
+function drawSuggestions() {
+  const empty = $('empty');
+  if (!empty) return;
+  empty.querySelectorAll('.empty-suggest').forEach((n) => n.remove());
+  if (firstStart) empty.appendChild(emptySuggestions());
+}
+
+// Two questions a first-time user can start with. A click puts the question in the message box and sends nothing:
+// the user presses Enter, so no run (which may be paid) starts unasked. Text already in the box is kept, with the
+// question on a new line under it. They go with the rest of the empty chat when the first message is shown.
+function emptySuggestions() {
+  const row = el('div', 'empty-suggest');
+  row.setAttribute('role', 'group');
+  row.setAttribute('aria-label', 'Questions to start with');
+  for (const question of ['What can you do?', 'What agents should I add?']) {
+    const b = el('button', 'ghost', question);
+    b.type = 'button';
+    b.addEventListener('click', () => {
+      input.value = input.value.trim() ? `${input.value.replace(/\s+$/, '')}\n${question}` : question;
+      growInput();
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
+    row.appendChild(b);
+  }
+  return row;
 }
 
 function menuItem(label, onClick, cls = '') {
@@ -3589,6 +3624,8 @@ $('space-remove').addEventListener('click', async () => {
     }
     setChats(chatsWide.matches && chatsPref());
     chatId = room.roomId;
+    firstStart = room.firstStart === true;
+    drawSuggestions();
     for (const ev of room.events) {
       handle(ev);
       if (typeof ev.jobId === 'string') doneJobs.add(ev.jobId);

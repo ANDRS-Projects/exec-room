@@ -302,6 +302,9 @@ body.chats-open .chats { display: flex; flex-direction: column; gap: 8px; min-he
 .thread { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .empty { color: var(--muted); font-size: 13px; }
 .empty-about { display: block; color: var(--text); font-weight: 600; margin-bottom: 4px; }
+/* The two questions to start with: buttons in the controls' border colour, so they read as something to press. */
+.empty-suggest { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.empty-suggest .ghost { margin-left: 0; color: var(--text); border-color: var(--border-control); font-size: 13px; }
 .msg { display: flex; flex-direction: column; gap: 6px; }
 .msg.user { align-items: flex-end; }
 .msg.user .bubble { background: var(--bg); border: 1px solid var(--border); white-space: pre-wrap; }

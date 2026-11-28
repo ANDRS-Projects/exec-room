@@ -3896,7 +3896,22 @@ function buildArgs(text, resumeId, maker, space, attachRead = [], jobId = null) 
 // job that led to it, even if the owner has switched rooms since.
 // `after`: the makers whose work this follow-up is about, so proposals made in it credit them.
 // `files`: what the owner attached to this message (from validateAttachments), readable for this job only.
+// Whether any agent run was ever started in this install: the job log has a run, or one started since the room did.
+// Until then the page offers two questions to start with in an empty chat (firstStart in /api/room). Read from the
+// job log once; a start sets it for good.
+let ranOnce = null;
+function firstStart() {
+  if (ranOnce === null) {
+    ranOnce = false;
+    try {
+      ranOnce = fs.readFileSync(JOBS_FILE, 'utf8').split('\n').some((line) => { try { return JSON.parse(line).kind === 'job'; } catch { return false; } });
+    } catch { /* no job log yet */ }
+  }
+  return !ranOnce;
+}
+
 function startJob(text, dispatch = null, auto = false, maker = null, room = currentRoom(), after = [], files = []) {
+  ranOnce = true;
   // Read once: members changed mid-job apply from the next message.
   const space = spaceOf(room.roomId);
   const focus = dispatch ? null : focusOf(space);
@@ -4415,6 +4430,8 @@ app.get('/api/room', (req, res) => {
     ...(contextLeak && contextLeak.length && { contextLeak }),
     // Only when the start-up check found Claude Code missing, not starting, or (on the plan) signed out.
     ...(claudeProblem && { claudeProblem }),
+    // Nothing has ever run here: the page offers two questions to start with in an empty chat.
+    ...(firstStart() && { firstStart: true }),
     // A token was set up (a 1Password reference) and could not be read at start-up: the page says so, as the
     // terminal's line about it goes unread.
     // Not said once Notion is connected: saving then goes through the connection.

@@ -291,6 +291,7 @@ try:
         out("F nudges after stop", sum(1 for e in room["events"] if e["type"] == "user" and e.get("auto")))
         out("F stopped proposal", [e["state"] for e in room["events"] if e["type"] == "rec_result" and e["recId"] == slow["recId"]])
         out("C history", (room["runningJobId"], len(room["events"]) > 10))
+        out("C after runs, no questions to start with", room.get("firstStart"))
         # A run that ends on a usage limit (or an expired login) shows Claude's own reason, not just the exit code.
         call("/api/coen", {"text": "hit the limit"})
         out("C error shows Claude's reason", [(e["type"], e.get("error")) for e in events(call("/api/stream")[1]) if e["type"] in ("error", "end")])
@@ -1477,6 +1478,7 @@ try:
     try:
         first = json.loads(call("/api/workspaces")[1])["workspaces"][0]
         out("Z fresh install default room", (first["id"], first["access"], first["targets"]))
+        out("Z fresh install offers the questions to start with", json.loads(call("/api/room")[1]).get("firstStart"))
     finally:
         s.stop()
     # Stored room folders are re-checked at start-up: a room saved before a folder counted as sensitive keeps it, so
