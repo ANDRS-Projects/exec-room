@@ -79,6 +79,8 @@ Started on an API key instead (see [Running on an API key](#running-on-an-api-ke
 
 ## Quick start
 
+**On a Mac with Apple silicon, without a terminal:** download [Exec Room for Mac](https://github.com/ANDRS-Projects/exec-room-mac/releases/latest). It brings its own Node.js and this room, asks where agents work and how they are paid for, and opens the room in its own window. You still install Claude Code yourself. The steps below are for running the room from a clone.
+
 ```bash
 git clone https://github.com/ANDRS-Projects/exec-room.git
 cd exec-room
